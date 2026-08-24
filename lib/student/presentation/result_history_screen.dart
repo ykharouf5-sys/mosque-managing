@@ -1,4 +1,5 @@
 import 'package:studentry/student/data/result_models.dart';
+import 'package:studentry/student/data/academic_result_api_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,8 +49,11 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
     });
 
     try {
-      final subjects = <String>[];
-      final results = <ResultRecord>[];
+      final results = await const AcademicResultApiService().results(
+        examNumber: examNumber,
+      );
+      final subjects =
+          results.map((result) => result.subjectName).toSet().toList()..sort();
 
       if (mounted) {
         setState(() {

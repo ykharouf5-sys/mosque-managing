@@ -1,6 +1,7 @@
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/student/data/subject_models.dart';
+import 'package:studentry/student/data/academic_store.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,12 +16,23 @@ class LessonsScreen extends ConsumerStatefulWidget {
 }
 
 class _LessonsScreenState extends ConsumerState<LessonsScreen> {
+  final AcademicStore _academic = AcademicStore.instance;
+
   @override
   void initState() {
     super.initState();
-    onSubjectsChanged = () {
-      if (mounted) setState(() {});
-    };
+    _academic.addListener(_onAcademicChanged);
+    _academic.load();
+  }
+
+  @override
+  void dispose() {
+    _academic.removeListener(_onAcademicChanged);
+    super.dispose();
+  }
+
+  void _onAcademicChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -53,7 +65,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
         ],
       ),
       bottomNavigationBar: const AppBottomNav(selectedIndex: 2),
-      body: dummyEnrollments.isEmpty
+      body: _academic.enrollments.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -89,8 +101,8 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
             )
           : ListView.builder(
               padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 16.h),
-              itemCount: dummyEnrollments.length,
-              itemBuilder: (_, i) => _buildLessonCard(dummyEnrollments[i]),
+              itemCount: _academic.enrollments.length,
+              itemBuilder: (_, i) => _buildLessonCard(_academic.enrollments[i]),
             ),
     );
   }
@@ -99,7 +111,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
     final color = parseColor(enrollment.color);
     final progress = enrollment.progress;
     final hasGrade = enrollment.grade > 0;
-    final subject = dummySubjects
+    final subject = _academic.subjects
         .where((s) => s.id == enrollment.subjectId)
         .firstOrNull;
     final hasLectures = subject != null && subject.lectures.isNotEmpty;
@@ -116,8 +128,22 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
         ),
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
       ),
-      confirmDismiss: (_) => _confirmRemove(context, enrollment.name),
-      onDismissed: (_) {},
+      confirmDismiss: (_) async {
+        if (await _confirmRemove(context, enrollment.name) != true) {
+          return false;
+        }
+        try {
+          await _academic.removeEnrollment(enrollment);
+          return true;
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('تعذر إلغاء التسجيل: $error')),
+            );
+          }
+          return false;
+        }
+      },
       child: Container(
         margin: EdgeInsets.only(bottom: 12.h),
         padding: EdgeInsets.all(16.r),
@@ -497,7 +523,26 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
                                                   );
                                                 } catch (_) {}
                                               }
-                                              if (mounted) {
+                                              try {
+                                                await _academic
+                                                    .markLectureViewed(
+                                                      enrollment,
+                                                      lecture.number,
+                                                    );
+                                              } catch (error) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'تعذر حفظ تقدم المحاضرة: $error',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                              if (context.mounted) {
                                                 setSheetState(() {});
                                                 if (mounted) setState(() {});
                                               }
@@ -596,17 +641,17 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
   }
 
   void _showStatsDialog(BuildContext context) {
-    final total = dummyEnrollments.length;
-    final attended = dummyEnrollments.fold<int>(
+    final total = _academic.enrollments.length;
+    final attended = _academic.enrollments.fold<int>(
       0,
       (s, e) => s + e.attendedLectures,
     );
-    final totalLect = dummyEnrollments.fold<int>(
+    final totalLect = _academic.enrollments.fold<int>(
       0,
       (s, e) => s + e.totalLectures,
     );
     final avg = total > 0
-        ? dummyEnrollments.fold<double>(0, (s, e) => s + e.grade) / total
+        ? _academic.enrollments.fold<double>(0, (s, e) => s + e.grade) / total
         : 0.0;
 
     showDialog(

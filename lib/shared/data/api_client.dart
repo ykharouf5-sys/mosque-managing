@@ -61,6 +61,7 @@ class ApiClient {
     List<int> bytes,
     String filename, {
     Map<String, String> fields = const {},
+    String fieldName = 'image',
   }) {
     final capturedToken = tokenProvider?.call();
     final capturedGeneration = sessionGenerationProvider?.call();
@@ -76,7 +77,7 @@ class ApiClient {
       req.headers['Accept'] = 'application/json';
       req.fields.addAll(fields);
       req.files.add(
-        http.MultipartFile.fromBytes('image', bytes, filename: filename),
+        http.MultipartFile.fromBytes(fieldName, bytes, filename: filename),
       );
       final response = await http.Response.fromStream(
         await _http.send(req).timeout(ApiConfig.requestTimeout),

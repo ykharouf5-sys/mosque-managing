@@ -142,8 +142,19 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 ),
               ),
               GestureDetector(
-                onTap: () =>
-                    ref.read(favoritesProvider.notifier).toggle(product.id),
+                onTap: () async {
+                  try {
+                    await ref
+                        .read(favoritesProvider.notifier)
+                        .toggle(product.id);
+                  } catch (error) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('تعذر تحديث المفضلة: $error')),
+                      );
+                    }
+                  }
+                },
                 child: Icon(
                   Icons.favorite,
                   color: AppColors.primary,

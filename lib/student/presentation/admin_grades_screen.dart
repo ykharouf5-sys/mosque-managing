@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:studentry/student/data/grade_service.dart';
 import 'package:studentry/student/data/subject_models.dart';
+import 'package:studentry/student/data/academic_store.dart';
 
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +20,7 @@ class AdminGradesScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
+  final AcademicStore _academic = AcademicStore.instance;
   Subject? _selectedSubject;
   String? _pdfName;
   String? _rawText;
@@ -30,7 +32,25 @@ class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
   final List<Map<String, dynamic>> _parsedGrades = [];
   final Set<int> _selectedRows = {};
 
-  List<Subject> get _subjects => dummySubjects;
+  List<Subject> get _subjects => _academic.subjects;
+
+  @override
+  void initState() {
+    super.initState();
+    _academic.addListener(_onAcademicChanged);
+    _academic.load();
+  }
+
+  @override
+  void dispose() {
+    _academic.removeListener(_onAcademicChanged);
+    _manualCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onAcademicChanged() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _pickSubject() async {
     final subject = await showDialog<Subject>(

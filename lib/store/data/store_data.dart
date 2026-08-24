@@ -1,28 +1,22 @@
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/data/store_api_service.dart';
-import 'package:studentry/store/data/pending_order_service.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 // ── Global in-memory lists ──
-List<PromoBanner> dummyBanners = [];
-List<ProductCategory> dummyCategories = [];
-List<Product> dummyProducts = [];
-List<Coupon> dummyCoupons = [];
-List<CartItem> cartItems = [];
-final Set<String> favoriteProductIds = {};
-List<Order> myOrders = [];
-final Map<String, List<Review>> productReviews = {};
-void Function()? onStoreDataChanged;
+List<PromoBanner> storeBanners = [];
+List<ProductCategory> storeCategories = [];
+List<Product> storeProducts = [];
+List<Coupon> storeCoupons = [];
 
 const _categoriesCacheKey = 'store:catalog:categories';
 const _bannersCacheKey = 'store:catalog:banners';
 const _catalogCacheTtl = Duration(days: 30);
 
-/// Restores the last usable catalog before any network request is made.
-/// Bundled defaults are used only on a device that has never downloaded a
-/// catalog, so the first store frame is never an empty shell.
+/// Restores the last server catalog before any network request is made.
+/// A first-time installation stays empty until a real response arrives.
 bool loadStoreSnapshot() {
   final cachedCategories = CacheManager.instance.get<List<dynamic>>(
     _categoriesCacheKey,
@@ -32,7 +26,7 @@ bool loadStoreSnapshot() {
   );
 
   final hasSnapshot = cachedCategories != null && cachedBanners != null;
-  dummyCategories = cachedCategories == null
+  storeCategories = cachedCategories == null
       ? []
       : cachedCategories
             .map(
@@ -41,7 +35,7 @@ bool loadStoreSnapshot() {
               ),
             )
             .toList();
-  dummyBanners = cachedBanners == null
+  storeBanners = cachedBanners == null
       ? []
       : cachedBanners
             .map(
@@ -56,13 +50,13 @@ Future<void> _persistStoreSnapshot() async {
   await Future.wait([
     CacheManager.instance.set(
       _categoriesCacheKey,
-      dummyCategories.map((item) => item.toJson()).toList(),
+      storeCategories.map((item) => item.toJson()).toList(),
       ttl: _catalogCacheTtl,
       tags: const [CacheTags.catalog, CacheTags.categories],
     ),
     CacheManager.instance.set(
       _bannersCacheKey,
-      dummyBanners.map((item) => item.toJson()).toList(),
+      storeBanners.map((item) => item.toJson()).toList(),
       ttl: _catalogCacheTtl,
       tags: const [CacheTags.catalog, CacheTags.banners],
     ),
@@ -75,10 +69,10 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
   try {
     if (refresh) await StoreApiService.refreshCatalog();
     final catRows = await StoreApiService.fetchCategories();
-    dummyCategories.clear();
+    storeCategories.clear();
     for (final row in catRows) {
       final m = StoreApiService.rowToCategoryMap(row);
-      dummyCategories.add(
+      storeCategories.add(
         ProductCategory(
           id: m['id'] as String,
           label: m['label'] as String,
@@ -88,10 +82,10 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
     }
 
     final banRows = await StoreApiService.fetchBanners();
-    dummyBanners.clear();
+    storeBanners.clear();
     for (final row in banRows) {
       final m = StoreApiService.rowToBannerMap(row);
-      dummyBanners.add(
+      storeBanners.add(
         PromoBanner(
           id: m['id'] as String,
           title: m['title'] as String,
@@ -108,9 +102,9 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
 
     final productRows = await StoreApiService.fetchProducts();
     final categoryNames = {
-      for (final category in dummyCategories) category.id: category.label,
+      for (final category in storeCategories) category.id: category.label,
     };
-    dummyProducts
+    storeProducts
       ..clear()
       ..addAll(
         productRows.map((row) {
@@ -125,19 +119,32 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
             categoryId: categoryId,
             categoryName: categoryNames[categoryId] ?? '',
             price: (m['price'] as num?)?.toDouble() ?? 0,
+            rating: (m['rating'] as num?)?.toDouble() ?? 0,
+            reviewsCount: (m['reviewsCount'] as num?)?.toInt() ?? 0,
             stock: (m['stock'] as num?)?.toInt() ?? 0,
             createdAt:
                 DateTime.tryParse(m['createdAt'] as String? ?? '') ??
                 DateTime.now(),
+            academicYear: m['academicYear'] as String?,
+            deliveryPrice: (m['deliveryPrice'] as num?)?.toDouble() ?? 0,
           );
         }),
       );
 
+    if (AuthService().hasPermission('coupons.manage')) {
+      final couponRows = await StoreApiService.fetchCoupons();
+      storeCoupons
+        ..clear()
+        ..addAll(couponRows.map(Coupon.fromJson));
+    } else {
+      storeCoupons.clear();
+    }
+
     recalcProductCounts();
     await _persistStoreSnapshot();
     debugPrint(
-      '📦 Store loaded from API: ${dummyCategories.length} categories, '
-      '${dummyProducts.length} products, ${dummyBanners.length} banners',
+      '📦 Store loaded from API: ${storeCategories.length} categories, '
+      '${storeProducts.length} products, ${storeBanners.length} banners',
     );
     return true;
   } catch (e, stackTrace) {
@@ -148,161 +155,63 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
 }
 
 // ── Defaults ──
-List<PromoBanner> get defaultBanners => [
-  const PromoBanner(
-    id: 'b1',
-    title: 'خصم خاص',
-    subtitle: 'على أدوات العناية بالأسنان',
-    discountText: 'خصم 30%',
-    imageUrl: 'https://i.imgur.com/placeholder1.png',
-    ctaText: 'تسوق الآن',
-    actionRoute: '/promo-detail',
-  ),
-  const PromoBanner(
-    id: 'b2',
-    title: 'عروض التجميل',
-    subtitle: 'منتجات تبييض الأسنان',
-    discountText: 'خصم 25%',
-    imageUrl: 'https://i.imgur.com/placeholder2.png',
-    ctaText: 'اكتشف العروض',
-    actionRoute: '/promo-detail',
-  ),
-];
-
-List<ProductCategory> get defaultCategories => [
-  ProductCategory(
-    id: 'c1',
-    label: 'فرش أسنان',
-    iconUrl: 'https://img.icons8.com/color/96/toothbrush.png',
-  ),
-  ProductCategory(
-    id: 'c2',
-    label: 'معجون أسنان',
-    iconUrl: 'https://img.icons8.com/color/96/toothpaste.png',
-  ),
-  ProductCategory(
-    id: 'c3',
-    label: 'خيط طبي',
-    iconUrl: 'https://img.icons8.com/color/96/dental-floss.png',
-  ),
-  ProductCategory(
-    id: 'c4',
-    label: 'غسول فم',
-    iconUrl: 'https://img.icons8.com/color/96/mouthwash.png',
-  ),
-  ProductCategory(
-    id: 'c5',
-    label: 'تبييض أسنان',
-    iconUrl: 'https://img.icons8.com/color/96/whitening.png',
-  ),
-  ProductCategory(
-    id: 'c6',
-    label: 'أدوات تقويم',
-    iconUrl: 'https://img.icons8.com/color/96/braces.png',
-  ),
-  ProductCategory(
-    id: 'c7',
-    label: 'مطهرات',
-    iconUrl: 'https://img.icons8.com/color/96/disinfectant.png',
-  ),
-  ProductCategory(
-    id: 'c8',
-    label: 'قفازات',
-    iconUrl: 'https://img.icons8.com/color/96/gloves.png',
-  ),
-];
-
 String _genBannerId() => const Uuid().v4();
 
-int get categoryCount => dummyCategories.length;
-int get productCount => dummyProducts.length;
+int get categoryCount => storeCategories.length;
+int get productCount => storeProducts.length;
 
 void recalcProductCounts() {
-  for (final cat in dummyCategories) {
-    cat.productCount = dummyProducts
+  for (final cat in storeCategories) {
+    cat.productCount = storeProducts
         .where((p) => p.categoryId == cat.id)
         .length;
   }
 }
 
 List<Product> getProductsByCategory(String categoryId) =>
-    dummyProducts.where((p) => p.categoryId == categoryId).toList();
+    storeProducts.where((p) => p.categoryId == categoryId).toList();
 
 List<Product> getProductsByAcademicYear(String? academicYear) {
-  if (academicYear == null || academicYear.isEmpty) return dummyProducts;
-  return dummyProducts
+  if (academicYear == null || academicYear.isEmpty) return storeProducts;
+  return storeProducts
       .where((p) => p.academicYear == academicYear || p.academicYear == null)
       .toList();
 }
 
-List<Product> get favoriteProducts =>
-    dummyProducts.where((p) => favoriteProductIds.contains(p.id)).toList();
-
-double get cartTotal => cartItems.fold(0.0, (t, ci) => t + ci.totalPrice);
-int get cartItemCount => cartItems.fold(0, (t, ci) => t + ci.quantity);
-Coupon? appliedCoupon;
-
-double get discountAmount {
-  final c = appliedCoupon;
-  if (c == null) return 0;
-  if (c.expiresAt != null && c.expiresAt!.isBefore(DateTime.now())) return 0;
-  if (!c.isActive) return 0;
-  if (c.minPurchase != null && cartTotal < c.minPurchase!) return 0;
-
-  double eligible = 0;
-  if (c.productId != null) {
-    eligible = cartItems
-        .where((i) => i.product.id == c.productId)
-        .fold(0.0, (t, i) => t + i.totalPrice);
-  } else if (c.categoryId != null) {
-    eligible = cartItems
-        .where((i) => i.product.categoryId == c.categoryId)
-        .fold(0.0, (t, i) => t + i.totalPrice);
-  } else {
-    eligible = cartTotal;
-  }
-  if (c.discountType == 'percentage') {
-    return eligible * c.discountValue / 100;
-  } else {
-    return c.discountValue > eligible ? eligible : c.discountValue;
-  }
-}
-
-double get discountedTotal => cartTotal - discountAmount;
-
 // ── Category CRUD ──
-void addCategory(String name, String iconUrl) {
+Future<void> addCategory(String name, String iconUrl) async {
   final id = const Uuid().v4();
-  dummyCategories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
+  await StoreApiService.insertCategory({
+    'id': id,
+    'name': name,
+    'iconUrl': iconUrl,
+  });
+  storeCategories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
   recalcProductCounts();
-  onStoreDataChanged?.call();
-  StoreApiService.insertCategory({'id': id, 'name': name, 'iconUrl': iconUrl});
 }
 
-void deleteCategory(String id) {
-  dummyCategories.removeWhere((c) => c.id == id);
-  dummyProducts.removeWhere((p) => p.categoryId == id);
+Future<void> deleteCategory(String id) async {
+  await StoreApiService.deleteCategory(id);
+  storeCategories.removeWhere((c) => c.id == id);
+  storeProducts.removeWhere((p) => p.categoryId == id);
   recalcProductCounts();
-  onStoreDataChanged?.call();
-  StoreApiService.deleteCategory(id);
 }
 
-void updateCategory(String id, String name, String iconUrl) {
-  final idx = dummyCategories.indexWhere((c) => c.id == id);
+Future<void> updateCategory(String id, String name, String iconUrl) async {
+  final idx = storeCategories.indexWhere((c) => c.id == id);
   if (idx >= 0) {
-    dummyCategories[idx] = ProductCategory(
+    await StoreApiService.updateCategory(id, name, iconUrl);
+    storeCategories[idx] = ProductCategory(
       id: id,
       label: name,
       iconUrl: iconUrl,
     );
     recalcProductCounts();
-    onStoreDataChanged?.call();
-    StoreApiService.updateCategory(id, name, iconUrl);
   }
 }
 
 // ── Product CRUD ──
-void addProduct(
+Future<void> addProduct(
   String name,
   String description,
   double price,
@@ -312,9 +221,20 @@ void addProduct(
   String brand = '',
   int stock = 0,
   String? academicYear,
-}) {
+}) async {
   final id = const Uuid().v4();
-  dummyProducts.add(
+  await StoreApiService.insertProduct({
+    'id': id,
+    'name': name,
+    'brand': brand,
+    'description': description,
+    'imageUrl': imageUrl,
+    'categoryId': categoryId,
+    'price': price,
+    'stock': stock,
+    'academicYear': academicYear,
+  });
+  storeProducts.add(
     Product(
       id: id,
       name: name,
@@ -330,26 +250,15 @@ void addProduct(
     ),
   );
   recalcProductCounts();
-  onStoreDataChanged?.call();
-  StoreApiService.insertProduct({
-    'id': id,
-    'name': name,
-    'description': description,
-    'imageUrl': imageUrl,
-    'categoryId': categoryId,
-    'price': price,
-    'stock': stock,
-  });
 }
 
-void deleteProduct(String id) {
-  dummyProducts.removeWhere((p) => p.id == id);
+Future<void> deleteProduct(String id) async {
+  await StoreApiService.deleteProduct(id);
+  storeProducts.removeWhere((p) => p.id == id);
   recalcProductCounts();
-  onStoreDataChanged?.call();
-  StoreApiService.deleteProduct(id);
 }
 
-void updateProduct(
+Future<void> updateProduct(
   String id,
   String name,
   String description,
@@ -360,10 +269,20 @@ void updateProduct(
   String brand = '',
   int stock = 0,
   String? academicYear,
-}) {
-  final idx = dummyProducts.indexWhere((p) => p.id == id);
+}) async {
+  final idx = storeProducts.indexWhere((p) => p.id == id);
   if (idx >= 0) {
-    dummyProducts[idx] = Product(
+    await StoreApiService.updateProduct(id, {
+      'name': name,
+      'brand': brand,
+      'description': description,
+      'imageUrl': imageUrl,
+      'categoryId': categoryId,
+      'price': price,
+      'stock': stock,
+      'academicYear': academicYear,
+    });
+    storeProducts[idx] = Product(
       id: id,
       name: name,
       description: description,
@@ -374,23 +293,14 @@ void updateProduct(
       brand: brand,
       stock: stock,
       academicYear: academicYear,
-      createdAt: dummyProducts[idx].createdAt,
+      createdAt: storeProducts[idx].createdAt,
     );
     recalcProductCounts();
-    onStoreDataChanged?.call();
-    StoreApiService.updateProduct(id, {
-      'name': name,
-      'description': description,
-      'imageUrl': imageUrl,
-      'categoryId': categoryId,
-      'price': price,
-      'stock': stock,
-    });
   }
 }
 
 // ── Banner CRUD ──
-void addBanner(
+Future<void> addBanner(
   String title,
   String subtitle,
   String discountText,
@@ -399,9 +309,20 @@ void addBanner(
   String actionRoute, {
   String? productId,
   String? categoryId,
-}) {
+}) async {
   final id = _genBannerId();
-  dummyBanners.add(
+  await StoreApiService.insertBanner({
+    'id': id,
+    'title': title,
+    'subtitle': subtitle,
+    'discountText': discountText,
+    'imageUrl': imageUrl,
+    'ctaText': ctaText,
+    'actionRoute': actionRoute,
+    'productId': productId,
+    'categoryId': categoryId,
+  });
+  storeBanners.add(
     PromoBanner(
       id: id,
       title: title,
@@ -414,27 +335,14 @@ void addBanner(
       categoryId: categoryId,
     ),
   );
-  onStoreDataChanged?.call();
-  StoreApiService.insertBanner({
-    'id': id,
-    'title': title,
-    'subtitle': subtitle,
-    'discountText': discountText,
-    'imageUrl': imageUrl,
-    'ctaText': ctaText,
-    'actionRoute': actionRoute,
-    'productId': productId,
-    'categoryId': categoryId,
-  });
 }
 
-void deleteBanner(String id) {
-  dummyBanners.removeWhere((b) => b.id == id);
-  onStoreDataChanged?.call();
-  StoreApiService.deleteBanner(id);
+Future<void> deleteBanner(String id) async {
+  await StoreApiService.deleteBanner(id);
+  storeBanners.removeWhere((b) => b.id == id);
 }
 
-void updateBanner(
+Future<void> updateBanner(
   String id,
   String title,
   String subtitle,
@@ -444,10 +352,20 @@ void updateBanner(
   String actionRoute, {
   String? productId,
   String? categoryId,
-}) {
-  final idx = dummyBanners.indexWhere((b) => b.id == id);
+}) async {
+  final idx = storeBanners.indexWhere((b) => b.id == id);
   if (idx >= 0) {
-    dummyBanners[idx] = PromoBanner(
+    await StoreApiService.updateBanner(id, {
+      'title': title,
+      'subtitle': subtitle,
+      'discountText': discountText,
+      'imageUrl': imageUrl,
+      'ctaText': ctaText,
+      'actionRoute': actionRoute,
+      'productId': productId,
+      'categoryId': categoryId,
+    });
+    storeBanners[idx] = PromoBanner(
       id: id,
       title: title,
       subtitle: subtitle,
@@ -458,22 +376,11 @@ void updateBanner(
       productId: productId,
       categoryId: categoryId,
     );
-    onStoreDataChanged?.call();
-    StoreApiService.updateBanner(id, {
-      'title': title,
-      'subtitle': subtitle,
-      'discountText': discountText,
-      'imageUrl': imageUrl,
-      'ctaText': ctaText,
-      'actionRoute': actionRoute,
-      'productId': productId,
-      'categoryId': categoryId,
-    });
   }
 }
 
 // ── Coupon CRUD ──
-void addCoupon(
+Future<void> addCoupon(
   String code,
   String description,
   String discountType,
@@ -483,31 +390,29 @@ void addCoupon(
   bool isActive = true,
   String? categoryId,
   String? productId,
-}) {
-  dummyCoupons.add(
-    Coupon(
-      id: const Uuid().v4(),
-      code: code,
-      description: description,
-      discountValue: discountValue,
-      discountType: discountType,
-      minPurchase: minPurchase,
-      expiresAt: expiresAt,
-      isActive: isActive,
-      categoryId: categoryId,
-      productId: productId,
-    ),
-  );
-  onStoreDataChanged?.call();
+}) async {
+  final id = const Uuid().v4();
+  final row = await StoreApiService.insertCoupon({
+    'id': id,
+    'code': code,
+    'description': description,
+    'discountType': discountType,
+    'discountValue': discountValue,
+    'minPurchase': minPurchase,
+    'expiresAt': expiresAt?.toUtc().toIso8601String(),
+    'isActive': isActive,
+    'categoryId': categoryId,
+    'productId': productId,
+  });
+  storeCoupons.add(Coupon.fromJson(row));
 }
 
-void deleteCoupon(String id) {
-  dummyCoupons.removeWhere((c) => c.id == id);
-  if (appliedCoupon?.id == id) appliedCoupon = null;
-  onStoreDataChanged?.call();
+Future<void> deleteCoupon(String id) async {
+  await StoreApiService.deleteCoupon(id);
+  storeCoupons.removeWhere((c) => c.id == id);
 }
 
-void updateCoupon(
+Future<void> updateCoupon(
   String id,
   String code,
   String description,
@@ -518,165 +423,20 @@ void updateCoupon(
   bool isActive = true,
   String? categoryId,
   String? productId,
-}) {
-  final idx = dummyCoupons.indexWhere((c) => c.id == id);
-  if (idx >= 0) {
-    dummyCoupons[idx] = Coupon(
-      id: id,
-      code: code,
-      description: description,
-      discountValue: discountValue,
-      discountType: discountType,
-      minPurchase: minPurchase,
-      expiresAt: expiresAt,
-      isActive: isActive,
-      categoryId: categoryId,
-      productId: productId,
-    );
-    onStoreDataChanged?.call();
-  }
-}
-
-// ── Cart ──
-void addToCart(Product product, {int quantity = 1}) {
-  final existing = cartItems.indexWhere((i) => i.product.id == product.id);
-  if (existing >= 0) {
-    cartItems[existing].quantity += quantity;
-  } else {
-    cartItems.add(CartItem(product: product, quantity: quantity));
-  }
-  onStoreDataChanged?.call();
-}
-
-void removeFromCart(String productId) {
-  cartItems.removeWhere((i) => i.product.id == productId);
-  onStoreDataChanged?.call();
-}
-
-void updateCartItemQuantity(String productId, int newQuantity) {
-  final idx = cartItems.indexWhere((i) => i.product.id == productId);
-  if (idx >= 0) {
-    if (newQuantity <= 0) {
-      cartItems.removeAt(idx);
-    } else {
-      cartItems[idx].quantity = newQuantity;
-    }
-    onStoreDataChanged?.call();
-  }
-}
-
-// ── Coupon application ──
-Future<String?> applyCouponCode(String code) async {
-  final coupon = dummyCoupons
-      .where((c) => c.code == code && c.isActive)
-      .firstOrNull;
-  if (coupon == null) return 'كود الخصم غير صالح';
-  if (coupon.expiresAt != null && coupon.expiresAt!.isBefore(DateTime.now())) {
-    return 'انتهت صلاحية كود الخصم';
-  }
-  if (coupon.minPurchase != null && cartTotal < coupon.minPurchase!) {
-    return 'الحد الأدنى للشراء هو \$${coupon.minPurchase!.toStringAsFixed(0)}';
-  }
-  appliedCoupon = coupon;
-  onStoreDataChanged?.call();
-  return null;
-}
-
-Future<void> removeAppliedCoupon() async {
-  appliedCoupon = null;
-  onStoreDataChanged?.call();
-}
-
-// ── Orders ──
-
-Future<void> placeOrder({
-  required String shippingAddress,
-  String? notes,
-  required String paymentMethod,
-  required String phone,
-  String? governorate,
-  String? region,
 }) async {
-  if (cartItems.isEmpty) return;
-  final orderId = const Uuid().v4();
-  final now = DateTime.now();
-  final order = Order(
-    id: orderId,
-    items: List.from(cartItems),
-    totalPrice: discountedTotal,
-    createdAt: now,
-    updatedAt: now,
-    userId: '',
-    notes: notes,
-    couponCode: appliedCoupon?.code,
-    discountAmount: discountAmount > 0 ? discountAmount : null,
-    shippingAddress: shippingAddress,
-    paymentMethod: paymentMethod,
-    phone: phone,
-    governorate: governorate,
-    region: region,
-    deliveryPrice: cartItems.fold(0.0, (t, i) => t + i.product.deliveryPrice),
-  );
-
-  // Save to local SQLite first, then send through the REST queue.
-  final orderMap = order.toJson();
-  orderMap['createdAt'] = now.toUtc().toIso8601String();
-  orderMap['updatedAt'] = now.toUtc().toIso8601String();
-  final result = await PendingOrderService.savePendingOrder(orderMap);
-
-  if (result == 'insufficient_stock') {
-    throw Exception('المخزون غير كافٍ لبعض المنتجات');
-  }
-
-  // Update in-memory state only after local persistence confirmed
-  myOrders.insert(0, order);
-  cartItems.clear();
-  appliedCoupon = null;
-  onStoreDataChanged?.call();
-}
-
-// ── Favorites ──
-bool isFavorite(String productId) => favoriteProductIds.contains(productId);
-
-void toggleFavorite(String productId) {
-  if (favoriteProductIds.contains(productId)) {
-    favoriteProductIds.remove(productId);
-  } else {
-    favoriteProductIds.add(productId);
-  }
-  onStoreDataChanged?.call();
-}
-
-// ── Reviews ──
-
-void addReview(String productId, double rating, String comment) {
-  final id = const Uuid().v4();
-  final review = Review(
-    id: id,
-    productId: productId,
-    userId: '',
-    userName: 'مستخدم',
-    rating: rating,
-    comment: comment,
-    createdAt: DateTime.now(),
-  );
-  productReviews[productId] = [review, ...(productReviews[productId] ?? [])];
-  _notifyReviewListeners(productId);
-  onStoreDataChanged?.call();
-}
-
-final _reviewListeners = <String, List<VoidCallback>>{};
-
-void listenToReviews(String productId) {
-  _reviewListeners.putIfAbsent(productId, () => []);
-}
-
-void cancelReviewsListener() {
-  // no-op for local
-}
-
-void _notifyReviewListeners(String productId) {
-  for (final cb in _reviewListeners[productId] ?? []) {
-    cb();
+  final idx = storeCoupons.indexWhere((c) => c.id == id);
+  if (idx >= 0) {
+    final row = await StoreApiService.updateCoupon(id, {
+      'code': code,
+      'description': description,
+      'discountType': discountType,
+      'discountValue': discountValue,
+      'minPurchase': minPurchase,
+      'expiresAt': expiresAt?.toUtc().toIso8601String(),
+      'isActive': isActive,
+      'categoryId': categoryId,
+      'productId': productId,
+    });
+    storeCoupons[idx] = Coupon.fromJson(row);
   }
 }

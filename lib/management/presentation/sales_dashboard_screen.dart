@@ -37,7 +37,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
     if (!mounted) return;
     ref
         .read(catalogProvider.notifier)
-        .loadBannersAndCategories(dummyBanners, dummyCategories);
+        .loadBannersAndCategories(storeBanners, storeCategories);
     await ref.read(catalogProvider.notifier).loadInitialProducts();
     if (mounted) setState(() {});
   }
@@ -476,8 +476,8 @@ class _CategoriesTab extends StatelessWidget {
       emptyIcon: 'category',
       emptyTitle: 'لا توجد تصنيفات',
       emptyActionLabel: 'إضافة تصنيف',
-      itemCount: dummyCategories.length,
-      itemBuilder: (ctx, i) => _buildCategoryCard(ctx, dummyCategories[i]),
+      itemCount: storeCategories.length,
+      itemBuilder: (ctx, i) => _buildCategoryCard(ctx, storeCategories[i]),
       onAdd: () => _showCategoryDialog(context, null),
       onRefresh: onDataChanged,
     );
@@ -500,14 +500,21 @@ class _CategoriesTab extends StatelessWidget {
           size: 28.sp,
         ),
       ),
-      confirmDismiss: (_) => _showDeleteConfirmDialog(
-        context,
-        'حذف التصنيف',
-        'سيتم حذف "${category.label}" وجميع منتجاته. هل أنت متأكد؟',
-      ),
-      onDismissed: (_) {
-        deleteCategory(category.id);
-        onDataChanged();
+      confirmDismiss: (_) async {
+        final confirmed = await _showDeleteConfirmDialog(
+          context,
+          'حذف التصنيف',
+          'سيتم حذف "${category.label}" وجميع منتجاته. هل أنت متأكد؟',
+        );
+        if (confirmed != true) return false;
+        try {
+          await deleteCategory(category.id);
+          onDataChanged();
+          return true;
+        } catch (error) {
+          if (context.mounted) _showMutationError(context, error);
+          return false;
+        }
       },
       child: Container(
         margin: EdgeInsets.only(bottom: 10.h),
@@ -567,12 +574,16 @@ class _CategoriesTab extends StatelessWidget {
           hint: 'https://...',
         ),
       ],
-      onSave: () {
+      onSave: () async {
         if (nameC.text.trim().isEmpty) return;
         if (isEdit) {
-          updateCategory(category.id, nameC.text.trim(), urlC.text.trim());
+          await updateCategory(
+            category.id,
+            nameC.text.trim(),
+            urlC.text.trim(),
+          );
         } else {
-          addCategory(nameC.text.trim(), urlC.text.trim());
+          await addCategory(nameC.text.trim(), urlC.text.trim());
         }
         onDataChanged();
       },
@@ -592,8 +603,8 @@ class _ProductsTab extends StatelessWidget {
       emptyIcon: 'product',
       emptyTitle: 'لا توجد منتجات',
       emptyActionLabel: 'إضافة منتج',
-      itemCount: dummyProducts.length,
-      itemBuilder: (ctx, i) => _buildProductCard(ctx, dummyProducts[i]),
+      itemCount: storeProducts.length,
+      itemBuilder: (ctx, i) => _buildProductCard(ctx, storeProducts[i]),
       onAdd: () => _showProductDialog(context, null),
       onRefresh: onDataChanged,
     );
@@ -616,14 +627,21 @@ class _ProductsTab extends StatelessWidget {
           size: 28.sp,
         ),
       ),
-      confirmDismiss: (_) => _showDeleteConfirmDialog(
-        context,
-        'حذف المنتج',
-        'هل أنت متأكد من حذف "${product.name}"؟',
-      ),
-      onDismissed: (_) {
-        deleteProduct(product.id);
-        onDataChanged();
+      confirmDismiss: (_) async {
+        final confirmed = await _showDeleteConfirmDialog(
+          context,
+          'حذف المنتج',
+          'هل أنت متأكد من حذف "${product.name}"؟',
+        );
+        if (confirmed != true) return false;
+        try {
+          await deleteProduct(product.id);
+          onDataChanged();
+          return true;
+        } catch (error) {
+          if (context.mounted) _showMutationError(context, error);
+          return false;
+        }
       },
       child: Container(
         margin: EdgeInsets.only(bottom: 10.h),
@@ -826,7 +844,7 @@ class _ProductsTab extends StatelessWidget {
                     DropdownButtonFormField<String>(
                       initialValue: selectedCategoryId,
                       decoration: _inputDecoration('التصنيف'),
-                      items: dummyCategories
+                      items: storeCategories
                           .map(
                             (cat) => DropdownMenuItem(
                               value: cat.id,
@@ -884,7 +902,7 @@ class _ProductsTab extends StatelessWidget {
                 ),
                 _styledConfirmButton(
                   isEdit ? 'حفظ' : 'إضافة',
-                  onPressed: () {
+                  onPressed: () async {
                     final name = nameC.text.trim();
                     final price = double.tryParse(priceC.text.trim());
                     final stock = int.tryParse(stockC.text.trim()) ?? 0;
@@ -893,38 +911,42 @@ class _ProductsTab extends StatelessWidget {
                         selectedCategoryId == null) {
                       return;
                     }
-                    final cat = dummyCategories
+                    final cat = storeCategories
                         .where((c) => c.id == selectedCategoryId)
                         .firstOrNull;
                     if (cat == null) return;
-                    if (isEdit) {
-                      updateProduct(
-                        product.id,
-                        name,
-                        descC.text.trim(),
-                        price,
-                        imagePath ?? '',
-                        cat.id,
-                        cat.label,
-                        brand: brandC.text.trim(),
-                        stock: stock,
-                        academicYear: selectedAcademicYear,
-                      );
-                    } else {
-                      addProduct(
-                        name,
-                        descC.text.trim(),
-                        price,
-                        imagePath ?? '',
-                        cat.id,
-                        cat.label,
-                        brand: brandC.text.trim(),
-                        stock: stock,
-                        academicYear: selectedAcademicYear,
-                      );
+                    try {
+                      if (isEdit) {
+                        await updateProduct(
+                          product.id,
+                          name,
+                          descC.text.trim(),
+                          price,
+                          imagePath ?? '',
+                          cat.id,
+                          cat.label,
+                          brand: brandC.text.trim(),
+                          stock: stock,
+                          academicYear: selectedAcademicYear,
+                        );
+                      } else {
+                        await addProduct(
+                          name,
+                          descC.text.trim(),
+                          price,
+                          imagePath ?? '',
+                          cat.id,
+                          cat.label,
+                          brand: brandC.text.trim(),
+                          stock: stock,
+                          academicYear: selectedAcademicYear,
+                        );
+                      }
+                      onDataChanged();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      if (ctx.mounted) _showMutationError(ctx, error);
                     }
-                    Navigator.pop(ctx);
-                    onDataChanged();
                   },
                 ),
               ],
@@ -946,15 +968,15 @@ class _BannersTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: dummyBanners.isEmpty
+      body: storeBanners.isEmpty
           ? _buildEmpty(context)
           : RefreshIndicator(
               onRefresh: () async => onDataChanged(),
               child: ListView.builder(
                 padding: EdgeInsets.all(16.r),
-                itemCount: dummyBanners.length,
+                itemCount: storeBanners.length,
                 itemBuilder: (_, i) =>
-                    _buildBannerCard(context, dummyBanners[i]),
+                    _buildBannerCard(context, storeBanners[i]),
               ),
             ),
       floatingActionButton: FloatingActionButton(
@@ -1011,14 +1033,21 @@ class _BannersTab extends StatelessWidget {
           size: 28.sp,
         ),
       ),
-      confirmDismiss: (_) => _showDeleteConfirmDialog(
-        context,
-        'حذف العرض',
-        'هل أنت متأكد من حذف "${banner.title}"؟',
-      ),
-      onDismissed: (_) {
-        deleteBanner(banner.id);
-        onDataChanged();
+      confirmDismiss: (_) async {
+        final confirmed = await _showDeleteConfirmDialog(
+          context,
+          'حذف العرض',
+          'هل أنت متأكد من حذف "${banner.title}"؟',
+        );
+        if (confirmed != true) return false;
+        try {
+          await deleteBanner(banner.id);
+          onDataChanged();
+          return true;
+        } catch (error) {
+          if (context.mounted) _showMutationError(context, error);
+          return false;
+        }
       },
       child: Container(
         margin: EdgeInsets.only(bottom: 10.h),
@@ -1318,7 +1347,7 @@ class _BannersTab extends StatelessWidget {
                           value: null,
                           child: Text('بدون فئة'),
                         ),
-                        ...dummyCategories.map(
+                        ...storeCategories.map(
                           (cat) => DropdownMenuItem(
                             value: cat.id,
                             child: Text(cat.label),
@@ -1337,7 +1366,7 @@ class _BannersTab extends StatelessWidget {
                           value: null,
                           child: Text('بدون منتج'),
                         ),
-                        ...dummyProducts.map(
+                        ...storeProducts.map(
                           (p) => DropdownMenuItem(
                             value: p.id,
                             child: Text(
@@ -1367,34 +1396,38 @@ class _BannersTab extends StatelessWidget {
                 ),
                 _styledConfirmButton(
                   isEdit ? 'حفظ' : 'إضافة',
-                  onPressed: () {
+                  onPressed: () async {
                     if (titleC.text.trim().isEmpty) return;
-                    if (isEdit) {
-                      updateBanner(
-                        banner.id,
-                        titleC.text.trim(),
-                        subtitleC.text.trim(),
-                        discountC.text.trim(),
-                        imagePath ?? '',
-                        ctaC.text.trim(),
-                        routeC.text.trim(),
-                        productId: selectedProductId,
-                        categoryId: selectedCategoryId,
-                      );
-                    } else {
-                      addBanner(
-                        titleC.text.trim(),
-                        subtitleC.text.trim(),
-                        discountC.text.trim(),
-                        imagePath ?? '',
-                        ctaC.text.trim(),
-                        routeC.text.trim(),
-                        productId: selectedProductId,
-                        categoryId: selectedCategoryId,
-                      );
+                    try {
+                      if (isEdit) {
+                        await updateBanner(
+                          banner.id,
+                          titleC.text.trim(),
+                          subtitleC.text.trim(),
+                          discountC.text.trim(),
+                          imagePath ?? '',
+                          ctaC.text.trim(),
+                          routeC.text.trim(),
+                          productId: selectedProductId,
+                          categoryId: selectedCategoryId,
+                        );
+                      } else {
+                        await addBanner(
+                          titleC.text.trim(),
+                          subtitleC.text.trim(),
+                          discountC.text.trim(),
+                          imagePath ?? '',
+                          ctaC.text.trim(),
+                          routeC.text.trim(),
+                          productId: selectedProductId,
+                          categoryId: selectedCategoryId,
+                        );
+                      }
+                      onDataChanged();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      if (ctx.mounted) _showMutationError(ctx, error);
                     }
-                    Navigator.pop(ctx);
-                    onDataChanged();
                   },
                 ),
               ],
@@ -1416,15 +1449,15 @@ class _CouponsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: dummyCoupons.isEmpty
+      body: storeCoupons.isEmpty
           ? _buildEmpty(context)
           : RefreshIndicator(
               onRefresh: () async => onDataChanged(),
               child: ListView.builder(
                 padding: EdgeInsets.all(16.r),
-                itemCount: dummyCoupons.length,
+                itemCount: storeCoupons.length,
                 itemBuilder: (_, i) =>
-                    _buildCouponCard(context, dummyCoupons[i]),
+                    _buildCouponCard(context, storeCoupons[i]),
               ),
             ),
       floatingActionButton: FloatingActionButton(
@@ -1483,14 +1516,21 @@ class _CouponsTab extends StatelessWidget {
           size: 28.sp,
         ),
       ),
-      confirmDismiss: (_) => _showDeleteConfirmDialog(
-        context,
-        'حذف الكوبون',
-        'هل أنت متأكد من حذف "${coupon.code}"؟',
-      ),
-      onDismissed: (_) {
-        deleteCoupon(coupon.id);
-        onDataChanged();
+      confirmDismiss: (_) async {
+        final confirmed = await _showDeleteConfirmDialog(
+          context,
+          'حذف الكوبون',
+          'هل أنت متأكد من حذف "${coupon.code}"؟',
+        );
+        if (confirmed != true) return false;
+        try {
+          await deleteCoupon(coupon.id);
+          onDataChanged();
+          return true;
+        } catch (error) {
+          if (context.mounted) _showMutationError(context, error);
+          return false;
+        }
       },
       child: Container(
         margin: EdgeInsets.only(bottom: 10.h),
@@ -1607,12 +1647,12 @@ class _CouponsTab extends StatelessWidget {
                     SizedBox(width: 4.w),
                     Text(
                       coupon.categoryId != null
-                          ? (dummyCategories
+                          ? (storeCategories
                                     .where((c) => c.id == coupon.categoryId)
                                     .firstOrNull
                                     ?.label ??
                                 'فئة')
-                          : (dummyProducts
+                          : (storeProducts
                                     .where((p) => p.id == coupon.productId)
                                     .firstOrNull
                                     ?.name ??
@@ -1750,7 +1790,7 @@ class _CouponsTab extends StatelessWidget {
                           value: null,
                           child: Text('جميع الفئات'),
                         ),
-                        ...dummyCategories.map(
+                        ...storeCategories.map(
                           (cat) => DropdownMenuItem(
                             value: cat.id,
                             child: Text(cat.label),
@@ -1771,7 +1811,7 @@ class _CouponsTab extends StatelessWidget {
                           value: null,
                           child: Text('جميع المنتجات'),
                         ),
-                        ...dummyProducts.map(
+                        ...storeProducts.map(
                           (p) => DropdownMenuItem(
                             value: p.id,
                             child: Text(
@@ -1859,40 +1899,44 @@ class _CouponsTab extends StatelessWidget {
                 ),
                 _styledConfirmButton(
                   isEdit ? 'حفظ' : 'إضافة',
-                  onPressed: () {
+                  onPressed: () async {
                     if (codeC.text.trim().isEmpty ||
                         valueC.text.trim().isEmpty) {
                       return;
                     }
                     final value = double.tryParse(valueC.text.trim()) ?? 0;
                     final minVal = double.tryParse(minC.text.trim());
-                    if (isEdit) {
-                      updateCoupon(
-                        coupon.id,
-                        codeC.text.trim().toUpperCase(),
-                        descC.text.trim(),
-                        discountType,
-                        value,
-                        minPurchase: minVal,
-                        expiresAt: expiresAt,
-                        isActive: isActive,
-                        productId: selectedProductId,
-                        categoryId: selectedCategoryId,
-                      );
-                    } else {
-                      addCoupon(
-                        codeC.text.trim().toUpperCase(),
-                        descC.text.trim(),
-                        discountType,
-                        value,
-                        minPurchase: minVal,
-                        expiresAt: expiresAt,
-                        productId: selectedProductId,
-                        categoryId: selectedCategoryId,
-                      );
+                    try {
+                      if (isEdit) {
+                        await updateCoupon(
+                          coupon.id,
+                          codeC.text.trim().toUpperCase(),
+                          descC.text.trim(),
+                          discountType,
+                          value,
+                          minPurchase: minVal,
+                          expiresAt: expiresAt,
+                          isActive: isActive,
+                          productId: selectedProductId,
+                          categoryId: selectedCategoryId,
+                        );
+                      } else {
+                        await addCoupon(
+                          codeC.text.trim().toUpperCase(),
+                          descC.text.trim(),
+                          discountType,
+                          value,
+                          minPurchase: minVal,
+                          expiresAt: expiresAt,
+                          productId: selectedProductId,
+                          categoryId: selectedCategoryId,
+                        );
+                      }
+                      onDataChanged();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      if (ctx.mounted) _showMutationError(ctx, error);
                     }
-                    Navigator.pop(ctx);
-                    onDataChanged();
                   },
                 ),
               ],
@@ -2845,7 +2889,7 @@ void _showFormDialog({
   required String title,
   required IconData icon,
   required List<_DialogField> fields,
-  required VoidCallback onSave,
+  required Future<void> Function() onSave,
 }) {
   showDialog(
     context: context,
@@ -2893,15 +2937,25 @@ void _showFormDialog({
           _styledDialogButton('إلغاء', onPressed: () => Navigator.pop(ctx)),
           _styledConfirmButton(
             'حفظ',
-            onPressed: () {
-              Navigator.pop(ctx);
-              onSave();
+            onPressed: () async {
+              try {
+                await onSave();
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (error) {
+                if (ctx.mounted) _showMutationError(ctx, error);
+              }
             },
           ),
         ],
       ),
     ),
   );
+}
+
+void _showMutationError(BuildContext context, Object error) {
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text('تعذر حفظ التغيير: $error')));
 }
 
 InputDecoration _inputDecoration(String label) {

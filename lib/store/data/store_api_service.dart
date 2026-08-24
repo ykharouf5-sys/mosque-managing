@@ -104,6 +104,95 @@ class StoreApiService {
     _catalog = null;
   }
 
+  static Future<List<Map<String, dynamic>>> fetchCoupons() async {
+    final rows = <Map<String, dynamic>>[];
+    var page = 1;
+    var lastPage = 1;
+    do {
+      final response = await _api.get(
+        '/store/coupons',
+        query: {'page': '$page', 'per_page': '50'},
+      );
+      final payload = Map<String, dynamic>.from(response.data['data'] as Map);
+      rows.addAll(_maps(payload['data']));
+      lastPage = (payload['last_page'] as num?)?.toInt() ?? page;
+      page++;
+    } while (page <= lastPage);
+    return rows;
+  }
+
+  static Future<Map<String, dynamic>> insertCoupon(
+    Map<String, dynamic> coupon,
+  ) async {
+    final response = await _api.post(
+      '/store/coupons',
+      body: _couponPayload(coupon, includeId: true),
+    );
+    return Map<String, dynamic>.from(response.data['data'] as Map);
+  }
+
+  static Future<Map<String, dynamic>> updateCoupon(
+    String id,
+    Map<String, dynamic> coupon,
+  ) async {
+    final response = await _api.put(
+      '/store/coupons/$id',
+      body: _couponPayload(coupon, includeId: false),
+    );
+    return Map<String, dynamic>.from(response.data['data'] as Map);
+  }
+
+  static Future<void> deleteCoupon(String id) async {
+    await _api.delete('/store/coupons/$id');
+  }
+
+  static Future<Map<String, dynamic>> validateCoupon(
+    String code,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final response = await _api.post(
+      '/store/coupons/validate',
+      body: {'code': code, 'items': items},
+    );
+    return Map<String, dynamic>.from(response.data['data'] as Map);
+  }
+
+  static Future<Set<String>> fetchFavorites() async {
+    final response = await _api.get('/store/favorites');
+    return (response.data['data'] as List).map((id) => id.toString()).toSet();
+  }
+
+  static Future<void> addFavorite(String productId) async {
+    await _api.put('/store/favorites/$productId');
+  }
+
+  static Future<void> removeFavorite(String productId) async {
+    await _api.delete('/store/favorites/$productId');
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchReviews(
+    String productId,
+  ) async {
+    final response = await _api.get(
+      '/store/products/$productId/reviews',
+      query: const {'page': '1', 'per_page': '50'},
+    );
+    return _maps(response.data['data']);
+  }
+
+  static Future<Map<String, dynamic>> submitReview(
+    String productId, {
+    required String id,
+    required int rating,
+    required String comment,
+  }) async {
+    final response = await _api.post(
+      '/store/products/$productId/reviews',
+      body: {'id': id, 'rating': rating, 'comment': comment},
+    );
+    return Map<String, dynamic>.from(response.data['data'] as Map);
+  }
+
   static Future<List<Map<String, dynamic>>> fetchOrdersSince(
     String since,
   ) async {
@@ -157,6 +246,7 @@ class StoreApiService {
       return r.data['data']['result']?.toString() ?? 'error';
     } on ApiException catch (e) {
       if (e.statusCode == 409) return 'insufficient_stock';
+      if (e.statusCode == 422) return 'invalid_order';
       return 'error';
     }
   }
@@ -175,17 +265,18 @@ class StoreApiService {
   static Map<String, dynamic> rowToProductMap(Map<String, dynamic> r) => {
     'id': r['id'],
     'name': r['name'],
-    'brand': '',
+    'brand': r['brand'] ?? '',
     'description': r['description'] ?? '',
     'imageUrl': r['image_url'] ?? '',
     'categoryId': r['category_id'] ?? '',
     'categoryName': '',
     'price': _toDouble(r['price']),
-    'rating': 0.0,
-    'reviewsCount': 0,
+    'rating': _toDouble(r['reviews_avg_rating']),
+    'reviewsCount': _toInt(r['reviews_count']),
     'stock': _toInt(r['stock']),
     'createdAt': r['created_at'] ?? DateTime.now().toIso8601String(),
-    'deliveryPrice': 0.0,
+    'academicYear': r['academic_year'],
+    'deliveryPrice': _toDouble(r['delivery_price']),
     'is_available': r['is_available'] == true || r['is_available'] == 1,
   };
   static Map<String, dynamic> rowToBannerMap(Map<String, dynamic> r) => {
@@ -240,8 +331,14 @@ class StoreApiService {
     'id': p['id'] ?? const Uuid().v4(),
     'category_id': p['categoryId'] ?? p['category_id'],
     'name': p['name'],
+    'brand': p['brand'] ?? '',
     'description': p['description'] ?? '',
+    'academic_year': p['academicYear'] ?? p['academic_year'],
     'price': (p['price'] as num?)?.toDouble() ?? 0,
+    'delivery_price':
+        (p['deliveryPrice'] as num?)?.toDouble() ??
+        (p['delivery_price'] as num?)?.toDouble() ??
+        0,
     'stock': (p['stock'] as num?)?.toInt() ?? 0,
     'image_url': p['imageUrl'] ?? p['image_url'] ?? '',
   };
@@ -255,6 +352,21 @@ class StoreApiService {
     'action_route': b['actionRoute'] ?? b['action_route'] ?? '',
     'product_id': b['productId'] ?? b['product_id'],
     'category_id': b['categoryId'] ?? b['category_id'],
+  };
+  static Map<String, dynamic> _couponPayload(
+    Map<String, dynamic> coupon, {
+    required bool includeId,
+  }) => {
+    if (includeId) 'id': coupon['id'] ?? const Uuid().v4(),
+    'code': coupon['code'],
+    'description': coupon['description'] ?? '',
+    'discount_type': coupon['discountType'] ?? coupon['discount_type'],
+    'discount_value': coupon['discountValue'] ?? coupon['discount_value'],
+    'min_purchase': coupon['minPurchase'] ?? coupon['min_purchase'],
+    'expires_at': coupon['expiresAt'] ?? coupon['expires_at'],
+    'is_active': coupon['isActive'] ?? coupon['is_active'] ?? true,
+    'category_id': coupon['categoryId'] ?? coupon['category_id'],
+    'product_id': coupon['productId'] ?? coupon['product_id'],
   };
   static List<Map<String, dynamic>> _maps(dynamic value) {
     final dynamic rows = value is Map ? value['data'] : value;

@@ -36,6 +36,7 @@ class Subject {
   final int totalLectures;
   final List<SubjectLecture> lectures;
   final String? pdfUrl;
+  final int version;
 
   Subject({
     required this.id,
@@ -47,18 +48,30 @@ class Subject {
     this.totalLectures = 20,
     this.lectures = const [],
     this.pdfUrl,
+    this.version = 1,
   });
 
-  Subject copyWith({String? pdfUrl}) => Subject(
+  Subject copyWith({
+    String? name,
+    String? code,
+    String? academicYear,
+    String? doctorName,
+    String? color,
+    int? totalLectures,
+    List<SubjectLecture>? lectures,
+    String? pdfUrl,
+    int? version,
+  }) => Subject(
     id: id,
-    name: name,
-    code: code,
-    academicYear: academicYear,
-    doctorName: doctorName,
-    color: color,
-    totalLectures: totalLectures,
-    lectures: lectures,
+    name: name ?? this.name,
+    code: code ?? this.code,
+    academicYear: academicYear ?? this.academicYear,
+    doctorName: doctorName ?? this.doctorName,
+    color: color ?? this.color,
+    totalLectures: totalLectures ?? this.totalLectures,
+    lectures: lectures ?? this.lectures,
     pdfUrl: pdfUrl ?? this.pdfUrl,
+    version: version ?? this.version,
   );
 
   Map<String, dynamic> toJson() => {
@@ -71,6 +84,7 @@ class Subject {
     'totalLectures': totalLectures,
     'lectures': lectures.map((l) => l.toJson()).toList(),
     if (pdfUrl != null) 'pdfUrl': pdfUrl,
+    'version': version,
   };
 
   factory Subject.fromJson(Map<String, dynamic> json) {
@@ -78,7 +92,7 @@ class Subject {
     final lectures = rawLectures
         .map((e) => SubjectLecture.fromJson(e as Map<String, dynamic>))
         .toList();
-    final total = json['totalLectures'] as int? ?? 20;
+    final total = (json['totalLectures'] as num?)?.toInt() ?? 20;
     return Subject(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -89,6 +103,7 @@ class Subject {
       totalLectures: total,
       lectures: lectures,
       pdfUrl: json['pdfUrl'] as String?,
+      version: (json['version'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -99,14 +114,17 @@ class Subject {
 }
 
 class StudentSubject {
+  final String enrollmentId;
   final String subjectId, name, code, academicYear, doctorName, color;
   final List<String> scheduleDays, scheduleTimes;
   final String hall, nextLecture;
   final int totalLectures, grade;
   final List<int> viewedLectures;
   final bool isCustom;
+  final int version;
 
   StudentSubject({
+    String? enrollmentId,
     required this.subjectId,
     required this.name,
     required this.code,
@@ -121,7 +139,8 @@ class StudentSubject {
     this.grade = 0,
     this.viewedLectures = const [],
     this.isCustom = false,
-  });
+    this.version = 1,
+  }) : enrollmentId = enrollmentId ?? subjectId;
 
   int get attendedLectures => viewedLectures.length;
   double get progress =>
@@ -129,6 +148,7 @@ class StudentSubject {
 
   Map<String, dynamic> toJson() => {
     'subjectId': subjectId,
+    'enrollmentId': enrollmentId,
     'name': name,
     'code': code,
     'academicYear': academicYear,
@@ -143,11 +163,14 @@ class StudentSubject {
     'grade': grade,
     'viewedLectures': viewedLectures,
     'isCustom': isCustom,
+    'version': version,
   };
 
   factory StudentSubject.fromJson(Map<String, dynamic> json) {
     final viewed = (json['viewedLectures'] as List?)?.cast<int>() ?? [];
     return StudentSubject(
+      enrollmentId:
+          (json['enrollmentId'] as String?) ?? (json['subjectId'] as String),
       subjectId: json['subjectId'] as String,
       name: json['name'] as String,
       code: json['code'] as String,
@@ -158,10 +181,11 @@ class StudentSubject {
       scheduleTimes: (json['scheduleTimes'] as List?)?.cast<String>() ?? [],
       hall: (json['hall'] as String?) ?? '',
       nextLecture: (json['nextLecture'] as String?) ?? '',
-      totalLectures: (json['totalLectures'] as int?) ?? 20,
-      grade: (json['grade'] as int?) ?? 0,
+      totalLectures: (json['totalLectures'] as num?)?.toInt() ?? 20,
+      grade: (json['grade'] as num?)?.round() ?? 0,
       viewedLectures: viewed,
       isCustom: (json['isCustom'] as bool?) ?? false,
+      version: (json['version'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -173,7 +197,9 @@ class StudentSubject {
     String? hall,
     String? nextLecture,
     List<int>? viewedLectures,
+    int? version,
   }) => StudentSubject(
+    enrollmentId: enrollmentId,
     subjectId: subjectId,
     name: name,
     code: code,
@@ -188,72 +214,8 @@ class StudentSubject {
     grade: grade ?? this.grade,
     viewedLectures: viewedLectures ?? this.viewedLectures,
     isCustom: isCustom,
+    version: version ?? this.version,
   );
-}
-
-List<Subject> dummySubjects = [];
-List<StudentSubject> dummyEnrollments = [];
-void Function()? onSubjectsChanged;
-
-int _nextSubjectId = 50;
-
-String _genSubjectId() => 's${_nextSubjectId++}';
-
-void addSubject(
-  String name,
-  String code,
-  String academicYear, {
-  String doctorName = '',
-  String color = '#2196F3',
-  int totalLectures = 20,
-  String? pdfUrl,
-}) {
-  dummySubjects.add(
-    Subject(
-      id: _genSubjectId(),
-      name: name,
-      code: code,
-      academicYear: academicYear,
-      doctorName: doctorName,
-      color: color,
-      totalLectures: totalLectures,
-      lectures: Subject.generateLectures(totalLectures),
-      pdfUrl: pdfUrl,
-    ),
-  );
-  onSubjectsChanged?.call();
-}
-
-void updateSubject(
-  String id,
-  String name,
-  String code,
-  String academicYear, {
-  String doctorName = '',
-  String color = '#2196F3',
-  int totalLectures = 20,
-  String? pdfUrl,
-}) {
-  final idx = dummySubjects.indexWhere((s) => s.id == id);
-  if (idx >= 0) {
-    dummySubjects[idx] = Subject(
-      id: id,
-      name: name,
-      code: code,
-      academicYear: academicYear,
-      doctorName: doctorName,
-      color: color,
-      totalLectures: totalLectures,
-      lectures: Subject.generateLectures(totalLectures),
-      pdfUrl: pdfUrl ?? dummySubjects[idx].pdfUrl,
-    );
-    onSubjectsChanged?.call();
-  }
-}
-
-void deleteSubject(String id) {
-  dummySubjects.removeWhere((s) => s.id == id);
-  onSubjectsChanged?.call();
 }
 
 Color parseColor(String hex) {

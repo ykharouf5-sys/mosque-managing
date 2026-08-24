@@ -1,9 +1,11 @@
 import 'package:studentry/shared/cache/cache_manager.dart';
+import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/data/api_request_queue.dart';
 import 'package:studentry/store/data/pending_order_service.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/data/store_polling_service.dart';
 import 'package:studentry/store/data/store_api_service.dart';
-import 'package:flutter/foundation.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -147,16 +149,20 @@ class CatalogNotifier extends Notifier<CatalogState> {
         return Product(
           id: m['id'] as String,
           name: m['name'] as String,
-          brand: '',
+          brand: m['brand'] as String? ?? '',
           description: m['description'] as String? ?? '',
           imageUrl: m['imageUrl'] as String? ?? '',
           categoryId: m['categoryId'] as String? ?? '',
           categoryName: categoryNames[m['categoryId']] ?? '',
           price: (m['price'] as num?)?.toDouble() ?? 0,
+          rating: (m['rating'] as num?)?.toDouble() ?? 0,
+          reviewsCount: (m['reviewsCount'] as num?)?.toInt() ?? 0,
           stock: (m['stock'] as num?)?.toInt() ?? 0,
           createdAt:
               DateTime.tryParse(m['createdAt'] as String? ?? '') ??
               DateTime.now(),
+          academicYear: m['academicYear'] as String?,
+          deliveryPrice: (m['deliveryPrice'] as num?)?.toDouble() ?? 0,
         );
       }).toList();
       _products
@@ -182,37 +188,46 @@ class CatalogNotifier extends Notifier<CatalogState> {
     if (state.isLoadingProducts || !state.hasMoreProducts) return;
     state = state.copyWith(isLoadingProducts: true);
     _currentProductPage++;
-    final rows = await StoreApiService.fetchProductsPage(
-      _currentProductPage,
-      productPageSize,
-    );
-    final parsed = rows.map((row) {
-      final m = StoreApiService.rowToProductMap(row);
-      return Product(
-        id: m['id'] as String,
-        name: m['name'] as String,
-        brand: '',
-        description: m['description'] as String? ?? '',
-        imageUrl: m['imageUrl'] as String? ?? '',
-        categoryId: m['categoryId'] as String? ?? '',
-        categoryName: m['categoryName'] as String? ?? '',
-        price: (m['price'] as num?)?.toDouble() ?? 0,
-        stock: (m['stock'] as num?)?.toInt() ?? 0,
-        createdAt:
-            DateTime.tryParse(m['createdAt'] as String? ?? '') ??
-            DateTime.now(),
+    try {
+      final rows = await StoreApiService.fetchProductsPage(
+        _currentProductPage,
+        productPageSize,
       );
-    }).toList();
-    _products.addAll(parsed);
-    _recalcProductCounts();
-    _cacheProducts();
-    final hasMore = rows.length >= productPageSize;
-    state = state.copyWith(
-      categories: [..._categories],
-      products: [..._products],
-      isLoadingProducts: false,
-      hasMoreProducts: hasMore,
-    );
+      final parsed = rows.map((row) {
+        final m = StoreApiService.rowToProductMap(row);
+        return Product(
+          id: m['id'] as String,
+          name: m['name'] as String,
+          brand: m['brand'] as String? ?? '',
+          description: m['description'] as String? ?? '',
+          imageUrl: m['imageUrl'] as String? ?? '',
+          categoryId: m['categoryId'] as String? ?? '',
+          categoryName: m['categoryName'] as String? ?? '',
+          price: (m['price'] as num?)?.toDouble() ?? 0,
+          rating: (m['rating'] as num?)?.toDouble() ?? 0,
+          reviewsCount: (m['reviewsCount'] as num?)?.toInt() ?? 0,
+          stock: (m['stock'] as num?)?.toInt() ?? 0,
+          createdAt:
+              DateTime.tryParse(m['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+          academicYear: m['academicYear'] as String?,
+          deliveryPrice: (m['deliveryPrice'] as num?)?.toDouble() ?? 0,
+        );
+      }).toList();
+      _products.addAll(parsed);
+      _recalcProductCounts();
+      _cacheProducts();
+      final hasMore = rows.length >= productPageSize;
+      state = state.copyWith(
+        categories: [..._categories],
+        products: [..._products],
+        isLoadingProducts: false,
+        hasMoreProducts: hasMore,
+      );
+    } catch (_) {
+      _currentProductPage--;
+      state = state.copyWith(isLoadingProducts: false);
+    }
   }
 
   void _cacheProducts() {
@@ -228,36 +243,36 @@ class CatalogNotifier extends Notifier<CatalogState> {
 
   // ── Category CRUD ──
 
-  void addCategory(String name, String iconUrl) {
+  Future<void> addCategory(String name, String iconUrl) async {
     final id = const Uuid().v4();
-    _categories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
-    _rebuildState();
-    StoreApiService.insertCategory({
+    await StoreApiService.insertCategory({
       'id': id,
       'name': name,
       'iconUrl': iconUrl,
     });
+    _categories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
+    _rebuildState();
   }
 
-  void deleteCategory(String id) {
+  Future<void> deleteCategory(String id) async {
+    await StoreApiService.deleteCategory(id);
     _categories.removeWhere((c) => c.id == id);
     _products.removeWhere((p) => p.categoryId == id);
     _rebuildState();
-    StoreApiService.deleteCategory(id);
   }
 
-  void updateCategory(String id, String name, String iconUrl) {
+  Future<void> updateCategory(String id, String name, String iconUrl) async {
     final idx = _categories.indexWhere((c) => c.id == id);
     if (idx >= 0) {
+      await StoreApiService.updateCategory(id, name, iconUrl);
       _categories[idx] = ProductCategory(id: id, label: name, iconUrl: iconUrl);
       _rebuildState();
-      StoreApiService.updateCategory(id, name, iconUrl);
     }
   }
 
   // ── Product CRUD ──
 
-  void addProduct(
+  Future<void> addProduct(
     String name,
     String description,
     double price,
@@ -267,8 +282,19 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String brand = '',
     int stock = 0,
     String? academicYear,
-  }) {
+  }) async {
     final id = const Uuid().v4();
+    await StoreApiService.insertProduct({
+      'id': id,
+      'name': name,
+      'brand': brand,
+      'description': description,
+      'imageUrl': imageUrl,
+      'categoryId': categoryId,
+      'price': price,
+      'stock': stock,
+      'academicYear': academicYear,
+    });
     _products.add(
       Product(
         id: id,
@@ -286,25 +312,16 @@ class CatalogNotifier extends Notifier<CatalogState> {
     );
     _rebuildState();
     CacheManager.instance.invalidate(CacheTags.products);
-    StoreApiService.insertProduct({
-      'id': id,
-      'name': name,
-      'description': description,
-      'imageUrl': imageUrl,
-      'categoryId': categoryId,
-      'price': price,
-      'stock': stock,
-    });
   }
 
-  void deleteProduct(String id) {
+  Future<void> deleteProduct(String id) async {
+    await StoreApiService.deleteProduct(id);
     _products.removeWhere((p) => p.id == id);
     _rebuildState();
     CacheManager.instance.invalidate(CacheTags.products);
-    StoreApiService.deleteProduct(id);
   }
 
-  void updateProduct(
+  Future<void> updateProduct(
     String id,
     String name,
     String description,
@@ -315,9 +332,19 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String brand = '',
     int stock = 0,
     String? academicYear,
-  }) {
+  }) async {
     final idx = _products.indexWhere((p) => p.id == id);
     if (idx >= 0) {
+      await StoreApiService.updateProduct(id, {
+        'name': name,
+        'brand': brand,
+        'description': description,
+        'imageUrl': imageUrl,
+        'categoryId': categoryId,
+        'price': price,
+        'stock': stock,
+        'academicYear': academicYear,
+      });
       _products[idx] = Product(
         id: id,
         name: name,
@@ -333,20 +360,12 @@ class CatalogNotifier extends Notifier<CatalogState> {
       );
       _rebuildState();
       CacheManager.instance.invalidate(CacheTags.products);
-      StoreApiService.updateProduct(id, {
-        'name': name,
-        'description': description,
-        'imageUrl': imageUrl,
-        'categoryId': categoryId,
-        'price': price,
-        'stock': stock,
-      });
     }
   }
 
   // ── Banner CRUD ──
 
-  void addBanner(
+  Future<void> addBanner(
     String title,
     String subtitle,
     String discountText,
@@ -355,8 +374,19 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String actionRoute, {
     String? productId,
     String? categoryId,
-  }) {
+  }) async {
     final id = const Uuid().v4();
+    await StoreApiService.insertBanner({
+      'id': id,
+      'title': title,
+      'subtitle': subtitle,
+      'discountText': discountText,
+      'imageUrl': imageUrl,
+      'ctaText': ctaText,
+      'actionRoute': actionRoute,
+      'productId': productId,
+      'categoryId': categoryId,
+    });
     _banners.add(
       PromoBanner(
         id: id,
@@ -371,26 +401,15 @@ class CatalogNotifier extends Notifier<CatalogState> {
       ),
     );
     _rebuildState();
-    StoreApiService.insertBanner({
-      'id': id,
-      'title': title,
-      'subtitle': subtitle,
-      'discountText': discountText,
-      'imageUrl': imageUrl,
-      'ctaText': ctaText,
-      'actionRoute': actionRoute,
-      'productId': productId,
-      'categoryId': categoryId,
-    });
   }
 
-  void deleteBanner(String id) {
+  Future<void> deleteBanner(String id) async {
+    await StoreApiService.deleteBanner(id);
     _banners.removeWhere((b) => b.id == id);
     _rebuildState();
-    StoreApiService.deleteBanner(id);
   }
 
-  void updateBanner(
+  Future<void> updateBanner(
     String id,
     String title,
     String subtitle,
@@ -400,9 +419,19 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String actionRoute, {
     String? productId,
     String? categoryId,
-  }) {
+  }) async {
     final idx = _banners.indexWhere((b) => b.id == id);
     if (idx >= 0) {
+      await StoreApiService.updateBanner(id, {
+        'title': title,
+        'subtitle': subtitle,
+        'discountText': discountText,
+        'imageUrl': imageUrl,
+        'ctaText': ctaText,
+        'actionRoute': actionRoute,
+        'productId': productId,
+        'categoryId': categoryId,
+      });
       _banners[idx] = PromoBanner(
         id: id,
         title: title,
@@ -415,22 +444,12 @@ class CatalogNotifier extends Notifier<CatalogState> {
         categoryId: categoryId,
       );
       _rebuildState();
-      StoreApiService.updateBanner(id, {
-        'title': title,
-        'subtitle': subtitle,
-        'discountText': discountText,
-        'imageUrl': imageUrl,
-        'ctaText': ctaText,
-        'actionRoute': actionRoute,
-        'productId': productId,
-        'categoryId': categoryId,
-      });
     }
   }
 
   // ── Coupon CRUD ──
 
-  void addCoupon(
+  Future<void> addCoupon(
     String code,
     String description,
     String discountType,
@@ -440,30 +459,30 @@ class CatalogNotifier extends Notifier<CatalogState> {
     bool isActive = true,
     String? categoryId,
     String? productId,
-  }) {
-    _coupons.add(
-      Coupon(
-        id: const Uuid().v4(),
-        code: code,
-        description: description,
-        discountValue: discountValue,
-        discountType: discountType,
-        minPurchase: minPurchase,
-        expiresAt: expiresAt,
-        isActive: isActive,
-        categoryId: categoryId,
-        productId: productId,
-      ),
-    );
+  }) async {
+    final row = await StoreApiService.insertCoupon({
+      'id': const Uuid().v4(),
+      'code': code,
+      'description': description,
+      'discountValue': discountValue,
+      'discountType': discountType,
+      'minPurchase': minPurchase,
+      'expiresAt': expiresAt?.toUtc().toIso8601String(),
+      'isActive': isActive,
+      'categoryId': categoryId,
+      'productId': productId,
+    });
+    _coupons.add(Coupon.fromJson(row));
     _rebuildState();
   }
 
-  void deleteCoupon(String id) {
+  Future<void> deleteCoupon(String id) async {
+    await StoreApiService.deleteCoupon(id);
     _coupons.removeWhere((c) => c.id == id);
     _rebuildState();
   }
 
-  void updateCoupon(
+  Future<void> updateCoupon(
     String id,
     String code,
     String description,
@@ -474,21 +493,21 @@ class CatalogNotifier extends Notifier<CatalogState> {
     bool isActive = true,
     String? categoryId,
     String? productId,
-  }) {
+  }) async {
     final idx = _coupons.indexWhere((c) => c.id == id);
     if (idx >= 0) {
-      _coupons[idx] = Coupon(
-        id: id,
-        code: code,
-        description: description,
-        discountValue: discountValue,
-        discountType: discountType,
-        minPurchase: minPurchase,
-        expiresAt: expiresAt,
-        isActive: isActive,
-        categoryId: categoryId,
-        productId: productId,
-      );
+      final row = await StoreApiService.updateCoupon(id, {
+        'code': code,
+        'description': description,
+        'discountValue': discountValue,
+        'discountType': discountType,
+        'minPurchase': minPurchase,
+        'expiresAt': expiresAt?.toUtc().toIso8601String(),
+        'isActive': isActive,
+        'categoryId': categoryId,
+        'productId': productId,
+      });
+      _coupons[idx] = Coupon.fromJson(row);
       _rebuildState();
     }
   }
@@ -628,26 +647,39 @@ class CartNotifier extends Notifier<CartState> {
     if (result == 'insufficient_stock') {
       throw Exception('المخزون غير كافٍ لبعض المنتجات');
     }
+    if (result == 'invalid_order') {
+      throw Exception(
+        'تعذر اعتماد الطلب أو كود الخصم. حدّث السلة وحاول مجدداً.',
+      );
+    }
 
     return order;
   }
 
   Future<String?> applyCoupon(String code) async {
-    final availableCoupons = ref.read(catalogProvider).coupons;
-    final coupon = availableCoupons
-        .where((c) => c.code == code && c.isActive)
-        .firstOrNull;
-    if (coupon == null) return 'كود الخصم غير صالح';
-    if (coupon.expiresAt != null &&
-        coupon.expiresAt!.isBefore(DateTime.now())) {
-      return 'انتهت صلاحية كود الخصم';
+    try {
+      final payload = await StoreApiService.validateCoupon(
+        code,
+        _items
+            .map(
+              (item) => {
+                'product_id': item.product.id,
+                'quantity': item.quantity,
+              },
+            )
+            .toList(),
+      );
+      final coupon = Coupon.fromJson(
+        Map<String, dynamic>.from(payload['coupon'] as Map),
+      );
+      _appliedCoupon = coupon;
+      state = CartState(items: [..._items], appliedCoupon: coupon);
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    } catch (error) {
+      return error.toString();
     }
-    if (coupon.minPurchase != null && state.total < coupon.minPurchase!) {
-      return 'الحد الأدنى للشراء هو \$${coupon.minPurchase!.toStringAsFixed(0)}';
-    }
-    _appliedCoupon = coupon;
-    state = CartState(items: [..._items], appliedCoupon: coupon);
-    return null;
   }
 
   void removeCoupon() {
@@ -674,12 +706,31 @@ class FavoritesNotifier extends Notifier<FavoritesState> {
   final Set<String> _productIds = {};
 
   @override
-  FavoritesState build() => FavoritesState(productIds: Set.from(_productIds));
+  FavoritesState build() {
+    Future.microtask(load);
+    return FavoritesState(productIds: Set.from(_productIds));
+  }
 
-  void toggle(String productId) {
+  Future<void> load() async {
+    final generation = AuthService().sessionGeneration;
+    try {
+      final ids = await StoreApiService.fetchFavorites();
+      if (generation != AuthService().sessionGeneration) return;
+      _productIds
+        ..clear()
+        ..addAll(ids);
+      state = FavoritesState(productIds: Set.from(_productIds));
+    } on StaleSessionException {
+      return;
+    }
+  }
+
+  Future<void> toggle(String productId) async {
     if (_productIds.contains(productId)) {
+      await StoreApiService.removeFavorite(productId);
       _productIds.remove(productId);
     } else {
+      await StoreApiService.addFavorite(productId);
       _productIds.add(productId);
     }
     state = FavoritesState(productIds: Set.from(_productIds));
@@ -701,44 +752,46 @@ class ReviewsState {
 
 class ReviewsNotifier extends Notifier<ReviewsState> {
   final Map<String, List<Review>> _productReviews = {};
-  final Map<String, List<VoidCallback>> _reviewListeners = {};
 
   @override
   ReviewsState build() =>
       ReviewsState(productReviews: Map.from(_productReviews));
 
-  void addReview(String productId, double rating, String comment) {
+  Future<void> addReview(
+    String productId,
+    double rating,
+    String comment,
+  ) async {
     final id = const Uuid().v4();
-    final review = Review(
+    final row = await StoreApiService.submitReview(
+      productId,
       id: id,
-      productId: productId,
-      userId: '',
-      userName: 'مستخدم',
-      rating: rating,
+      rating: rating.round(),
       comment: comment,
-      createdAt: DateTime.now(),
     );
+    final review = Review.fromJson(row);
     _productReviews[productId] = [
       review,
-      ...(_productReviews[productId] ?? []),
+      ...(_productReviews[productId] ?? []).where(
+        (item) => item.userId != review.userId,
+      ),
     ];
-    _notifyReviewListeners(productId);
     state = ReviewsState(productReviews: Map.from(_productReviews));
   }
 
-  void listenToReviews(String productId) {
-    _reviewListeners.putIfAbsent(productId, () => []);
-  }
-
-  void cancelReviewsListener() {
-    _reviewListeners.clear();
-  }
-
-  void _notifyReviewListeners(String productId) {
-    for (final cb in _reviewListeners[productId] ?? []) {
-      cb();
+  Future<void> listenToReviews(String productId) async {
+    final generation = AuthService().sessionGeneration;
+    try {
+      final rows = await StoreApiService.fetchReviews(productId);
+      if (generation != AuthService().sessionGeneration) return;
+      _productReviews[productId] = rows.map(Review.fromJson).toList();
+      state = ReviewsState(productReviews: Map.from(_productReviews));
+    } on StaleSessionException {
+      return;
     }
   }
+
+  void cancelReviewsListener() {}
 }
 
 final reviewsProvider = NotifierProvider<ReviewsNotifier, ReviewsState>(

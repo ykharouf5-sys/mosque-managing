@@ -74,7 +74,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.textDark),
-              onPressed: () => setState(() {}),
+              onPressed: _loadUploads,
             ),
           ],
         ),

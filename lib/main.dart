@@ -4,6 +4,7 @@ import 'package:studentry/management/presentation/settings_screen.dart';
 import 'package:studentry/management/presentation/warehouse_dashboard_screen.dart';
 import 'package:studentry/student/presentation/student_admin_dashboard.dart';
 import 'package:studentry/student/presentation/student_profile_screen.dart';
+import 'package:studentry/student/data/academic_store.dart';
 import 'package:studentry/student/presentation/schedule_screen.dart';
 import 'package:studentry/student/presentation/lessons_screen.dart';
 import 'package:studentry/student/presentation/university_screen.dart';
@@ -298,6 +299,7 @@ class _MyAppState extends ConsumerState<MyApp> {
         currentUserId = null;
         currentUserRole = null;
       }
+      await AcademicStore.instance.rebindToCurrentSession();
       await StorePollingService.rebindToCurrentSession();
     });
   }

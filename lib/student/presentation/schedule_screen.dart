@@ -1,6 +1,7 @@
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/student/data/subject_models.dart';
+import 'package:studentry/student/data/academic_store.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,20 +23,30 @@ class ScheduleScreen extends ConsumerStatefulWidget {
 }
 
 class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
+  final AcademicStore _academic = AcademicStore.instance;
   String _selectedDay = _days[0];
   final String _academicYear = 'الأولى';
   @override
   void initState() {
     super.initState();
     _loadAcademicYear();
-    onSubjectsChanged = () {
-      if (mounted) setState(() {});
-    };
+    _academic.addListener(_onAcademicChanged);
+    _academic.load();
+  }
+
+  @override
+  void dispose() {
+    _academic.removeListener(_onAcademicChanged);
+    super.dispose();
+  }
+
+  void _onAcademicChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadAcademicYear() async {}
 
-  List<StudentSubject> get _dayEnrollments => dummyEnrollments
+  List<StudentSubject> get _dayEnrollments => _academic.enrollments
       .where((e) => e.scheduleDays.contains(_selectedDay))
       .toList();
 
@@ -177,7 +188,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   }
 
   Widget _buildScheduleList() {
-    if (dummyEnrollments.isEmpty) {
+    if (_academic.enrollments.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -253,8 +264,18 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         ),
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
       ),
-      confirmDismiss: (_) => _confirmRemove(context, enrollment.name),
-      onDismissed: (_) {},
+      confirmDismiss: (_) async {
+        if (await _confirmRemove(context, enrollment.name) != true) {
+          return false;
+        }
+        try {
+          await _academic.removeEnrollment(enrollment);
+          return true;
+        } catch (error) {
+          _showAcademicError(error);
+          return false;
+        }
+      },
       child: Container(
         margin: EdgeInsets.only(bottom: 12.h),
         padding: EdgeInsets.all(16.r),
@@ -355,10 +376,10 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   }
 
   void _showAvailableSubjects(BuildContext context) {
-    final subjects = dummySubjects
+    final subjects = _academic.subjects
         .where((s) => s.academicYear == _academicYear)
         .toList();
-    final enrolledIds = dummyEnrollments.map((e) => e.subjectId).toSet();
+    final enrolledIds = _academic.enrollments.map((e) => e.subjectId).toSet();
     final available = subjects
         .where((s) => !enrolledIds.contains(s.id))
         .toList();
@@ -474,9 +495,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                                     scheduleTimes: ['09:00 - 11:00'],
                                     hall: '',
                                   );
-                                  dummyEnrollments.add(enrollment);
-                                  onSubjectsChanged?.call();
-                                  Navigator.pop(ctx);
+                                  try {
+                                    await _academic.addEnrollment(enrollment);
+                                    if (ctx.mounted) Navigator.pop(ctx);
+                                  } catch (error) {
+                                    _showAcademicError(error);
+                                  }
                                 },
                                 child: const Text('تسجيل'),
                               ),
@@ -595,14 +619,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                           : enrollment.scheduleTimes,
                       hall: hallC.text.trim(),
                     );
-                    final index = dummyEnrollments.indexWhere(
-                      (item) => item.subjectId == enrollment.subjectId,
-                    );
-                    if (index >= 0) {
-                      dummyEnrollments[index] = updated;
-                      onSubjectsChanged?.call();
+                    try {
+                      await _academic.updateEnrollment(updated);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      _showAcademicError(error);
                     }
-                    Navigator.pop(ctx);
                   },
                   child: const Text('حفظ'),
                 ),
@@ -752,9 +774,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                       hall: hallC.text.trim(),
                       isCustom: true,
                     );
-                    dummyEnrollments.add(enrollment);
-                    onSubjectsChanged?.call();
-                    Navigator.pop(ctx);
+                    try {
+                      await _academic.addEnrollment(enrollment);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      _showAcademicError(error);
+                    }
                   },
                   child: const Text('إضافة'),
                 ),
@@ -797,5 +822,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         ),
       ),
     );
+  }
+
+  void _showAcademicError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('تعذر حفظ التغيير: $error')));
   }
 }

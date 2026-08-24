@@ -141,8 +141,19 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
           top: 14.h,
           left: 14.w,
           child: GestureDetector(
-            onTap: () =>
-                ref.read(favoritesProvider.notifier).toggle(widget.product.id),
+            onTap: () async {
+              try {
+                await ref
+                    .read(favoritesProvider.notifier)
+                    .toggle(widget.product.id);
+              } catch (error) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('تعذر تحديث المفضلة: $error')),
+                  );
+                }
+              }
+            },
             child: Container(
               width: 44.w,
               height: 44.h,
@@ -608,16 +619,24 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                onPressed: () {
-                  ref
-                      .read(reviewsProvider.notifier)
-                      .addReview(
-                        widget.product.id,
-                        rating,
-                        commentC.text.trim(),
+                onPressed: () async {
+                  if (commentC.text.trim().isEmpty) return;
+                  try {
+                    await ref
+                        .read(reviewsProvider.notifier)
+                        .addReview(
+                          widget.product.id,
+                          rating,
+                          commentC.text.trim(),
+                        );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (error) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text('تعذر حفظ التقييم: $error')),
                       );
-                  setState(() {});
-                  Navigator.pop(ctx);
+                    }
+                  }
                 },
                 child: const Text('إرسال'),
               ),

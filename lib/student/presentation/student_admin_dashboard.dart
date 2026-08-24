@@ -1,4 +1,6 @@
 import 'package:studentry/student/data/subject_models.dart';
+import 'package:studentry/student/data/academic_store.dart';
+import 'package:studentry/student/data/academic_document_service.dart';
 import 'package:studentry/student/presentation/admin_grades_screen.dart';
 import 'package:studentry/student/presentation/result_upload_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -19,6 +21,7 @@ class StudentAdminDashboard extends ConsumerStatefulWidget {
 }
 
 class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
+  final AcademicStore _academic = AcademicStore.instance;
   final List<String> _academicYears = [
     'الأولى',
     'الثانية',
@@ -32,19 +35,22 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
   @override
   void initState() {
     super.initState();
-    onSubjectsChanged = () {
-      if (mounted) setState(() {});
-    };
+    _academic.addListener(_onAcademicChanged);
+    _academic.load();
   }
 
   @override
   void dispose() {
-    if (onSubjectsChanged != null) onSubjectsChanged = null;
+    _academic.removeListener(_onAcademicChanged);
     super.dispose();
   }
 
+  void _onAcademicChanged() {
+    if (mounted) setState(() {});
+  }
+
   List<Subject> get _filteredSubjects =>
-      dummySubjects.where((s) => s.academicYear == _selectedYear).toList();
+      _academic.subjects.where((s) => s.academicYear == _selectedYear).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -221,8 +227,22 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
         ),
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
       ),
-      confirmDismiss: (_) => _showDeleteConfirm(context, subject.name),
-      onDismissed: (_) => deleteSubject(subject.id),
+      confirmDismiss: (_) async {
+        if (await _showDeleteConfirm(context, subject.name) != true) {
+          return false;
+        }
+        try {
+          await _academic.deleteSubject(subject.id);
+          return true;
+        } catch (error) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('تعذر حذف المادة: $error')));
+          }
+          return false;
+        }
+      },
       child: Container(
         margin: EdgeInsets.only(bottom: 10.h),
         padding: EdgeInsets.all(16.r),
@@ -655,8 +675,24 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
+                  onPressed: () async {
+                    try {
+                      final count =
+                          int.tryParse(totalC.text) ?? lectures.length;
+                      await _academic.updateSubject(
+                        subject.copyWith(
+                          totalLectures: count,
+                          lectures: lectures,
+                        ),
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('تعذر حفظ المحاضرات: $error')),
+                        );
+                      }
+                    }
                   },
                   child: const Text('حفظ'),
                 ),
@@ -860,7 +896,8 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                               if (file.path == null) return;
                               setDialogState(() => uploading = true);
                               try {
-                                pdfUrl = file.path;
+                                pdfUrl = await const AcademicDocumentService()
+                                    .uploadPdf(file.path!);
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -939,35 +976,55 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  onPressed: () {
+                  onPressed: () async {
                     if (nameC.text.trim().isEmpty ||
                         codeC.text.trim().isEmpty) {
                       return;
                     }
                     final total = int.tryParse(totalC.text) ?? 20;
-                    if (isEdit) {
-                      updateSubject(
-                        subject.id,
-                        nameC.text.trim(),
-                        codeC.text.trim().toUpperCase(),
-                        selectedYear,
-                        doctorName: doctorC.text.trim(),
-                        color: selectedColor,
-                        totalLectures: total,
-                        pdfUrl: pdfUrl,
-                      );
-                    } else {
-                      addSubject(
-                        nameC.text.trim(),
-                        codeC.text.trim().toUpperCase(),
-                        selectedYear,
-                        doctorName: doctorC.text.trim(),
-                        color: selectedColor,
-                        totalLectures: total,
-                        pdfUrl: pdfUrl,
-                      );
+                    try {
+                      if (isEdit) {
+                        final currentLectures = subject.lectures;
+                        final lectures = List.generate(total, (index) {
+                          if (index < currentLectures.length) {
+                            return currentLectures[index];
+                          }
+                          return SubjectLecture(
+                            number: index + 1,
+                            title: 'محاضرة ${index + 1}',
+                          );
+                        });
+                        await _academic.updateSubject(
+                          subject.copyWith(
+                            name: nameC.text.trim(),
+                            code: codeC.text.trim().toUpperCase(),
+                            academicYear: selectedYear,
+                            doctorName: doctorC.text.trim(),
+                            color: selectedColor,
+                            totalLectures: total,
+                            lectures: lectures,
+                            pdfUrl: pdfUrl,
+                          ),
+                        );
+                      } else {
+                        await _academic.addSubject(
+                          name: nameC.text.trim(),
+                          code: codeC.text.trim().toUpperCase(),
+                          academicYear: selectedYear,
+                          doctorName: doctorC.text.trim(),
+                          color: selectedColor,
+                          totalLectures: total,
+                          pdfUrl: pdfUrl,
+                        );
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('تعذر حفظ المادة: $error')),
+                        );
+                      }
                     }
-                    Navigator.pop(ctx);
                   },
                   child: Text(isEdit ? 'حفظ' : 'إضافة'),
                 ),

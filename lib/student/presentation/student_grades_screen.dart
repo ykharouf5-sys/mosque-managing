@@ -1,4 +1,6 @@
 import 'package:studentry/student/data/result_models.dart';
+import 'package:studentry/student/data/academic_result_api_service.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,7 +42,12 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
     super.dispose();
   }
 
-  Future<void> _tryAutoLoad() async {}
+  Future<void> _tryAutoLoad() async {
+    final examNumber = AuthService().examNumber?.trim();
+    if (examNumber == null || examNumber.isEmpty) return;
+    _searchCtrl.text = examNumber;
+    await _search();
+  }
 
   Future<void> _search() async {
     final query = _searchCtrl.text.trim();
@@ -52,7 +59,9 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
     });
 
     try {
-      final results = <ResultRecord>[];
+      final results = await const AcademicResultApiService().results(
+        examNumber: query,
+      );
       if (mounted) {
         setState(() {
           _results = results;
@@ -73,7 +82,16 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
   }
 
   Future<void> _fetchSampleExamNumbers() async {
-    setState(() => _loadingSamples = false);
+    final examNumber = AuthService().examNumber?.trim();
+    if (!mounted) return;
+    setState(() {
+      _storedExamNumbers
+        ..clear()
+        ..addAll(
+          examNumber == null || examNumber.isEmpty ? const [] : [examNumber],
+        );
+      _loadingSamples = false;
+    });
   }
 
   double get _average {

@@ -51,7 +51,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     Future.microtask(() {
       ref
           .read(catalogProvider.notifier)
-          .loadCachedSnapshot(dummyBanners, dummyCategories);
+          .loadCachedSnapshot(storeBanners, storeCategories);
       _refreshCatalog();
     });
     _scheduleCatalogRefresh();
@@ -68,7 +68,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     }
     ref
         .read(catalogProvider.notifier)
-        .loadBannersAndCategories(dummyBanners, dummyCategories);
+        .loadBannersAndCategories(storeBanners, storeCategories);
     await ref.read(catalogProvider.notifier).loadInitialProducts();
     if (mounted && (_isInitialCatalogLoading || _initialCatalogFailed)) {
       setState(() {
@@ -801,17 +801,26 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                   borderRadius: BorderRadius.circular(30),
                 ),
               ),
-              onPressed: () {
+              onPressed: () async {
                 if (controller.text.trim().isNotEmpty) {
-                  ref
-                      .read(catalogProvider.notifier)
-                      .updateCategory(
-                        category.id,
-                        controller.text.trim(),
-                        category.iconUrl,
+                  try {
+                    await ref
+                        .read(catalogProvider.notifier)
+                        .updateCategory(
+                          category.id,
+                          controller.text.trim(),
+                          category.iconUrl,
+                        );
+                  } catch (error) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text('تعذر تعديل التصنيف: $error')),
                       );
+                    }
+                    return;
+                  }
                 }
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
               },
               child: const Text('حفظ'),
             ),
@@ -893,11 +902,21 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                               borderRadius: BorderRadius.circular(30),
                             ),
                           ),
-                          onPressed: () {
-                            ref
-                                .read(catalogProvider.notifier)
-                                .deleteCategory(category.id);
-                            Navigator.pop(dCtx);
+                          onPressed: () async {
+                            try {
+                              await ref
+                                  .read(catalogProvider.notifier)
+                                  .deleteCategory(category.id);
+                              if (dCtx.mounted) Navigator.pop(dCtx);
+                            } catch (error) {
+                              if (dCtx.mounted) {
+                                ScaffoldMessenger.of(dCtx).showSnackBar(
+                                  SnackBar(
+                                    content: Text('تعذر حذف التصنيف: $error'),
+                                  ),
+                                );
+                              }
+                            }
                           },
                           child: const Text('حذف'),
                         ),

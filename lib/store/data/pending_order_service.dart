@@ -74,12 +74,13 @@ class PendingOrderService {
           debugPrint('✅ Pending order pushed: $id');
           return 'sent';
         case 'insufficient_stock':
+        case 'invalid_order':
           await AppDatabase.deletePendingOrder(
             id,
             expectedGeneration: generation,
           );
-          debugPrint('❌ Insufficient stock for order: $id');
-          return 'insufficient_stock';
+          debugPrint('❌ Permanent order rejection: $id ($result)');
+          return result;
         default:
           debugPrint('⏳ Pending order kept for retry: $id');
           return 'pending';
