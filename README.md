@@ -1,4 +1,4 @@
-# aqua
+# Studentry
 
 A new Flutter project.
 

@@ -1,0 +1,4 @@
+storePassword=replace-with-secret
+keyPassword=replace-with-secret
+keyAlias=upload
+storeFile=../keystores/studentry-upload.jks

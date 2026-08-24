@@ -1,13 +1,46 @@
 workflows:
-  flutter-workflow:
-    name: Flutter Build
-
+  android-production:
+    name: Android production
+    max_build_duration: 60
     environment:
       flutter: stable
-
+      groups:
+        - studentry_production
     scripts:
-      - flutter pub get
-      - flutter build apk --release
-
+      - name: Validate required environment
+        script: |
+          set -eu
+          : "${API_BASE_URL:?Missing API_BASE_URL}"
+          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64}"
+          : "${ANDROID_KEY_ALIAS:?Missing ANDROID_KEY_ALIAS}"
+          : "${ANDROID_KEY_PASSWORD:?Missing ANDROID_KEY_PASSWORD}"
+          : "${ANDROID_STORE_PASSWORD:?Missing ANDROID_STORE_PASSWORD}"
+          : "${GOOGLE_SERVICES_JSON_BASE64:?Missing GOOGLE_SERVICES_JSON_BASE64}"
+          case "$API_BASE_URL" in https://*) ;; *) echo "API_BASE_URL must use HTTPS"; exit 1;; esac
+      - name: Materialize signing and Firebase files
+        script: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$CM_BUILD_DIR/android/studentry-upload.jks"
+          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$CM_BUILD_DIR/android/app/google-services.json"
+          cat > "$CM_BUILD_DIR/android/key.properties" <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../studentry-upload.jks
+          EOF
+      - name: Analyze and test
+        script: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Build signed bundle
+        script: flutter build appbundle --release --dart-define=API_BASE_URL="$API_BASE_URL" --obfuscate --split-debug-info=build/symbols
     artifacts:
-      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/release/*.aab
+      - build/symbols/**
+    publishing:
+      email:
+        recipients:
+          - $RELEASE_NOTIFICATION_EMAIL
+        notify:
+          success: true
+          failure: true

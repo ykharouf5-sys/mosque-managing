@@ -6,25 +6,55 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aqua/main.dart';
+import 'package:dentalcare/auth/presentation/login_screen.dart';
+import 'package:dentalcare/auth/presentation/onboarding_screen.dart';
+import 'package:dentalcare/auth/presentation/register_screen.dart';
+import 'package:dentalcare/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('application renders inside ProviderScope', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: MyApp()));
+    await tester.pumpAndSettle();
+    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('fixed auth layouts fit a compact phone without scrolling', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    Future<void> pumpAuth(Widget screen) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: ScreenUtilInit(
+            designSize: const Size(393, 852),
+            child: MaterialApp(home: screen),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              (widget.axisDirection == AxisDirection.down ||
+                  widget.axisDirection == AxisDirection.up),
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    }
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await pumpAuth(const RegisterScreen());
+    await pumpAuth(const LoginScreen());
+    await pumpAuth(const OnboardingScreen());
   });
 }

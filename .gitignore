@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/key.properties
+/android/*.jks
+/android/*.keystore
+/android/key.properties.example.local
+/android/app/google-services.json
+/ios/Runner/GoogleService-Info.plist
+*.rar
+hs_err_pid*.log
+replay_pid*.log
