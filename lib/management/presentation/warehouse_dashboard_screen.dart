@@ -46,6 +46,11 @@ class _WarehouseDashboardScreenState
         title: const Text('لوحة المستودع'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'إعدادات الحساب والخصوصية',
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await ref.read(authProvider.notifier).logout();

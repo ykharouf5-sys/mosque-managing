@@ -72,6 +72,14 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
           actions: [
             IconButton(
               icon: const Icon(
+                Icons.settings_outlined,
+                color: AppColors.textDark,
+              ),
+              tooltip: 'إعدادات الحساب والخصوصية',
+              onPressed: () => Navigator.pushNamed(context, '/settings'),
+            ),
+            IconButton(
+              icon: const Icon(
                 Icons.notifications_active_outlined,
                 color: AppColors.primary,
               ),

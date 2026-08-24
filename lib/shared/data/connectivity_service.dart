@@ -16,7 +16,6 @@ class ConnectivityService {
       final online = results.any((r) => r != ConnectivityResult.none);
       if (isOnline.value != online) {
         isOnline.value = online;
-        debugPrint('Connectivity changed: ${online ? "ONLINE" : "OFFLINE"}');
         if (online && _wasOffline) {
           _onConnectionRestored();
         }
@@ -27,7 +26,6 @@ class ConnectivityService {
 
   static void _onConnectionRestored() async {
     final jitter = Random().nextInt(30);
-    debugPrint('🔁 Connection restored — sync in $jitter s (jitter)');
     await Future.delayed(Duration(seconds: jitter));
     await SyncService.syncNow();
   }
@@ -36,8 +34,7 @@ class ConnectivityService {
     try {
       final results = await _connectivity.checkConnectivity();
       isOnline.value = results.any((r) => r != ConnectivityResult.none);
-    } catch (e) {
-      debugPrint('Connectivity check error: $e');
+    } catch (_) {
       isOnline.value = true;
     }
   }

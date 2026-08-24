@@ -4,7 +4,6 @@ import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/data/store_api_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 typedef NewOrdersCallback = void Function(List<Order> orders);
@@ -48,7 +47,6 @@ class StorePollingService {
     if ((role != 'warehouse_manager' && role != 'sales_manager') ||
         accountId == null ||
         clinicId == null) {
-      debugPrint('⏸ StorePolling — not a manager role, skipping');
       return;
     }
     _accountId = accountId;
@@ -60,7 +58,6 @@ class StorePollingService {
         _pollNow(generation, accountId, clinicId);
       }
     });
-    debugPrint('📡 StorePolling started every 60s for $role');
   }
 
   static Future<void> _pollNow(
@@ -137,8 +134,7 @@ class StorePollingService {
       if (_isCurrent(generation, accountId, clinicId)) {
         await prefs.setString(lastCheckKey, now);
       }
-    } catch (e) {
-      debugPrint('⚠️ StorePolling error: $e');
+    } catch (_) {
     } finally {
       if (_pollingGeneration == generation) _pollingGeneration = null;
     }

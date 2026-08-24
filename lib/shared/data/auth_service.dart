@@ -429,6 +429,27 @@ class AuthService {
 
   Future<void> signOut() => _runSessionMutation(_signOutUnlocked);
 
+  Future<void> deleteAccount(String currentPassword) =>
+      _runSessionMutation(() => _deleteAccountUnlocked(currentPassword));
+
+  Future<void> _deleteAccountUnlocked(String currentPassword) async {
+    final generation = _sessionGeneration;
+    await ApiClient.instance.delete(
+      '/auth/account',
+      body: {'current_password': currentPassword},
+      maxRetries: 0,
+    );
+    if (generation != _sessionGeneration) {
+      throw const StaleSessionException();
+    }
+    _sessionGeneration++;
+    try {
+      await AccountDataLifecycle.clearAllUserData();
+    } finally {
+      await _clear();
+    }
+  }
+
   Future<void> _signOutUnlocked() async {
     _sessionGeneration++;
     try {

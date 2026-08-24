@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'app_database.dart';
 import 'encryption_service.dart';
@@ -95,9 +94,7 @@ class LocalDatabaseService {
         'status': 'pending',
         'operation_id': const Uuid().v4(),
       });
-    } catch (e) {
-      debugPrint('addToQueue error: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<List<SyncQueueItem>> getPendingQueue({
@@ -135,8 +132,7 @@ class LocalDatabaseService {
       }
       AppDatabase.ensureDataGeneration(generation);
       return decrypted;
-    } catch (e) {
-      debugPrint('getPendingQueue error: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -148,9 +144,7 @@ class LocalDatabaseService {
       final db = await AppDatabase.database;
       AppDatabase.ensureDataGeneration(generation);
       await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
-    } catch (e) {
-      debugPrint('markAsCompleted error: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<void> markAsFailed(int id, {int? expectedGeneration}) async {
@@ -172,9 +166,7 @@ class LocalDatabaseService {
         'UPDATE sync_queue SET retry_count = retry_count + 1, status = ? WHERE id = ?',
         [nextStatus, id],
       );
-    } catch (e) {
-      debugPrint('markAsFailed error: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<void> resetFailedItems({int? expectedGeneration}) async {
@@ -186,9 +178,7 @@ class LocalDatabaseService {
       await db.rawUpdate(
         "UPDATE sync_queue SET retry_count = 0, status = 'pending' WHERE status = 'failed'",
       );
-    } catch (e) {
-      debugPrint('resetFailedItems error: $e');
-    }
+    } catch (_) {}
   }
 
   // ── Sync time ──

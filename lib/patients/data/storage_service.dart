@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:studentry/patients/data/patient_data.dart';
@@ -45,9 +44,7 @@ class StorageService {
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_nextIdKey, currentNextId);
-    } catch (e) {
-      debugPrint('StorageService.save error: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<Map<String, dynamic>> load() async {
@@ -69,9 +66,7 @@ class StorageService {
                   jsonDecode(dataStr) as Map<String, dynamic>,
                 ),
               );
-            } catch (_) {
-              debugPrint('Corrupted patient record: $id — skipped');
-            }
+            } catch (_) {}
           }
         }
         result['patients'] = patients;
@@ -90,9 +85,7 @@ class StorageService {
                   jsonDecode(dataStr) as Map<String, dynamic>,
                 ),
               );
-            } catch (_) {
-              debugPrint('Corrupted appointment record: $key — skipped');
-            }
+            } catch (_) {}
           }
         }
         result['appointments'] = appointments;
@@ -101,9 +94,7 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       final savedId = prefs.getInt(_nextIdKey);
       if (savedId != null) currentNextId = savedId;
-    } catch (e) {
-      debugPrint('StorageService.load error: $e');
-    }
+    } catch (_) {}
     return result;
   }
 
@@ -111,8 +102,7 @@ class StorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(key);
-    } catch (e) {
-      debugPrint('StorageService.get error: $e');
+    } catch (_) {
       return null;
     }
   }
@@ -121,9 +111,7 @@ class StorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(key, value);
-    } catch (e) {
-      debugPrint('StorageService.set error: $e');
-    }
+    } catch (_) {}
   }
 
   // ─── Secure registration data (PII) ───

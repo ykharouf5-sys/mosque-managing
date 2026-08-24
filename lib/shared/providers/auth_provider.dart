@@ -76,6 +76,11 @@ class AuthNotifier extends Notifier<AuthState> {
     state = const AuthState();
   }
 
+  Future<void> deleteAccount(String currentPassword) async {
+    await AuthService().deleteAccount(currentPassword);
+    state = const AuthState();
+  }
+
   void clearAuth() {
     state = const AuthState();
   }

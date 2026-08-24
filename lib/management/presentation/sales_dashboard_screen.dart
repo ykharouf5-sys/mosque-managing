@@ -54,6 +54,11 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
           title: Text(_sectionTitles[_selectedIndex]),
           actions: [
             IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'إعدادات الحساب والخصوصية',
+              onPressed: () => Navigator.pushNamed(context, '/settings'),
+            ),
+            IconButton(
               icon: const Icon(
                 Icons.notifications_active_outlined,
                 color: AppColors.primary,

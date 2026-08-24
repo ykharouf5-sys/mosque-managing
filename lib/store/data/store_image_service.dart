@@ -1,5 +1,4 @@
 import 'package:studentry/shared/data/api_client.dart';
-import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 class StoreImageService {
@@ -31,8 +30,7 @@ class StoreImageService {
         fields: {'kind': kind},
       );
       return r.data['data']['url']?.toString();
-    } catch (e) {
-      debugPrint('Image upload error: $e');
+    } catch (_) {
       return null;
     }
   }

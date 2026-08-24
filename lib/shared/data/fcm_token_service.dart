@@ -79,9 +79,7 @@ class FcmTokenService {
         },
         maxRetries: 1,
       );
-    } catch (error) {
-      debugPrint('FCM token registration failed: $error');
-    }
+    } catch (_) {}
   }
 
   static Future<void> unregisterCurrentDevice() async {

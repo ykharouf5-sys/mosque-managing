@@ -2,7 +2,6 @@ import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/data/store_api_service.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/auth_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 // ── Global in-memory lists ──
@@ -142,14 +141,8 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
 
     recalcProductCounts();
     await _persistStoreSnapshot();
-    debugPrint(
-      '📦 Store loaded from API: ${storeCategories.length} categories, '
-      '${storeProducts.length} products, ${storeBanners.length} banners',
-    );
     return true;
-  } catch (e, stackTrace) {
-    debugPrint('⚠️ loadStoreFromApi error: $e');
-    debugPrintStack(stackTrace: stackTrace);
+  } catch (_) {
     return false;
   }
 }

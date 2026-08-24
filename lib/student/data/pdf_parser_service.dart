@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'result_models.dart';
 
@@ -33,8 +32,6 @@ class PdfParserService {
     final seenExamNumbers = <String>{};
     _PendingRecord? pending;
 
-    debugPrint('=== PDF Parse Start: ${lines.length} lines ===');
-
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
 
@@ -47,20 +44,16 @@ class PdfParserService {
           ..examNumber = examMatch.group(1)!
           ..name = '';
 
-        debugPrint('  🔢 رقم امتحان: ${pending.examNumber}');
-
         // Check if rest of same line has mark / status / name
         final rest = line.substring(examMatch.end).trim();
         if (rest.isNotEmpty) {
           final mark = _extractMark(rest);
           if (mark != null) {
             pending.mark = mark;
-            debugPrint('  📝 علامة (من نفس السطر): $mark');
           }
           final status = _extractStatus(rest);
           if (status != null) {
             pending.status = status;
-            debugPrint('  ✅ حالة (من نفس السطر): $status');
           }
           final nameFragment = _extractNameFragment(rest);
           if (nameFragment.isNotEmpty) pending._nameParts.add(nameFragment);
@@ -70,7 +63,6 @@ class PdfParserService {
 
       // No exam number on this line → part of current record
       if (pending == null) {
-        debugPrint('  ⏭️ تخطي (لا يوجد سجل قيد الإنشاء): "${_truncate(line)}"');
         continue;
       }
 
@@ -79,12 +71,10 @@ class PdfParserService {
         final mark = _extractMark(line);
         if (mark != null) {
           pending.mark = mark;
-          debugPrint('  📝 علامة: $mark');
           // Still check for status on same line
           final status = _extractStatus(line);
           if (status != null) {
             pending.status = status;
-            debugPrint('  ✅ حالة: $status');
           }
           continue;
         }
@@ -95,7 +85,6 @@ class PdfParserService {
         final status = _extractStatus(line);
         if (status != null) {
           pending.status = status;
-          debugPrint('  ✅ حالة: $status');
           continue;
         }
       }
@@ -104,7 +93,6 @@ class PdfParserService {
       if (pending.mark != null) {
         final pureNum = double.tryParse(line);
         if (pureNum != null && pureNum >= 0 && pureNum <= 100) {
-          debugPrint('  🔁 علامة مكررة: $line (تجاهل)');
           continue;
         }
       }
@@ -116,14 +104,12 @@ class PdfParserService {
           .trim();
       if (cleaned.isNotEmpty) {
         pending._nameParts.add(cleaned);
-        debugPrint('  👤 اسم: "$cleaned"');
       }
     }
 
     // Finalize last record
     _finalizeRecord(pending, records, issues, seenExamNumbers, examSession);
 
-    debugPrint('=== PDF Parse End: ${records.length} سجل ===');
     return ParsedResult(records: records, issues: issues);
   }
 
@@ -150,7 +136,6 @@ class PdfParserService {
           message: 'لا توجد علامة للرقم ${pending.examNumber}',
         ),
       );
-      debugPrint('  ❌ تخطي (لا توجد علامة): رقم ${pending.examNumber}');
       return;
     }
 
@@ -162,7 +147,6 @@ class PdfParserService {
           message: 'لا توجد حالة للرقم ${pending.examNumber}',
         ),
       );
-      debugPrint('  ❌ تخطي (لا توجد حالة): رقم ${pending.examNumber}');
       return;
     }
 
@@ -174,14 +158,9 @@ class PdfParserService {
           message: 'رقم مكرر: ${pending.examNumber}',
         ),
       );
-      debugPrint('  ❌ تخطي (مكرر): رقم ${pending.examNumber}');
       return;
     }
     seenExamNumbers.add(pending.examNumber);
-
-    debugPrint(
-      '  ✅ السجل: رقم=${pending.examNumber} | اسم=${pending.name} | علامة=${pending.mark} | حالة=${pending.status}',
-    );
 
     records.add(
       ResultRecord(
@@ -198,9 +177,6 @@ class PdfParserService {
       ),
     );
   }
-
-  static String _truncate(String s) =>
-      s.length > 80 ? '${s.substring(0, 80)}...' : s;
 
   static String _extractNameFragment(String text) => text
       .replaceAll(
@@ -241,7 +217,6 @@ class PdfParserService {
     // Try original text first
     final result = matchStatus(text);
     if (result != null) {
-      debugPrint('  Raw Status: "$text" → Normalized: "$result"');
       return result;
     }
 
@@ -250,9 +225,6 @@ class PdfParserService {
     if (reversed != text) {
       final revResult = matchStatus(reversed);
       if (revResult != null) {
-        debugPrint(
-          '  Raw Status (reversed): "$reversed" → Normalized: "$revResult"',
-        );
         return revResult;
       }
     }

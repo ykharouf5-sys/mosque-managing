@@ -54,8 +54,18 @@ class ApiClient {
     Object? body,
     Map<String, String>? headers,
   }) => _send('PATCH', path, body: body, headers: headers);
-  Future<ApiResult> delete(String path, {Map<String, String>? headers}) =>
-      _send('DELETE', path, headers: headers);
+  Future<ApiResult> delete(
+    String path, {
+    Object? body,
+    Map<String, String>? headers,
+    int maxRetries = 3,
+  }) => _send(
+    'DELETE',
+    path,
+    body: body,
+    headers: headers,
+    maxRetries: maxRetries,
+  );
   Future<ApiResult> upload(
     String path,
     List<int> bytes,

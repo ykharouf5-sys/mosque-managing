@@ -115,8 +115,7 @@ class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
       doc.dispose();
       _rawText = text;
       _parseGrades(text);
-    } catch (e, stack) {
-      debugPrint('PDF parse error: $e\n$stack');
+    } catch (_) {
       _showError(
         'فشل قراءة الملف: تأكد من أن الملف PDF نصي وليس ممسوحاً ضوئياً',
       );

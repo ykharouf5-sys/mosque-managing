@@ -82,7 +82,6 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
-    debugPrint('🔔 showNow: id=$id title=$title');
     try {
       await _plugin.show(
         id: id,
@@ -93,10 +92,7 @@ class NotificationService {
           iOS: const DarwinNotificationDetails(),
         ),
       );
-      debugPrint('✅ showNow done');
-    } catch (e) {
-      debugPrint('❌ showNow error: $e');
-    }
+    } catch (_) {}
   }
 
   static Future<void> scheduleNotification({
@@ -105,7 +101,6 @@ class NotificationService {
     required String body,
     required DateTime dateTime,
   }) async {
-    debugPrint('🔔 scheduleNotification: id=$id title=$title at $dateTime');
     try {
       final location = tz.local;
       final scheduledDate = tz.TZDateTime.from(dateTime, location);
@@ -118,12 +113,9 @@ class NotificationService {
           android: _details(),
           iOS: const DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.alarmClock,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
-      debugPrint('✅ scheduleNotification done');
-    } catch (e) {
-      debugPrint('❌ scheduleNotification error: $e');
-    }
+    } catch (_) {}
   }
 
   static int _notificationId(Appointment a) =>
@@ -132,13 +124,11 @@ class NotificationService {
   static void _scheduleAppointment(Appointment a) {
     final parts = a.time.split(':');
     if (parts.length != 2) {
-      debugPrint('⚠️ _scheduleAppointment: invalid time format "${a.time}"');
       return;
     }
     final hour = int.tryParse(parts[0]);
     final minute = int.tryParse(parts[1]);
     if (hour == null || minute == null) {
-      debugPrint('⚠️ _scheduleAppointment: invalid time parts "${a.time}"');
       return;
     }
 
@@ -150,11 +140,7 @@ class NotificationService {
       hour,
       minute,
     );
-    debugPrint(
-      '🔔 _scheduleAppointment: ${a.patientName} at $appointmentTime (now=$now)',
-    );
     if (appointmentTime.isBefore(now)) {
-      debugPrint('⚠️ _scheduleAppointment: appointment already passed');
       return;
     }
 
@@ -162,16 +148,12 @@ class NotificationService {
     final id = _notificationId(a);
 
     if (reminderTime.isBefore(now)) {
-      debugPrint(
-        '🔔 _scheduleAppointment: showing now (reminder was $reminderTime)',
-      );
       showNow(
         id: id,
         title: 'موعد الآن',
         body: 'لديك موعد مع ${a.patientName} - ${a.treatment}',
       );
     } else {
-      debugPrint('🔔 _scheduleAppointment: scheduling for $reminderTime');
       scheduleNotification(
         id: id,
         title: 'تذكير بموعد',

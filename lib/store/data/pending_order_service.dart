@@ -3,7 +3,6 @@ import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
 import 'package:studentry/store/data/store_api_service.dart';
-import 'package:flutter/foundation.dart';
 
 class PendingOrderService {
   static bool _initialized = false;
@@ -28,7 +27,6 @@ class PendingOrderService {
     final id = order['id'] as String;
     final dataJson = jsonEncode(order);
     final generation = await AppDatabase.insertPendingOrder(id, dataJson);
-    debugPrint('📝 Pending order saved locally: $id');
     if (!ConnectivityService.isOnline.value) return 'pending';
     return _sendAndCleanup(order, generation);
   }
@@ -43,14 +41,11 @@ class PendingOrderService {
       expectedGeneration: generation,
     );
     if (pending.isEmpty) return;
-    debugPrint('🔄 Retrying ${pending.length} pending orders...');
     for (final row in pending) {
       try {
         final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
         await _sendAndCleanup(data, generation);
-      } catch (e) {
-        debugPrint('⚠️ retryPending error for ${row['id']}: $e');
-      }
+      } catch (_) {}
     }
   }
 
@@ -71,7 +66,6 @@ class PendingOrderService {
             id,
             expectedGeneration: generation,
           );
-          debugPrint('✅ Pending order pushed: $id');
           return 'sent';
         case 'insufficient_stock':
         case 'invalid_order':
@@ -79,14 +73,11 @@ class PendingOrderService {
             id,
             expectedGeneration: generation,
           );
-          debugPrint('❌ Permanent order rejection: $id ($result)');
           return result;
         default:
-          debugPrint('⏳ Pending order kept for retry: $id');
           return 'pending';
       }
-    } catch (e) {
-      debugPrint('⚠️ Failed to push order $id: $e');
+    } catch (_) {
       return 'pending';
     }
   }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'result_models.dart';
 import 'pdf_parser_service.dart';
 
@@ -23,8 +22,6 @@ class JsonParserService {
     final records = <ResultRecord>[];
     final issues = <ImportValidationIssue>[];
     final seenExamNumbers = <String>{};
-
-    debugPrint('=== JSON Parse Start: ${items.length} items ===');
 
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
@@ -135,10 +132,6 @@ class JsonParserService {
           ? subjectName
           : 'عام';
 
-      debugPrint(
-        '  ✅ رقم=$examNumber | اسم=${studentName ?? ''} | مادة=$subject | علامة=$mark | حالة=$status',
-      );
-
       records.add(
         ResultRecord(
           id: '${examNumber}_${_simpleHash(examNumber)}',
@@ -155,7 +148,6 @@ class JsonParserService {
       );
     }
 
-    debugPrint('=== JSON Parse End: ${records.length} سجل ===');
     return ParsedResult(records: records, issues: issues);
   }
 

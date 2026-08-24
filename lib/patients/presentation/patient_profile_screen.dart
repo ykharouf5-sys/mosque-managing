@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:studentry/patients/data/photo_service.dart';
+import 'package:studentry/patients/data/patient_photo_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/data/notification_service.dart';
@@ -37,6 +37,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
   }
 
   final _picker = ImagePicker();
+  bool _photoBusy = false;
   DateTime _selectedDay = DateTime.now();
   DateTime _focusedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
@@ -1306,10 +1307,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                       top: 4,
                       left: 4,
                       child: GestureDetector(
-                        onTap: () {
-                          setState(() => photos.removeAt(index));
-                          _notifyAndSync();
-                        },
+                        onTap: _photoBusy ? null : () => _removePhoto(path),
                         child: Container(
                           padding: const EdgeInsets.all(4),
                           decoration: const BoxDecoration(
@@ -1333,7 +1331,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
           bottom: 16,
           right: 16,
           child: FloatingActionButton(
-            onPressed: _pickImage,
+            onPressed: _photoBusy ? null : _pickImage,
             backgroundColor: AppColors.primary,
             child: const Icon(
               Icons.add_photo_alternate_outlined,
@@ -1363,12 +1361,44 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         imageQuality: 80,
       );
       if (image != null) {
-        final patientId = widget.patient.id;
-        final localPath = await PhotoService.saveLocally(patientId, image.path);
-        setState(() => widget.patient.photos.add(localPath));
-        _notifyAndSync();
+        setState(() => _photoBusy = true);
+        final url = await PatientPhotoService.upload(widget.patient.id, image);
+        if (!mounted) return;
+        setState(() => widget.patient.photos.add(url));
+        await ref.read(patientListProvider.notifier).refreshFromApi();
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر رفع الصورة. حاول مرة أخرى.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
+  }
+
+  Future<void> _removePhoto(String path) async {
+    setState(() => _photoBusy = true);
+    try {
+      if (path.startsWith('http://') || path.startsWith('https://')) {
+        await PatientPhotoService.remove(widget.patient.id, path);
+      } else {
+        final legacyFile = File(path);
+        if (await legacyFile.exists()) await legacyFile.delete();
+      }
+      if (!mounted) return;
+      setState(() => widget.patient.photos.remove(path));
+      await ref.read(patientListProvider.notifier).refreshFromApi();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر حذف الصورة. حاول مرة أخرى.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
   }
 
   Widget _buildAddButton() {

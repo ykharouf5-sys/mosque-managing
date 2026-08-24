@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:studentry/auth/data/biometric_service.dart';
-import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/management/presentation/privacy_policy_screen.dart';
+import 'package:studentry/shared/data/api_request_queue.dart';
+import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:file_picker/file_picker.dart';
@@ -22,6 +24,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
   String _appLanguage = 'ar';
+  bool _deletingAccount = false;
 
   @override
   void initState() {
@@ -165,6 +168,67 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _deleteAccount() async {
+    final passwordController = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حذف الحساب نهائياً'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'سيتم حذف حسابك وجلساتك وبياناتك الشخصية التابعة له. لا يمكن التراجع عن هذه العملية.',
+            ),
+            SizedBox(height: 16.h),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'كلمة المرور الحالية',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () {
+              final value = passwordController.text;
+              if (value.isNotEmpty) Navigator.pop(dialogContext, value);
+            },
+            child: const Text('حذف نهائي'),
+          ),
+        ],
+      ),
+    );
+    passwordController.dispose();
+    if (password == null || !mounted) return;
+
+    setState(() => _deletingAccount = true);
+    try {
+      await ref.read(authProvider.notifier).deleteAccount(password);
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ApiException
+          ? error.message
+          : 'تعذر حذف الحساب الآن. حاول مرة أخرى.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: AppColors.danger),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -236,10 +300,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             SizedBox(height: 24.h),
             _buildSection('البيانات'),
             _buildSettingTile(
+              icon: Icons.privacy_tip_outlined,
+              title: 'سياسة الخصوصية',
+              subtitle: 'كيف نعالج بياناتك وحقوقك',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+              ),
+            ),
+            _buildSettingTile(
               icon: Icons.description_outlined,
               title: 'تصدير سجلات التطبيق',
               subtitle: 'حفظ ملف نصي بالسجلات',
               onTap: _exportLogs,
+            ),
+            _buildSettingTile(
+              icon: Icons.delete_forever_outlined,
+              title: _deletingAccount
+                  ? 'جارٍ حذف الحساب...'
+                  : 'حذف الحساب نهائياً',
+              subtitle: 'حذف الحساب والبيانات الشخصية التابعة له',
+              trailing: _deletingAccount
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_left, color: AppColors.danger),
+              onTap: _deletingAccount ? null : _deleteAccount,
             ),
             SizedBox(height: 24.h),
             _buildSection('حول التطبيق'),
@@ -248,7 +336,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             SizedBox(height: 32.h),
           ],
         ),
-        bottomNavigationBar: const AppBottomNav(selectedIndex: 0),
       ),
     );
   }

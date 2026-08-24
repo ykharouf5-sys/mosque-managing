@@ -76,7 +76,6 @@ class SyncService {
       if (changed || pullResult.changed) _notify(_syncCompleteListeners);
     } catch (e) {
       await _handleSyncAuthorizationFailure(e);
-      debugPrint('Sync API error: $e');
     } finally {
       _isSyncing = false;
     }
