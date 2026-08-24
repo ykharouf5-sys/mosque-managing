@@ -91,5 +91,22 @@ void main() {
         }
       }
     });
+
+    test(
+      'Android release configuration removes restricted ad and alarm access',
+      () {
+        final manifest = _read('android/app/src/main/AndroidManifest.xml');
+        expect(manifest, isNot(contains('SCHEDULE_EXACT_ALARM')));
+        expect(manifest, isNot(contains('USE_EXACT_ALARM')));
+        expect(
+          RegExp(r'AD_ID" tools:node="remove"').allMatches(manifest).length,
+          greaterThanOrEqualTo(2),
+        );
+
+        final gradle = _read('android/app/build.gradle.kts');
+        expect(gradle, isNot(contains('firebase-analytics')));
+        expect(gradle, isNot(contains('play-services-auth')));
+      },
+    );
   });
 }
