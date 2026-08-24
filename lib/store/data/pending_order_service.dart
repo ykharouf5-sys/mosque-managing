@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:studentry/shared/data/app_database.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
 import 'package:studentry/store/data/store_api_service.dart';
 import 'package:flutter/foundation.dart';
@@ -26,25 +27,27 @@ class PendingOrderService {
   static Future<String> savePendingOrder(Map<String, dynamic> order) async {
     final id = order['id'] as String;
     final dataJson = jsonEncode(order);
-    await AppDatabase.insertPendingOrder(id, dataJson);
+    final generation = await AppDatabase.insertPendingOrder(id, dataJson);
     debugPrint('📝 Pending order saved locally: $id');
     if (!ConnectivityService.isOnline.value) return 'pending';
-    return _sendAndCleanup(order);
+    return _sendAndCleanup(order, generation);
   }
 
   /// Retry all pending orders.
   static Future<void> retryPending() async {
-    if (!ConnectivityService.isOnline.value) return;
-    final pending = await AppDatabase.getPendingOrders();
+    if (!ConnectivityService.isOnline.value || !AuthService().isLoggedIn) {
+      return;
+    }
+    final generation = AppDatabase.captureActiveDataGeneration();
+    final pending = await AppDatabase.getPendingOrders(
+      expectedGeneration: generation,
+    );
     if (pending.isEmpty) return;
     debugPrint('🔄 Retrying ${pending.length} pending orders...');
     for (final row in pending) {
       try {
         final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
-        final result = await _sendAndCleanup(data);
-        if (result == 'sent' || result == 'insufficient_stock') {
-          await AppDatabase.deletePendingOrder(data['id'] as String);
-        }
+        await _sendAndCleanup(data, generation);
       } catch (e) {
         debugPrint('⚠️ retryPending error for ${row['id']}: $e');
       }
@@ -53,7 +56,10 @@ class PendingOrderService {
 
   /// Send to Laravel through the idempotent order endpoint.
   /// Permanent failures (insufficient_stock) also delete the local row.
-  static Future<String> _sendAndCleanup(Map<String, dynamic> order) async {
+  static Future<String> _sendAndCleanup(
+    Map<String, dynamic> order,
+    int generation,
+  ) async {
     final id = order['id'] as String;
     try {
       final row = StoreApiService.orderToRow(order);
@@ -61,11 +67,17 @@ class PendingOrderService {
       switch (result) {
         case 'inserted':
         case 'exists':
-          await AppDatabase.deletePendingOrder(id);
+          await AppDatabase.deletePendingOrder(
+            id,
+            expectedGeneration: generation,
+          );
           debugPrint('✅ Pending order pushed: $id');
           return 'sent';
         case 'insufficient_stock':
-          await AppDatabase.deletePendingOrder(id);
+          await AppDatabase.deletePendingOrder(
+            id,
+            expectedGeneration: generation,
+          );
           debugPrint('❌ Insufficient stock for order: $id');
           return 'insufficient_stock';
         default:

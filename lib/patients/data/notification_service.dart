@@ -10,27 +10,32 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
+  static bool _permissionsConfigured = false;
 
-  static Future<void> init() async {
-    if (_initialized) return;
-    tz_data.initializeTimeZones();
+  static Future<void> init({bool requestPermissions = true}) async {
+    if (!_initialized) {
+      tz_data.initializeTimeZones();
 
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-    final settings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-    await _plugin.initialize(
-      settings: settings,
-      onDidReceiveNotificationResponse: _onNotificationTap,
-    );
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      final settings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+      await _plugin.initialize(
+        settings: settings,
+        onDidReceiveNotificationResponse: _onNotificationTap,
+      );
+      _initialized = true;
+    }
+
+    if (!requestPermissions || _permissionsConfigured) return;
 
     // Request permissions for Android 13+ and Android 12+
     try {
@@ -48,9 +53,17 @@ class NotificationService {
       );
       await androidPlugin?.requestNotificationsPermission();
       await androidPlugin?.requestExactAlarmsPermission();
+      final iosPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      _permissionsConfigured = true;
     } catch (_) {}
-
-    _initialized = true;
   }
 
   static AndroidNotificationDetails _details() => AndroidNotificationDetails(
@@ -216,6 +229,7 @@ class NotificationService {
   }
 
   static Future<void> cancelAll() async {
+    await init(requestPermissions: false);
     await _plugin.cancelAll();
   }
 

@@ -603,7 +603,10 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                   p.todayPayment += amount;
                 });
                 final paymentId = const Uuid().v4();
-                await AppDatabase.applyLocalPayment(p.id, amount);
+                final dataGeneration = await AppDatabase.applyLocalPayment(
+                  p.id,
+                  amount,
+                );
                 await LocalDatabaseService.addToQueue(
                   operation: 'insert',
                   tableName: 'patient_payments',
@@ -614,6 +617,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                     'method': 'cash',
                     'paidAt': DateTime.now().toUtc().toIso8601String(),
                   }),
+                  expectedGeneration: dataGeneration,
                 );
                 SyncService.syncNowWithJitter();
                 _notifyAndSync();

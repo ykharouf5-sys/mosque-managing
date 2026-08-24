@@ -3,7 +3,6 @@ import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/auth/presentation/otp_verification_screen.dart';
 import 'package:studentry/auth/presentation/password_reset_screen.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
-import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -67,12 +66,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       final response = await AuthService().signIn(email, password);
       final user = response.user;
       if (user == null) throw Exception('فشل تسجيل الدخول');
-      final role = user.userMetadata['role'] as String? ?? 'student';
-
-      ref.read(authProvider.notifier).setAuth(user.id, role);
 
       if (!mounted) return;
-      navigateByRoleSync(role, this.context);
+      navigateAuthenticatedUser(user, this.context);
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.statusCode == 403 && e.details is Map) {

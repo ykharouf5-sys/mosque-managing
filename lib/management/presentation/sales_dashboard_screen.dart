@@ -72,7 +72,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
               icon: const Icon(Icons.logout, color: AppColors.textDark),
               tooltip: 'تسجيل الخروج',
               onPressed: () async {
-                ref.read(authProvider.notifier).logout();
+                await ref.read(authProvider.notifier).logout();
                 if (context.mounted) {
                   Navigator.pushNamedAndRemoveUntil(
                     context,
@@ -213,7 +213,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                     label: const Text('تسجيل الخروج'),
                     onPressed: () async {
                       Navigator.pop(context);
-                      ref.read(authProvider.notifier).logout();
+                      await ref.read(authProvider.notifier).logout();
                       if (context.mounted) {
                         Navigator.pushNamedAndRemoveUntil(
                           context,

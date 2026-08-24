@@ -138,8 +138,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
   }
 
   void _logout(BuildContext context, WidgetRef ref) async {
-    await AuthService().signOut();
-    ref.read(authProvider.notifier).logout();
+    await ref.read(authProvider.notifier).logout();
     if (context.mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
     }

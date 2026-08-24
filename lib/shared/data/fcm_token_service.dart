@@ -59,6 +59,10 @@ class FcmTokenService {
     if (authenticated) {
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) await registerToken(token);
+    } else {
+      // Invalidate any token left by an expired/offline session so a signed-out
+      // device cannot keep receiving account-scoped notifications.
+      await FirebaseMessaging.instance.deleteToken();
     }
   }
 

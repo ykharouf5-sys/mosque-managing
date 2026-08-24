@@ -1,7 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import 'app_database.dart';
 import 'encryption_service.dart';
@@ -36,167 +34,57 @@ class SyncQueueItem {
 }
 
 class LocalDatabaseService {
-  static Database? _db;
-
-  static Future<Database> get database async {
-    if (_db != null) return _db!;
-    _db = await _init();
-    return _db!;
-  }
-
-  static Future<Database> _init({int version = 1}) async {
-    final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, 'dentalcare_sync.db');
-    return openDatabase(
-      path,
-      version: version,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE sync_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            operation TEXT NOT NULL,
-            collection TEXT NOT NULL,
-            docId TEXT,
-            parentDoc TEXT,
-            subcollection TEXT,
-            data TEXT,
-            createdAt INTEGER NOT NULL,
-            retries INTEGER DEFAULT 0
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-          )
-        ''');
-      },
-    );
-  }
-
-  // ── Metadata ──
-  static Future<void> setMetadata(String key, String value) async {
-    final db = await database;
-    await db.insert('metadata', {
-      'key': key,
-      'value': value,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  static Future<String?> getMetadata(String key) async {
-    final db = await database;
-    final rows = await db.query('metadata', where: 'key = ?', whereArgs: [key]);
-    if (rows.isEmpty) return null;
-    return rows.first['value'] as String;
-  }
-
-  // ── Sync Queue ──
-  static const int _maxQueueItems = 1000;
-  static const int _ttlDays = 7;
-
-  /// Remove items older than TTL or when queue exceeds max size.
-  static Future<void> _pruneQueue() async {
-    final db = await database;
-
-    // Remove items older than TTL
-    final cutoff =
-        DateTime.now().millisecondsSinceEpoch - (_ttlDays * 86400000);
-    await db.delete('sync_queue', where: 'createdAt < ?', whereArgs: [cutoff]);
-
-    // Remove oldest items if queue exceeds max size
-    final count = await getPendingSyncCount();
-    if (count > _maxQueueItems) {
-      final excess = count - _maxQueueItems;
-      await db.rawDelete(
-        'DELETE FROM sync_queue WHERE id IN (SELECT id FROM sync_queue ORDER BY createdAt ASC LIMIT ?)',
-        [excess],
-      );
-    }
-  }
-
-  static Future<void> enqueueSync({
-    required String operation,
-    required String collection,
-    String? docId,
-    String? parentDoc,
-    String? subcollection,
-    Map<String, dynamic>? data,
-  }) async {
-    final db = await database;
-    String? encryptedData;
-    if (data != null) {
-      final plain = jsonEncode(data);
-      encryptedData = await EncryptionService.encrypt(plain);
-    }
-    await db.insert('sync_queue', {
-      'operation': operation,
-      'collection': collection,
-      'docId': docId,
-      'parentDoc': parentDoc,
-      'subcollection': subcollection,
-      'data': encryptedData,
-      'createdAt': DateTime.now().millisecondsSinceEpoch,
-      'retries': 0,
-    });
-
-    // Prune old/excess items after each enqueue
-    await _pruneQueue();
-  }
-
-  static Future<List<Map<String, dynamic>>> getPendingSyncItems() async {
-    final db = await database;
-    final rows = await db.query('sync_queue', orderBy: 'createdAt ASC');
-    final decrypted = <Map<String, dynamic>>[];
-    for (final row in rows) {
-      if (row['data'] != null) {
-        try {
-          final decryptedData = await EncryptionService.decrypt(
-            row['data'] as String,
-          );
-          final parsed = jsonDecode(decryptedData) as Map<String, dynamic>;
-          row['data'] = jsonEncode(parsed);
-        } catch (_) {}
-      }
-      decrypted.add(row);
-    }
-    return decrypted;
-  }
-
-  static Future<void> removeSyncItem(int id) async {
-    final db = await database;
-    await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
-  }
-
-  static Future<void> incrementRetry(int id) async {
-    final db = await database;
-    await db.rawUpdate(
-      'UPDATE sync_queue SET retries = retries + 1 WHERE id = ?',
-      [id],
-    );
-  }
-
-  static Future<int> getPendingSyncCount() async {
-    final db = await database;
-    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM sync_queue');
-    return Sqflite.firstIntValue(result) ?? 0;
-  }
-
-  static Future<void> clearSyncQueue() async {
-    final db = await database;
-    await db.delete('sync_queue');
-  }
-
-  // ── New Sync Queue (uses AppDatabase's sync_queue table) ──
+  // The encrypted AppDatabase is the only local source of truth. The former
+  // secondary `dentalcare_sync.db` queue was unencrypted and account-agnostic.
+  static const _patientColumns = {
+    'id',
+    'name',
+    'phone',
+    'age',
+    'address',
+    'registrationDate',
+    'notes',
+    'photoUrl',
+    'amountDue',
+    'amountPaid',
+    'todayPayment',
+    'appointmentDate',
+    'treatmentPlan',
+    'photos',
+    'updated_at',
+    'deleted_at',
+    'device_id',
+    'version',
+  };
+  static const _appointmentColumns = {
+    'id',
+    'patientId',
+    'patientName',
+    'time',
+    'status',
+    'treatment',
+    'date',
+    'reminderSent',
+    'notificationSent',
+    'updated_at',
+    'deleted_at',
+    'device_id',
+    'version',
+  };
 
   static Future<void> addToQueue({
     required String operation,
     required String tableName,
     required String recordId,
     required String payload,
+    int? expectedGeneration,
   }) async {
     try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
       final encryptedPayload = await EncryptionService.encrypt(payload);
+      AppDatabase.ensureDataGeneration(generation);
       await db.insert('sync_queue', {
         'operation': operation,
         'table_name': tableName,
@@ -212,8 +100,13 @@ class LocalDatabaseService {
     }
   }
 
-  static Future<List<SyncQueueItem>> getPendingQueue({int limit = 50}) async {
+  static Future<List<SyncQueueItem>> getPendingQueue({
+    int limit = 50,
+    int? expectedGeneration,
+  }) async {
     try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
       final rows = await db.query(
         'sync_queue',
@@ -223,13 +116,15 @@ class LocalDatabaseService {
         limit: limit,
       );
       final decrypted = <SyncQueueItem>[];
-      for (final row in rows) {
+      for (final storedRow in rows) {
+        final row = Map<String, Object?>.from(storedRow);
         try {
           row['payload'] = await EncryptionService.decrypt(
             row['payload'] as String,
           );
-          decrypted.add(SyncQueueItem.fromMap(row));
+          decrypted.add(SyncQueueItem.fromMap(Map<String, dynamic>.from(row)));
         } catch (_) {
+          AppDatabase.ensureDataGeneration(generation);
           await db.update(
             'sync_queue',
             {'status': 'failed', 'retry_count': 99},
@@ -238,6 +133,7 @@ class LocalDatabaseService {
           );
         }
       }
+      AppDatabase.ensureDataGeneration(generation);
       return decrypted;
     } catch (e) {
       debugPrint('getPendingQueue error: $e');
@@ -245,17 +141,22 @@ class LocalDatabaseService {
     }
   }
 
-  static Future<void> markAsCompleted(int id) async {
+  static Future<void> markAsCompleted(int id, {int? expectedGeneration}) async {
     try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
+      AppDatabase.ensureDataGeneration(generation);
       await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
     } catch (e) {
       debugPrint('markAsCompleted error: $e');
     }
   }
 
-  static Future<void> markAsFailed(int id) async {
+  static Future<void> markAsFailed(int id, {int? expectedGeneration}) async {
     try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
       final rows = await db.query(
         'sync_queue',
@@ -266,6 +167,7 @@ class LocalDatabaseService {
       if (rows.isEmpty) return;
       final retryCount = (rows.first['retry_count'] as int?) ?? 0;
       final nextStatus = retryCount >= 2 ? 'failed' : 'pending';
+      AppDatabase.ensureDataGeneration(generation);
       await db.rawUpdate(
         'UPDATE sync_queue SET retry_count = retry_count + 1, status = ? WHERE id = ?',
         [nextStatus, id],
@@ -275,9 +177,12 @@ class LocalDatabaseService {
     }
   }
 
-  static Future<void> resetFailedItems() async {
+  static Future<void> resetFailedItems({int? expectedGeneration}) async {
     try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
+      AppDatabase.ensureDataGeneration(generation);
       await db.rawUpdate(
         "UPDATE sync_queue SET retry_count = 0, status = 'pending' WHERE status = 'failed'",
       );
@@ -293,13 +198,23 @@ class LocalDatabaseService {
     return value ?? '1970-01-01T00:00:00.000';
   }
 
-  static Future<void> setLastSyncTime(String value) async {
-    await AppDatabase.setMetadata('last_sync_time', value);
+  static Future<void> setLastSyncTime(
+    String value, {
+    int? expectedGeneration,
+  }) async {
+    await AppDatabase.setMetadata(
+      'last_sync_time',
+      value,
+      expectedGeneration: expectedGeneration,
+    );
   }
 
   // ── Pull helpers ──
 
-  static Future<void> upsertPatientFromSync(Map<String, dynamic> row) async {
+  static Future<void> upsertPatientFromSync(
+    Map<String, dynamic> row, {
+    int? expectedGeneration,
+  }) async {
     final data = row['data'] is Map
         ? Map<String, dynamic>.from(row['data'] as Map)
         : Map<String, dynamic>.from(row);
@@ -309,14 +224,19 @@ class LocalDatabaseService {
     data['deleted_at'] = row['deleted_at'];
     data['device_id'] = row['device_id'] ?? 'server';
     data['version'] = (row['version'] as num?)?.toInt() ?? 1;
-    data.remove('clinic_id');
-    data.remove('created_at');
-    await AppDatabase.upsertPatientFromSync(data);
+    data['treatmentPlan'] = _jsonColumn(data['treatmentPlan']);
+    data['photos'] = _jsonColumn(data['photos']);
+    data.removeWhere((key, _) => !_patientColumns.contains(key));
+    await AppDatabase.upsertPatientFromSync(
+      data,
+      expectedGeneration: expectedGeneration,
+    );
   }
 
   static Future<void> upsertAppointmentFromSync(
-    Map<String, dynamic> row,
-  ) async {
+    Map<String, dynamic> row, {
+    int? expectedGeneration,
+  }) async {
     final data = row['data'] is Map
         ? Map<String, dynamic>.from(row['data'] as Map)
         : Map<String, dynamic>.from(row);
@@ -326,8 +246,19 @@ class LocalDatabaseService {
     data['deleted_at'] = row['deleted_at'];
     data['device_id'] = row['device_id'] ?? 'server';
     data['version'] = (row['version'] as num?)?.toInt() ?? 1;
-    data.remove('clinic_id');
-    data.remove('created_at');
-    await AppDatabase.upsertAppointmentFromSync(data);
+    data['reminderSent'] = _sqliteBool(data['reminderSent']);
+    data['notificationSent'] = _sqliteBool(data['notificationSent']);
+    data.removeWhere((key, _) => !_appointmentColumns.contains(key));
+    await AppDatabase.upsertAppointmentFromSync(
+      data,
+      expectedGeneration: expectedGeneration,
+    );
   }
+
+  static String _jsonColumn(dynamic value) {
+    if (value is String) return value;
+    return jsonEncode(value ?? const []);
+  }
+
+  static int _sqliteBool(dynamic value) => value == true || value == 1 ? 1 : 0;
 }

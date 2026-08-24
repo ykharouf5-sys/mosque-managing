@@ -166,4 +166,23 @@ class StorageService {
     await _secure.delete(key: _regRoleKey);
     await _secure.delete(key: _regAcademicYearKey);
   }
+
+  /// Removes patient data written by releases that predate the encrypted
+  /// account-scoped database. This is deliberately separate from registration
+  /// data so an ownership reset cannot erase an in-progress sign-up.
+  static Future<void> clearLegacyClinicalData() async {
+    final values = await _secure.readAll();
+    final keys = values.keys.where(
+      (key) =>
+          key == _patientsIndex ||
+          key == _appointmentsIndex ||
+          key.startsWith(_patientPrefix) ||
+          key.startsWith(_appointmentPrefix),
+    );
+    for (final key in keys.toList(growable: false)) {
+      await _secure.delete(key: key);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_nextIdKey);
+  }
 }

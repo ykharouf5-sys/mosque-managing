@@ -1,4 +1,3 @@
-import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
@@ -35,8 +34,7 @@ class _EmailVerificationScreenState
 
   Future<void> _verifyAndProceed() async {
     setState(() => _isVerifying = true);
-    await AuthService().signOut();
-    ref.read(authProvider.notifier).logout();
+    await ref.read(authProvider.notifier).logout();
     setState(() => _isVerifying = false);
     if (!mounted) return;
 

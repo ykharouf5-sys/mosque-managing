@@ -11,43 +11,76 @@ typedef NewOrdersCallback = void Function(List<Order> orders);
 
 class StorePollingService {
   static Timer? _timer;
-  static const String _lastCheckKey = 'store_orders_last_check';
+  static const String _lastCheckKeyPrefix = 'store_orders_last_check';
   static const Duration _pollInterval = Duration(seconds: 60);
   static NewOrdersCallback? _onNewOrders;
   static final List<Order> _pendingOrders = [];
+  static int _generation = 0;
+  static int? _pollingGeneration;
+  static String? _accountId;
+  static String? _clinicId;
 
   static NewOrdersCallback? get onNewOrders => _onNewOrders;
 
   static set onNewOrders(NewOrdersCallback? cb) {
     _onNewOrders = cb;
-    if (_pendingOrders.isNotEmpty) {
-      _onNewOrders!(List.from(_pendingOrders));
+    if (cb != null && _pendingOrders.isNotEmpty) {
+      cb(List.from(_pendingOrders));
       _pendingOrders.clear();
     }
   }
 
-  static Future<void> init() async {
-    final role = AuthService().role;
-    if (role != 'warehouse_manager' && role != 'sales_manager') {
+  static Future<void> init() => rebindToCurrentSession();
+
+  static Future<void> rebindToCurrentSession() async {
+    final generation = ++_generation;
+    _timer?.cancel();
+    _timer = null;
+    _onNewOrders = null;
+    _pendingOrders.clear();
+    _accountId = null;
+    _clinicId = null;
+
+    final auth = AuthService();
+    final role = auth.role;
+    final accountId = auth.userId;
+    final clinicId = auth.clinicId;
+    if ((role != 'warehouse_manager' && role != 'sales_manager') ||
+        accountId == null ||
+        clinicId == null) {
       debugPrint('⏸ StorePolling — not a manager role, skipping');
       return;
     }
-    _pollNow();
+    _accountId = accountId;
+    _clinicId = clinicId;
+    await _pollNow(generation, accountId, clinicId);
+    if (!_isCurrent(generation, accountId, clinicId)) return;
     _timer = Timer.periodic(_pollInterval, (_) {
       if (ConnectivityService.isOnline.value) {
-        _pollNow();
+        _pollNow(generation, accountId, clinicId);
       }
     });
-    debugPrint('📡 StorePolling started every 60s for ${AuthService().role}');
+    debugPrint('📡 StorePolling started every 60s for $role');
   }
 
-  static Future<void> _pollNow() async {
+  static Future<void> _pollNow(
+    int generation,
+    String accountId,
+    String clinicId,
+  ) async {
+    if (!_isCurrent(generation, accountId, clinicId) ||
+        _pollingGeneration == generation) {
+      return;
+    }
+    _pollingGeneration = generation;
     try {
       final prefs = await SharedPreferences.getInstance();
+      final lastCheckKey = '$_lastCheckKeyPrefix:$accountId:$clinicId';
       final lastCheck =
-          prefs.getString(_lastCheckKey) ?? '1970-01-01T00:00:00.000';
+          prefs.getString(lastCheckKey) ?? '1970-01-01T00:00:00.000';
 
       final rows = await StoreApiService.fetchOrdersSince(lastCheck);
+      if (!_isCurrent(generation, accountId, clinicId)) return;
       if (rows.isEmpty) return;
 
       final newOrders = <Order>[];
@@ -93,6 +126,7 @@ class StorePollingService {
         );
       }
 
+      if (!_isCurrent(generation, accountId, clinicId)) return;
       if (_onNewOrders != null) {
         _onNewOrders!(newOrders);
       } else {
@@ -100,13 +134,30 @@ class StorePollingService {
       }
 
       final now = DateTime.now().toUtc().toIso8601String();
-      await prefs.setString(_lastCheckKey, now);
+      if (_isCurrent(generation, accountId, clinicId)) {
+        await prefs.setString(lastCheckKey, now);
+      }
     } catch (e) {
       debugPrint('⚠️ StorePolling error: $e');
+    } finally {
+      if (_pollingGeneration == generation) _pollingGeneration = null;
     }
   }
 
+  static bool _isCurrent(int generation, String accountId, String clinicId) =>
+      generation == _generation &&
+      _accountId == accountId &&
+      _clinicId == clinicId &&
+      AuthService().userId == accountId &&
+      AuthService().clinicId == clinicId;
+
   static void dispose() {
+    _generation++;
     _timer?.cancel();
+    _timer = null;
+    _onNewOrders = null;
+    _pendingOrders.clear();
+    _accountId = null;
+    _clinicId = null;
   }
 }

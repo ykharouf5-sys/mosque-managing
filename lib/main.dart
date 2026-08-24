@@ -20,6 +20,8 @@ import 'package:studentry/auth/presentation/onboarding_screen.dart';
 import 'package:studentry/auth/presentation/login_screen.dart';
 import 'package:studentry/auth/presentation/register_screen.dart';
 import 'package:studentry/auth/presentation/welcome_screen.dart';
+import 'package:studentry/auth/presentation/pending_membership_screen.dart';
+import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/api_config.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
@@ -29,6 +31,7 @@ import 'package:studentry/shared/data/fcm_token_service.dart';
 import 'package:studentry/shared/data/sync_service.dart';
 import 'package:studentry/store/data/pending_order_service.dart';
 import 'package:studentry/store/data/store_polling_service.dart';
+import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/widgets/main_navigation_screen.dart';
 import 'package:flutter/material.dart';
@@ -70,25 +73,31 @@ Future<void> main() async {
   } catch (_) {}
   SyncService.init();
   await PendingOrderService.init();
-  StorePollingService.init();
+  await StorePollingService.init();
 
   runApp(const ProviderScope(child: MyApp()));
 }
 
-class _AuthGate extends ConsumerStatefulWidget {
-  const _AuthGate();
+class _AppLockGate extends ConsumerStatefulWidget {
+  final Widget child;
+
+  const _AppLockGate({required this.child});
+
   @override
-  ConsumerState<_AuthGate> createState() => _AuthGateState();
+  ConsumerState<_AppLockGate> createState() => _AppLockGateState();
 }
 
-class _AuthGateState extends ConsumerState<_AuthGate>
+class _AppLockGateState extends ConsumerState<_AppLockGate>
     with WidgetsBindingObserver {
-  bool _locked = false;
+  bool _locked = true;
+  bool _lockStateReady = false;
+  bool _unlockInProgress = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initializeLock();
   }
 
   @override
@@ -99,75 +108,158 @@ class _AuthGateState extends ConsumerState<_AuthGate>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      setState(() => _locked = true);
+    if ((state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.hidden ||
+            state == AppLifecycleState.paused) &&
+        AuthService().isLoggedIn &&
+        mounted) {
+      setState(() {
+        _locked = true;
+        _lockStateReady = true;
+      });
     }
     if (state == AppLifecycleState.resumed && _locked) {
       _unlock();
     }
   }
 
-  Future<void> _unlock() async {
+  Future<void> _initializeLock() async {
+    if (!AuthService().isLoggedIn) {
+      if (mounted) {
+        setState(() {
+          _locked = false;
+          _lockStateReady = true;
+        });
+      }
+      return;
+    }
     final enabled = await BiometricService.isEnabled();
-    if (!enabled) {
-      if (mounted) setState(() => _locked = false);
-      return;
+    if (!mounted) return;
+    setState(() {
+      _locked = enabled;
+      _lockStateReady = true;
+    });
+    if (enabled) await _unlock();
+  }
+
+  Future<void> _unlock() async {
+    if (_unlockInProgress) return;
+    _unlockInProgress = true;
+    try {
+      final enabled = await BiometricService.isEnabled();
+      if (!enabled) {
+        if (mounted) {
+          setState(() {
+            _locked = false;
+            _lockStateReady = true;
+          });
+        }
+        return;
+      }
+      final available = await BiometricService.isAvailable();
+      if (!available) {
+        if (mounted) {
+          setState(() {
+            _locked = true;
+            _lockStateReady = true;
+          });
+        }
+        return;
+      }
+      final ok = await BiometricService.authenticate();
+      if (mounted) {
+        setState(() {
+          _locked = !ok;
+          _lockStateReady = true;
+        });
+      }
+    } finally {
+      _unlockInProgress = false;
     }
-    final available = await BiometricService.isAvailable();
-    if (!available) {
-      if (mounted) setState(() => _locked = false);
-      return;
+  }
+
+  Future<void> _signOutFromLock() async {
+    await AuthService().signOut();
+    ref.read(authProvider.notifier).clearAuth();
+    navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    if (mounted) {
+      setState(() {
+        _locked = false;
+        _lockStateReady = true;
+      });
     }
-    final ok = await BiometricService.authenticate();
-    if (mounted) setState(() => _locked = !ok);
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
 
-    if (auth.isLoggedIn) {
-      final role = auth.role ?? 'student';
-      switch (role) {
-        case 'admin':
-        case 'sales_manager':
-          return const SalesDashboardScreen();
-        case 'student_manager':
-          return const StudentAdminDashboard();
-        case 'warehouse_manager':
-          return const WarehouseDashboardScreen();
-        case 'student':
-          return const MainNavigationScreen();
-        default:
-          return const MainNavigationScreen();
-      }
-    }
-
-    if (_locked) {
+    if (!auth.isLoggedIn) return widget.child;
+    if (!_lockStateReady || _locked) {
       return Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.fingerprint, size: 64, color: AppColors.primary),
-              SizedBox(height: 16),
-              Text(
-                'الرجاء المصادقة',
-                style: TextStyle(fontSize: 18, color: AppColors.textDark),
-              ),
-              SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _unlock,
-                icon: Icon(Icons.lock_open),
-                label: Text('فتح التطبيق'),
-              ),
+              if (!_lockStateReady)
+                const CircularProgressIndicator()
+              else ...[
+                Icon(Icons.fingerprint, size: 64, color: AppColors.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'الرجاء المصادقة',
+                  style: TextStyle(fontSize: 18, color: AppColors.textDark),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _unlockInProgress ? null : _unlock,
+                  icon: const Icon(Icons.lock_open),
+                  label: const Text('فتح التطبيق'),
+                ),
+                TextButton(
+                  onPressed: _signOutFromLock,
+                  child: const Text('تسجيل الخروج'),
+                ),
+              ],
             ],
           ),
         ),
       );
     }
-    return const OnboardingScreen();
+
+    return widget.child;
+  }
+}
+
+class _AuthGate extends ConsumerWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authProvider);
+    if (!auth.isLoggedIn) return const OnboardingScreen();
+
+    final role = auth.role ?? 'student';
+    switch (role) {
+      case 'admin':
+      case 'sales_manager':
+        return const SalesDashboardScreen();
+      case 'student_manager':
+        return const StudentAdminDashboard();
+      case 'warehouse_manager':
+        return const WarehouseDashboardScreen();
+      case 'student':
+        return ClinicalMembershipGate(
+          hasActiveMembership: auth.hasActiveClinicalMembership,
+          child: const MainNavigationScreen(),
+        );
+      default:
+        return ClinicalMembershipGate(
+          hasActiveMembership: auth.hasActiveClinicalMembership,
+          child: const MainNavigationScreen(),
+        );
+    }
   }
 }
 
@@ -193,10 +285,12 @@ class _MyAppState extends ConsumerState<MyApp> {
     currentUserId = authService.userId;
     currentUserRole = authService.role;
     authService.onAuthChange.listen((event) async {
+      _invalidateUserScopedProviders();
       if (event.session?.user != null) {
-        final uid = event.session!.user.id;
-        final role = event.session!.user.userMetadata['role'] as String? ?? '';
-        ref.read(authProvider.notifier).setAuth(uid, role);
+        final user = event.session!.user;
+        final uid = user.id;
+        final role = user.role;
+        ref.read(authProvider.notifier).setAuthUser(user);
         currentUserId = uid;
         currentUserRole = role;
       } else {
@@ -204,7 +298,19 @@ class _MyAppState extends ConsumerState<MyApp> {
         currentUserId = null;
         currentUserRole = null;
       }
+      await StorePollingService.rebindToCurrentSession();
     });
+  }
+
+  void _invalidateUserScopedProviders() {
+    ref.invalidate(patientListProvider);
+    ref.invalidate(appointmentListProvider);
+    ref.invalidate(patientsProvider);
+    ref.invalidate(appointmentsProvider);
+    ref.invalidate(cartProvider);
+    ref.invalidate(favoritesProvider);
+    ref.invalidate(reviewsProvider);
+    ref.invalidate(ordersProvider);
   }
 
   @override
@@ -217,6 +323,8 @@ class _MyAppState extends ConsumerState<MyApp> {
       builder: (context, child) {
         return MaterialApp(
           navigatorKey: navigatorKey,
+          builder: (context, child) =>
+              _AppLockGate(child: child ?? const SizedBox.shrink()),
           debugShowCheckedModeBanner: false,
           locale: locale,
           supportedLocales: const [Locale('ar'), Locale('en')],
@@ -238,7 +346,16 @@ class _MyAppState extends ConsumerState<MyApp> {
             '/settings': (context) => const SettingsScreen(),
             '/sales-dashboard': (context) => const SalesDashboardScreen(),
             '/my-orders': (context) => const MyOrdersScreen(),
-            '/student-home': (context) => const MainNavigationScreen(),
+            '/student-home': (context) => Consumer(
+              builder: (context, ref, _) {
+                final auth = ref.watch(authProvider);
+                return ClinicalMembershipGate(
+                  hasActiveMembership: auth.hasActiveClinicalMembership,
+                  child: const MainNavigationScreen(),
+                );
+              },
+            ),
+            '/membership-pending': (context) => const PendingMembershipScreen(),
             '/schedule': (context) => const ScheduleScreen(),
             '/lessons': (context) => const LessonsScreen(),
             '/university': (context) => const UniversityScreen(),

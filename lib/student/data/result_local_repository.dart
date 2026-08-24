@@ -9,8 +9,10 @@ class ResultLocalRepository {
   const ResultLocalRepository();
 
   Future<List<ResultUpload>> uploads() async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final db = await AppDatabase.database;
     final rows = await db.query('result_uploads', orderBy: 'created_at DESC');
+    AppDatabase.ensureDataGeneration(generation);
     return rows
         .map(
           (row) => ResultUpload.fromJson(
@@ -21,6 +23,7 @@ class ResultLocalRepository {
   }
 
   Future<List<ResultRecord>> records(String uploadId) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final db = await AppDatabase.database;
     final rows = await db.query(
       'result_records',
@@ -28,6 +31,7 @@ class ResultLocalRepository {
       whereArgs: [uploadId],
       orderBy: 'created_at, id',
     );
+    AppDatabase.ensureDataGeneration(generation);
     return rows
         .map(
           (row) => ResultRecord.fromJson(
@@ -38,8 +42,10 @@ class ResultLocalRepository {
   }
 
   Future<void> save(ResultUpload upload, List<ResultRecord> records) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final db = await AppDatabase.database;
     await db.transaction((txn) async {
+      AppDatabase.ensureDataGeneration(generation);
       await txn.insert('result_uploads', {
         'id': upload.id,
         'data': jsonEncode(upload.toJson()),
@@ -77,7 +83,9 @@ class ResultLocalRepository {
   }
 
   Future<void> delete(String uploadId) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final db = await AppDatabase.database;
+    AppDatabase.ensureDataGeneration(generation);
     await db.delete('result_uploads', where: 'id = ?', whereArgs: [uploadId]);
   }
 }

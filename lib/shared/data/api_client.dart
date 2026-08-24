@@ -14,6 +14,7 @@ class ApiClient {
   ApiClient._();
   static final instance = ApiClient._();
   String? Function()? tokenProvider;
+  int Function()? sessionGenerationProvider;
   final http.Client _http = http.Client();
   Future<ApiResult> get(
     String path, {
@@ -60,31 +61,39 @@ class ApiClient {
     List<int> bytes,
     String filename, {
     Map<String, String> fields = const {},
-  }) => ApiRequestQueue.instance.add(() async {
-    final req = http.MultipartRequest(
-      'POST',
-      Uri.parse('${ApiConfig.baseUrl}$path'),
-    );
-    final token = tokenProvider?.call();
-    if (token != null) req.headers['Authorization'] = 'Bearer $token';
-    req.headers['Accept'] = 'application/json';
-    req.fields.addAll(fields);
-    req.files.add(
-      http.MultipartFile.fromBytes('image', bytes, filename: filename),
-    );
-    final response = await http.Response.fromStream(
-      await _http.send(req).timeout(ApiConfig.requestTimeout),
-    );
-    final decoded = response.body.isEmpty ? null : jsonDecode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
-        response.statusCode,
-        decoded?['message']?.toString() ?? 'Upload failed',
-        decoded,
+  }) {
+    final capturedToken = tokenProvider?.call();
+    final capturedGeneration = sessionGenerationProvider?.call();
+    return ApiRequestQueue.instance.add(() async {
+      _ensureCurrentSession(capturedGeneration);
+      final req = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiConfig.baseUrl}$path'),
       );
-    }
-    return ApiResult(response.statusCode, decoded, response.headers);
-  });
+      if (capturedToken != null) {
+        req.headers['Authorization'] = 'Bearer $capturedToken';
+      }
+      req.headers['Accept'] = 'application/json';
+      req.fields.addAll(fields);
+      req.files.add(
+        http.MultipartFile.fromBytes('image', bytes, filename: filename),
+      );
+      final response = await http.Response.fromStream(
+        await _http.send(req).timeout(ApiConfig.requestTimeout),
+      );
+      _ensureCurrentSession(capturedGeneration);
+      final decoded = response.body.isEmpty ? null : jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(
+          response.statusCode,
+          decoded?['message']?.toString() ?? 'Upload failed',
+          decoded,
+        );
+      }
+      return ApiResult(response.statusCode, decoded, response.headers);
+    });
+  }
+
   Future<ApiResult> _send(
     String method,
     String path, {
@@ -93,37 +102,61 @@ class ApiClient {
     Object? body,
     bool authenticated = true,
     int maxRetries = 3,
-  }) => ApiRequestQueue.instance.add(() async {
-    final base = Uri.parse('${ApiConfig.baseUrl}$path');
-    final uri = base.replace(queryParameters: query);
-    final req = http.Request(method, uri);
-    req.headers.addAll({
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      ...?headers,
-    });
-    final token = tokenProvider?.call();
-    if (authenticated && token != null) {
-      req.headers['Authorization'] = 'Bearer $token';
-    }
-    if (body != null) req.body = jsonEncode(body);
-    final streamed = await _http.send(req).timeout(ApiConfig.requestTimeout);
-    final response = await http.Response.fromStream(streamed);
-    dynamic decoded;
-    if (response.body.isNotEmpty) {
-      try {
-        decoded = jsonDecode(response.body);
-      } catch (_) {
-        decoded = response.body;
+  }) {
+    // Capture credentials at call time. A queued request created by account A
+    // must never pick up account B's token if the session changes while it is
+    // waiting for a concurrency slot.
+    final capturedToken = tokenProvider?.call();
+    final capturedGeneration = authenticated
+        ? sessionGenerationProvider?.call()
+        : null;
+    return ApiRequestQueue.instance.add(() async {
+      if (authenticated) _ensureCurrentSession(capturedGeneration);
+      final base = Uri.parse('${ApiConfig.baseUrl}$path');
+      final uri = base.replace(queryParameters: query);
+      final req = http.Request(method, uri);
+      req.headers.addAll({
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...?headers,
+      });
+      if (authenticated && capturedToken != null) {
+        req.headers['Authorization'] = 'Bearer $capturedToken';
       }
+      if (body != null) req.body = jsonEncode(body);
+      final streamed = await _http.send(req).timeout(ApiConfig.requestTimeout);
+      final response = await http.Response.fromStream(streamed);
+      if (authenticated) _ensureCurrentSession(capturedGeneration);
+      dynamic decoded;
+      if (response.body.isNotEmpty) {
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {
+          decoded = response.body;
+        }
+      }
+      if ((response.statusCode < 200 || response.statusCode >= 300) &&
+          response.statusCode != 304) {
+        final message = decoded is Map
+            ? (decoded['message']?.toString() ?? 'API error')
+            : 'API error ${response.statusCode}';
+        throw ApiException(response.statusCode, message, decoded);
+      }
+      return ApiResult(response.statusCode, decoded, response.headers);
+    }, maxRetries: maxRetries);
+  }
+
+  void _ensureCurrentSession(int? capturedGeneration) {
+    final currentGeneration = sessionGenerationProvider?.call();
+    if (capturedGeneration != null && currentGeneration != capturedGeneration) {
+      throw const StaleSessionException();
     }
-    if ((response.statusCode < 200 || response.statusCode >= 300) &&
-        response.statusCode != 304) {
-      final message = decoded is Map
-          ? (decoded['message']?.toString() ?? 'API error')
-          : 'API error ${response.statusCode}';
-      throw ApiException(response.statusCode, message, decoded);
-    }
-    return ApiResult(response.statusCode, decoded, response.headers);
-  }, maxRetries: maxRetries);
+  }
+}
+
+class StaleSessionException implements Exception {
+  const StaleSessionException();
+
+  @override
+  String toString() => 'The authenticated session changed during the request.';
 }

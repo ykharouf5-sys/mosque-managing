@@ -1,5 +1,4 @@
 import 'package:studentry/auth/data/role_repository.dart';
-import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
@@ -49,8 +48,7 @@ class _WarehouseDashboardScreenState
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              await AuthService().signOut();
-              ref.read(authProvider.notifier).logout();
+              await ref.read(authProvider.notifier).logout();
               if (context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(
                   context,

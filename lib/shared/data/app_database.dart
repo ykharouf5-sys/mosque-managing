@@ -7,12 +7,53 @@ import 'database_key_service.dart';
 import 'device_service.dart';
 import 'local_database.dart';
 
+class AccountActivationResult {
+  final bool accountChanged;
+  final bool scopeChanged;
+
+  const AccountActivationResult({
+    required this.accountChanged,
+    required this.scopeChanged,
+  });
+
+  bool get requiresClinicalPurge => accountChanged || scopeChanged;
+}
+
+class StaleAccountDataException implements Exception {
+  const StaleAccountDataException();
+
+  @override
+  String toString() => 'The active local account changed during the operation.';
+}
+
 class AppDatabase {
   static Database? _db;
   static const _dbName = 'aqua_app_secure.db';
   static const _legacyDbName = 'aqua_app.db';
   static const _obsoleteSyncDbName = 'dentalcare_sync.db';
-  static const _dbVersion = 6;
+  static const _dbVersion = 7;
+  static const _activeAccountKey = 'active_account_id';
+  static const _clinicalScopeVersionKey = 'clinical_scope_version';
+  static String? _activeAccountId;
+  static int? _activeClinicalScopeVersion;
+  static int _dataGeneration = 0;
+
+  static String? get activeAccountId => _activeAccountId;
+  static int? get activeClinicalScopeVersion => _activeClinicalScopeVersion;
+  static int get dataGeneration => _dataGeneration;
+
+  static int captureActiveDataGeneration() {
+    if (_activeAccountId == null) {
+      throw StateError('No local account is active.');
+    }
+    return _dataGeneration;
+  }
+
+  static void ensureDataGeneration(int expectedGeneration) {
+    if (_activeAccountId == null || expectedGeneration != _dataGeneration) {
+      throw const StaleAccountDataException();
+    }
+  }
 
   static Future<Database> get database async {
     if (_db != null) return _db!;
@@ -140,6 +181,13 @@ class AppDatabase {
           );
         }
       }
+      // Plaintext releases predate account and ownership scoping. Verify the
+      // migration mechanics above, then discard those unassignable user rows
+      // before the encrypted database can ever be opened by a signed-in user.
+      await target.transaction((txn) async {
+        await _clearAllUserRows(txn);
+        await txn.delete('metadata');
+      });
       await _verifyCipher(target);
       await target.close();
       target = null;
@@ -202,6 +250,12 @@ class AppDatabase {
     }
     if (oldVersion < 6) {
       await _createAcademicResultTables(db);
+    }
+    if (oldVersion < 7) {
+      // Pre-v7 rows had no reliable account or ownership scope. Purging them is
+      // the only safe migration; the authorized rows are downloaded again.
+      await _clearAllUserRows(db);
+      await db.delete('metadata');
     }
   }
 
@@ -324,8 +378,15 @@ class AppDatabase {
   }
 
   // ── Metadata ──
-  static Future<void> setMetadata(String key, String value) async {
+  static Future<void> setMetadata(
+    String key,
+    String value, {
+    int? expectedGeneration,
+  }) async {
     final db = await database;
+    if (expectedGeneration != null) {
+      ensureDataGeneration(expectedGeneration);
+    }
     await db.insert('metadata', {
       'key': key,
       'value': value,
@@ -337,6 +398,113 @@ class AppDatabase {
     final rows = await db.query('metadata', where: 'key = ?', whereArgs: [key]);
     if (rows.isEmpty) return null;
     return rows.first['value'] as String;
+  }
+
+  static Future<AccountActivationResult> activateAccount({
+    required String accountId,
+    required int clinicalScopeVersion,
+  }) async {
+    if (accountId.trim().isEmpty || clinicalScopeVersion < 1) {
+      throw ArgumentError('A valid account and clinical scope are required.');
+    }
+    final db = await database;
+    final storedAccount = await _readMetadata(db, _activeAccountKey);
+    final storedScope = int.tryParse(
+      await _readMetadata(db, _clinicalScopeVersionKey) ?? '',
+    );
+    final accountChanged = storedAccount != accountId;
+    final scopeChanged = !accountChanged && storedScope != clinicalScopeVersion;
+
+    if (accountChanged || scopeChanged) _dataGeneration++;
+
+    await db.transaction((txn) async {
+      if (accountChanged) {
+        await _clearAllUserRows(txn);
+        await txn.delete('metadata');
+      } else if (scopeChanged) {
+        await _clearClinicalRows(txn);
+        await txn.delete(
+          'metadata',
+          where: 'key NOT IN (?, ?)',
+          whereArgs: [_activeAccountKey, _clinicalScopeVersionKey],
+        );
+      }
+      await _writeMetadata(txn, _activeAccountKey, accountId);
+      await _writeMetadata(
+        txn,
+        _clinicalScopeVersionKey,
+        clinicalScopeVersion.toString(),
+      );
+    });
+
+    _activeAccountId = accountId;
+    _activeClinicalScopeVersion = clinicalScopeVersion;
+    return AccountActivationResult(
+      accountChanged: accountChanged,
+      scopeChanged: scopeChanged,
+    );
+  }
+
+  static Future<String?> _readMetadata(DatabaseExecutor db, String key) async {
+    final rows = await db.query(
+      'metadata',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['value'] as String?;
+  }
+
+  static Future<void> _writeMetadata(
+    DatabaseExecutor db,
+    String key,
+    String value,
+  ) async {
+    await db.insert('metadata', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> _clearClinicalRows(DatabaseExecutor db) async {
+    await db.delete('patients');
+    await db.delete('appointments');
+    await db.delete('sync_queue');
+  }
+
+  static Future<void> _clearAllUserRows(DatabaseExecutor db) async {
+    await _clearClinicalRows(db);
+    await db.delete('pending_orders');
+    await db.delete('result_records');
+    await db.delete('result_uploads');
+  }
+
+  static Future<void> discardLocalRecord(
+    String tableName,
+    String id, {
+    int? expectedGeneration,
+  }) async {
+    if (tableName != 'patients' && tableName != 'appointments') {
+      throw ArgumentError.value(tableName, 'tableName', 'Unsupported table');
+    }
+    final generation = expectedGeneration ?? captureActiveDataGeneration();
+    final db = await database;
+    ensureDataGeneration(generation);
+    await db.delete(tableName, where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> resetClinicalDataForResync() async {
+    _dataGeneration++;
+    final db = await database;
+    await db.transaction((txn) async {
+      await _clearClinicalRows(txn);
+      await txn.delete(
+        'metadata',
+        where: 'key NOT IN (?, ?)',
+        whereArgs: [_activeAccountKey, _clinicalScopeVersionKey],
+      );
+    });
   }
 
   // ── Patients CRUD ──
@@ -384,6 +552,7 @@ class AppDatabase {
   }
 
   static Future<void> insertPatient(Map<String, dynamic> patient) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
     final deviceId = await DeviceService.getDeviceId();
     final now = DateTime.now().toUtc().toIso8601String();
@@ -395,6 +564,7 @@ class AppDatabase {
     if (!patient.containsKey('id') || patient['id'] == null) {
       patient['id'] = const Uuid().v4();
     }
+    ensureDataGeneration(generation);
     await db.insert(
       'patients',
       patient,
@@ -405,6 +575,7 @@ class AppDatabase {
       tableName: 'patients',
       recordId: patient['id'] as String,
       payload: jsonEncode(patient),
+      expectedGeneration: generation,
     );
   }
 
@@ -412,6 +583,7 @@ class AppDatabase {
     String id,
     Map<String, dynamic> data,
   ) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
     final current = await db.query(
       'patients',
@@ -426,6 +598,7 @@ class AppDatabase {
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
     data['is_synced'] = 0;
     data.remove('version');
+    ensureDataGeneration(generation);
     await db.update('patients', data, where: 'id = ?', whereArgs: [id]);
     final payload = Map<String, dynamic>.from(data);
     payload['id'] = id;
@@ -435,12 +608,15 @@ class AppDatabase {
       tableName: 'patients',
       recordId: id,
       payload: jsonEncode(payload),
+      expectedGeneration: generation,
     );
   }
 
   static Future<void> softDeletePatient(String id) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
     final now = DateTime.now().toUtc().toIso8601String();
+    ensureDataGeneration(generation);
     await db.update(
       'patients',
       {'deleted_at': now, 'updated_at': now, 'is_synced': 0},
@@ -452,6 +628,7 @@ class AppDatabase {
       tableName: 'patients',
       recordId: id,
       payload: jsonEncode({'id': id}),
+      expectedGeneration: generation,
     );
   }
 
@@ -470,12 +647,15 @@ class AppDatabase {
     );
   }
 
-  static Future<void> applyLocalPayment(String id, double amount) async {
+  static Future<int> applyLocalPayment(String id, double amount) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
+    ensureDataGeneration(generation);
     await db.rawUpdate(
       'UPDATE patients SET amountPaid = amountPaid + ?, todayPayment = todayPayment + ?, updated_at = ? WHERE id = ?',
       [amount, amount, DateTime.now().toUtc().toIso8601String(), id],
     );
+    return generation;
   }
 
   static Future<void> applyServerPaymentSummary(
@@ -483,8 +663,11 @@ class AppDatabase {
     required double amountPaid,
     required double todayPayment,
     required int version,
+    int? expectedGeneration,
   }) async {
+    final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
+    ensureDataGeneration(generation);
     await db.update(
       'patients',
       {
@@ -499,18 +682,24 @@ class AppDatabase {
     );
   }
 
-  static Future<void> upsertPatientFromSync(Map<String, dynamic> row) async {
+  static Future<void> upsertPatientFromSync(
+    Map<String, dynamic> row, {
+    bool force = false,
+    int? expectedGeneration,
+  }) async {
+    final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
     final local = await db.query(
       'patients',
       where: 'id = ?',
       whereArgs: [row['id']],
     );
-    if (local.isNotEmpty) {
+    if (!force && local.isNotEmpty) {
       final localUpdatedAt = local.first['updated_at'] as String? ?? '';
       final remoteUpdatedAt = row['updated_at'] as String? ?? '';
       if (remoteUpdatedAt.compareTo(localUpdatedAt) < 0) return;
     }
+    ensureDataGeneration(generation);
     row['is_synced'] = 1;
     row['device_id'] = row['device_id'] ?? await DeviceService.getDeviceId();
     await db.insert(
@@ -567,6 +756,7 @@ class AppDatabase {
   static Future<void> insertAppointment(
     Map<String, dynamic> appointment,
   ) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
     final deviceId = await DeviceService.getDeviceId();
     final now = DateTime.now().toUtc().toIso8601String();
@@ -578,6 +768,7 @@ class AppDatabase {
     if (!appointment.containsKey('id') || appointment['id'] == null) {
       appointment['id'] = const Uuid().v4();
     }
+    ensureDataGeneration(generation);
     await db.insert(
       'appointments',
       appointment,
@@ -588,6 +779,7 @@ class AppDatabase {
       tableName: 'appointments',
       recordId: appointment['id'] as String,
       payload: jsonEncode(appointment),
+      expectedGeneration: generation,
     );
   }
 
@@ -595,6 +787,7 @@ class AppDatabase {
     String id,
     Map<String, dynamic> data,
   ) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
     final current = await db.query(
       'appointments',
@@ -609,6 +802,7 @@ class AppDatabase {
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
     data['is_synced'] = 0;
     data.remove('version');
+    ensureDataGeneration(generation);
     await db.update('appointments', data, where: 'id = ?', whereArgs: [id]);
     final payload = Map<String, dynamic>.from(data);
     payload['id'] = id;
@@ -618,12 +812,15 @@ class AppDatabase {
       tableName: 'appointments',
       recordId: id,
       payload: jsonEncode(payload),
+      expectedGeneration: generation,
     );
   }
 
   static Future<void> softDeleteAppointment(String id) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
     final now = DateTime.now().toUtc().toIso8601String();
+    ensureDataGeneration(generation);
     await db.update(
       'appointments',
       {'deleted_at': now, 'updated_at': now, 'is_synced': 0},
@@ -635,6 +832,7 @@ class AppDatabase {
       tableName: 'appointments',
       recordId: id,
       payload: jsonEncode({'id': id}),
+      expectedGeneration: generation,
     );
   }
 
@@ -654,19 +852,23 @@ class AppDatabase {
   }
 
   static Future<void> upsertAppointmentFromSync(
-    Map<String, dynamic> row,
-  ) async {
+    Map<String, dynamic> row, {
+    bool force = false,
+    int? expectedGeneration,
+  }) async {
+    final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
     final local = await db.query(
       'appointments',
       where: 'id = ?',
       whereArgs: [row['id']],
     );
-    if (local.isNotEmpty) {
+    if (!force && local.isNotEmpty) {
       final localUpdatedAt = local.first['updated_at'] as String? ?? '';
       final remoteUpdatedAt = row['updated_at'] as String? ?? '';
       if (remoteUpdatedAt.compareTo(localUpdatedAt) < 0) return;
     }
+    ensureDataGeneration(generation);
     row['is_synced'] = 1;
     row['device_id'] = row['device_id'] ?? await DeviceService.getDeviceId();
     await db.insert(
@@ -714,22 +916,35 @@ class AppDatabase {
 
   // ── Pending Orders ──
 
-  static Future<void> insertPendingOrder(String id, String dataJson) async {
+  static Future<int> insertPendingOrder(String id, String dataJson) async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
+    ensureDataGeneration(generation);
     await db.insert('pending_orders', {
       'id': id,
       'data': dataJson,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+    return generation;
   }
 
-  static Future<List<Map<String, dynamic>>> getPendingOrders() async {
+  static Future<List<Map<String, dynamic>>> getPendingOrders({
+    int? expectedGeneration,
+  }) async {
+    final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
-    return db.query('pending_orders', orderBy: 'created_at ASC');
+    final rows = await db.query('pending_orders', orderBy: 'created_at ASC');
+    ensureDataGeneration(generation);
+    return rows;
   }
 
-  static Future<void> deletePendingOrder(String id) async {
+  static Future<void> deletePendingOrder(
+    String id, {
+    int? expectedGeneration,
+  }) async {
+    final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
+    ensureDataGeneration(generation);
     await db.delete('pending_orders', where: 'id = ?', whereArgs: [id]);
   }
 
@@ -754,13 +969,13 @@ class AppDatabase {
   }
 
   static Future<void> clearAllLocalData() async {
+    _dataGeneration++;
     final db = await database;
-    await db.delete('patients');
-    await db.delete('appointments');
-    await db.delete('pending_orders');
-    await db.delete('sync_queue');
-    await db.delete('result_records');
-    await db.delete('result_uploads');
-    await db.delete('metadata');
+    await db.transaction((txn) async {
+      await _clearAllUserRows(txn);
+      await txn.delete('metadata');
+    });
+    _activeAccountId = null;
+    _activeClinicalScopeVersion = null;
   }
 }

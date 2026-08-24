@@ -1,5 +1,4 @@
 import 'package:studentry/patients/data/patient_data.dart';
-import 'package:studentry/patients/data/patient_api_service.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/sync_service.dart';
@@ -22,11 +21,13 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   @override
   List<PatientProfile> build() {
     _loadedCount = pageSize.clamp(0, _patients.length);
-    SyncService.onDbReload = () {
+    void reloadFromDatabase() {
       loadFromDb();
-    };
+    }
+
+    SyncService.addDbReloadListener(reloadFromDatabase);
     ref.onDispose(() {
-      if (SyncService.onDbReload != null) SyncService.onDbReload = null;
+      SyncService.removeDbReloadListener(reloadFromDatabase);
     });
     return _display();
   }
@@ -43,16 +44,7 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   }
 
   Future<void> refreshFromApi() async {
-    try {
-      final page = await PatientApiService.fetchPage(1);
-      for (final row in page.rows) {
-        await AppDatabase.upsertPatientFromSync(
-          PatientApiService.toLocalRow(row),
-        );
-      }
-    } catch (_) {
-      // Offline-first: keep the local list when the API is unavailable.
-    }
+    await SyncService.syncNow();
     await loadFromDb();
   }
 
@@ -148,11 +140,13 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   @override
   List<Appointment> build() {
     _loadedCount = pageSize.clamp(0, _appointments.length);
-    SyncService.onDbReload = () {
+    void reloadFromDatabase() {
       loadFromDb();
-    };
+    }
+
+    SyncService.addDbReloadListener(reloadFromDatabase);
     ref.onDispose(() {
-      if (SyncService.onDbReload != null) SyncService.onDbReload = null;
+      SyncService.removeDbReloadListener(reloadFromDatabase);
     });
     return _display();
   }

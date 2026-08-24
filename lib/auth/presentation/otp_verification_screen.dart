@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:studentry/auth/presentation/auth_mixin.dart';
 import 'package:studentry/shared/data/auth_service.dart';
-import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -118,22 +117,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
       }
 
       final user = response.user!;
-      final role = user.userMetadata['role'] as String? ?? 'student';
-      ref.read(authProvider.notifier).setAuth(user.id, role);
-
       if (!mounted) return;
-
-      if (role == 'student' &&
-          (widget.purpose == 'email_verification' ||
-              !AuthService().profileCompleted)) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/student-profile',
-          (_) => false,
-        );
-      } else {
-        navigateByRoleSync(role, context);
-      }
+      navigateAuthenticatedUser(user, context);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
