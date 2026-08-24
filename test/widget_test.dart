@@ -23,6 +23,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('app lock keeps the protected navigator subtree mounted', (
+    tester,
+  ) async {
+    _LifecycleProbeState.disposeCount = 0;
+
+    Widget buildApp(bool showLock) => MaterialApp(
+      home: AppLockOverlay(
+        showLock: showLock,
+        lockStateReady: true,
+        unlockInProgress: false,
+        onUnlock: () {},
+        onSignOut: () {},
+        child: const _LifecycleProbe(),
+      ),
+    );
+
+    await tester.pumpWidget(buildApp(false));
+    await tester.pumpWidget(buildApp(true));
+    expect(find.byType(_LifecycleProbe), findsOneWidget);
+    expect(_LifecycleProbeState.disposeCount, 0);
+
+    await tester.pumpWidget(buildApp(false));
+    expect(find.byType(_LifecycleProbe), findsOneWidget);
+    expect(_LifecycleProbeState.disposeCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('fixed auth layouts fit a compact phone without scrolling', (
     tester,
   ) async {
@@ -57,4 +84,24 @@ void main() {
     await pumpAuth(const LoginScreen());
     await pumpAuth(const OnboardingScreen());
   });
+}
+
+class _LifecycleProbe extends StatefulWidget {
+  const _LifecycleProbe();
+
+  @override
+  State<_LifecycleProbe> createState() => _LifecycleProbeState();
+}
+
+class _LifecycleProbeState extends State<_LifecycleProbe> {
+  static int disposeCount = 0;
+
+  @override
+  void dispose() {
+    disposeCount++;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
 }

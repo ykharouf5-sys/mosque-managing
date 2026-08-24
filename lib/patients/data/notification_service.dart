@@ -37,7 +37,8 @@ class NotificationService {
 
     if (!requestPermissions || _permissionsConfigured) return;
 
-    // Request permissions for Android 13+ and Android 12+
+    // Exact alarms are intentionally not requested: all reminders use
+    // AndroidScheduleMode.inexactAllowWhileIdle.
     try {
       final androidPlugin = _plugin
           .resolvePlatformSpecificImplementation<
@@ -52,7 +53,6 @@ class NotificationService {
         ),
       );
       await androidPlugin?.requestNotificationsPermission();
-      await androidPlugin?.requestExactAlarmsPermission();
       final iosPlugin = _plugin
           .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin

@@ -98,6 +98,14 @@ void main() {
         final manifest = _read('android/app/src/main/AndroidManifest.xml');
         expect(manifest, isNot(contains('SCHEDULE_EXACT_ALARM')));
         expect(manifest, isNot(contains('USE_EXACT_ALARM')));
+        final notifications = _read(
+          'lib/patients/data/notification_service.dart',
+        );
+        expect(notifications, isNot(contains('requestExactAlarmsPermission')));
+        expect(
+          notifications,
+          contains('AndroidScheduleMode.inexactAllowWhileIdle'),
+        );
         expect(
           RegExp(r'AD_ID" tools:node="remove"').allMatches(manifest).length,
           greaterThanOrEqualTo(2),

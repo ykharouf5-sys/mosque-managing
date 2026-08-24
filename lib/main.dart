@@ -113,6 +113,7 @@ class _AppLockGateState extends ConsumerState<_AppLockGate>
             state == AppLifecycleState.hidden ||
             state == AppLifecycleState.paused) &&
         AuthService().isLoggedIn &&
+        !_unlockInProgress &&
         mounted) {
       setState(() {
         _locked = true;
@@ -145,7 +146,11 @@ class _AppLockGateState extends ConsumerState<_AppLockGate>
 
   Future<void> _unlock() async {
     if (_unlockInProgress) return;
-    _unlockInProgress = true;
+    if (mounted) {
+      setState(() => _unlockInProgress = true);
+    } else {
+      _unlockInProgress = true;
+    }
     try {
       final enabled = await BiometricService.isEnabled();
       if (!enabled) {
@@ -175,7 +180,11 @@ class _AppLockGateState extends ConsumerState<_AppLockGate>
         });
       }
     } finally {
-      _unlockInProgress = false;
+      if (mounted) {
+        setState(() => _unlockInProgress = false);
+      } else {
+        _unlockInProgress = false;
+      }
     }
   }
 
@@ -194,42 +203,106 @@ class _AppLockGateState extends ConsumerState<_AppLockGate>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
+    ref.listen<bool>(authProvider.select((state) => state.isLoggedIn), (
+      previous,
+      isLoggedIn,
+    ) {
+      if (previous == isLoggedIn) return;
+      if (isLoggedIn) {
+        _initializeLock();
+      } else if (mounted) {
+        setState(() {
+          _locked = false;
+          _lockStateReady = true;
+        });
+      }
+    });
 
-    if (!auth.isLoggedIn) return widget.child;
-    if (!_lockStateReady || _locked) {
-      return Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!_lockStateReady)
-                const CircularProgressIndicator()
-              else ...[
-                Icon(Icons.fingerprint, size: 64, color: AppColors.primary),
-                const SizedBox(height: 16),
-                Text(
-                  'الرجاء المصادقة',
-                  style: TextStyle(fontSize: 18, color: AppColors.textDark),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _unlockInProgress ? null : _unlock,
-                  icon: const Icon(Icons.lock_open),
-                  label: const Text('فتح التطبيق'),
-                ),
-                TextButton(
-                  onPressed: _signOutFromLock,
-                  child: const Text('تسجيل الخروج'),
-                ),
-              ],
-            ],
+    final showLock = auth.isLoggedIn && (!_lockStateReady || _locked);
+    return AppLockOverlay(
+      showLock: showLock,
+      lockStateReady: _lockStateReady,
+      unlockInProgress: _unlockInProgress,
+      onUnlock: _unlock,
+      onSignOut: _signOutFromLock,
+      child: widget.child,
+    );
+  }
+}
+
+@visibleForTesting
+class AppLockOverlay extends StatelessWidget {
+  final Widget child;
+  final bool showLock;
+  final bool lockStateReady;
+  final bool unlockInProgress;
+  final VoidCallback onUnlock;
+  final VoidCallback onSignOut;
+
+  const AppLockOverlay({
+    super.key,
+    required this.child,
+    required this.showLock,
+    required this.lockStateReady,
+    required this.unlockInProgress,
+    required this.onUnlock,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ExcludeSemantics(
+          excluding: showLock,
+          child: TickerMode(
+            enabled: !showLock,
+            child: IgnorePointer(ignoring: showLock, child: child),
           ),
         ),
-      );
-    }
-
-    return widget.child;
+        if (showLock)
+          Positioned.fill(
+            child: Material(
+              color: AppColors.background,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!lockStateReady)
+                      const CircularProgressIndicator()
+                    else ...[
+                      Icon(
+                        Icons.fingerprint,
+                        size: 64,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'الرجاء المصادقة',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: unlockInProgress ? null : onUnlock,
+                        icon: const Icon(Icons.lock_open),
+                        label: const Text('فتح التطبيق'),
+                      ),
+                      TextButton(
+                        onPressed: unlockInProgress ? null : onSignOut,
+                        child: const Text('تسجيل الخروج'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
