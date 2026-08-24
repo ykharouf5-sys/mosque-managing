@@ -1,6 +1,6 @@
-import 'package:dentalcare/auth/presentation/login_screen.dart';
-import 'package:dentalcare/auth/presentation/onboarding_screen.dart';
-import 'package:dentalcare/auth/presentation/register_screen.dart';
+import 'package:studentry/auth/presentation/login_screen.dart';
+import 'package:studentry/auth/presentation/onboarding_screen.dart';
+import 'package:studentry/auth/presentation/register_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

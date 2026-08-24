@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dentalcare/auth/data/biometric_service.dart';
-import 'package:dentalcare/shared/widgets/app_bottom_nav.dart';
-import 'package:dentalcare/utils/app_locale.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/auth/data/biometric_service.dart';
+import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

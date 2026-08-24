@@ -1,5 +1,5 @@
-import 'package:dentalcare/student/data/result_models.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/student/data/result_models.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';

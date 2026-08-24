@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dentalcare/patients/data/patient_data.dart';
+import 'package:studentry/patients/data/patient_data.dart';
 
 class StorageService {
   static const _patientsIndex = 'pt_idx';

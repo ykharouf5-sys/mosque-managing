@@ -1,16 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:dentalcare/student/data/pdf_parser_service.dart';
-import 'package:dentalcare/student/data/result_models.dart';
-import 'package:dentalcare/student/data/result_local_repository.dart';
-import 'package:dentalcare/shared/data/auth_service.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/student/data/pdf_parser_service.dart';
+import 'package:studentry/student/data/result_models.dart';
+import 'package:studentry/student/data/result_local_repository.dart';
+import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:dentalcare/student/data/json_parser_service.dart';
+import 'package:studentry/student/data/json_parser_service.dart';
 import 'package:uuid/uuid.dart';
 
 // Top-level function for isolate-based PDF extraction

@@ -1,4 +1,4 @@
-import 'package:dentalcare/patients/data/patient_data.dart';
+import 'package:studentry/patients/data/patient_data.dart';
 
 abstract class PatientRepository {
   // ── Patients ──

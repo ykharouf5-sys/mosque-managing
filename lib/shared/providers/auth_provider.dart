@@ -1,4 +1,4 @@
-import 'package:dentalcare/shared/data/auth_service.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class AuthState {

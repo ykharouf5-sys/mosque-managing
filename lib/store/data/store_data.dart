@@ -1,7 +1,7 @@
-import 'package:dentalcare/store/data/store_models.dart';
-import 'package:dentalcare/store/data/store_api_service.dart';
-import 'package:dentalcare/store/data/pending_order_service.dart';
-import 'package:dentalcare/shared/cache/cache_manager.dart';
+import 'package:studentry/store/data/store_models.dart';
+import 'package:studentry/store/data/store_api_service.dart';
+import 'package:studentry/store/data/pending_order_service.dart';
+import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 

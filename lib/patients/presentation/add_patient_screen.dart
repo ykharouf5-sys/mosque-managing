@@ -1,7 +1,7 @@
-import 'package:dentalcare/patients/data/patient_data.dart';
-import 'package:dentalcare/patients/data/notification_service.dart';
-import 'package:dentalcare/patients/presentation/providers/patient_providers.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/patients/data/patient_data.dart';
+import 'package:studentry/patients/data/notification_service.dart';
+import 'package:studentry/patients/presentation/providers/patient_providers.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' hide TextDirection;

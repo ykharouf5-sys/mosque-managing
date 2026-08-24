@@ -1,7 +1,7 @@
 allprojects {
     buildscript {
         repositories {
-            maven { url = uri("file:///C:/Users/ROG/Desktop/aqua/android/local-repo"); metadataSources { artifact() } }
+            maven { url = uri(new File(rootDir, "local-repo")); metadataSources { artifact() } }
         }
     }
 }

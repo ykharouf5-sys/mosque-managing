@@ -1,5 +1,5 @@
-import 'package:dentalcare/shared/data/api_client.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 

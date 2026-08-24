@@ -1,6 +1,6 @@
-import 'package:dentalcare/auth/presentation/otp_verification_screen.dart';
-import 'package:dentalcare/shared/data/auth_service.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/auth/presentation/otp_verification_screen.dart';
+import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';

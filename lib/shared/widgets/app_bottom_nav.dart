@@ -1,10 +1,10 @@
-import 'package:dentalcare/patients/presentation/add_patient_screen.dart';
-import 'package:dentalcare/patients/presentation/appointments_screen.dart';
-import 'package:dentalcare/patients/presentation/reports_screen.dart';
-import 'package:dentalcare/store/presentation/store_screen.dart';
-import 'package:dentalcare/student/presentation/university_screen.dart';
-import 'package:dentalcare/student/presentation/student_home_screen.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/patients/presentation/add_patient_screen.dart';
+import 'package:studentry/patients/presentation/appointments_screen.dart';
+import 'package:studentry/patients/presentation/reports_screen.dart';
+import 'package:studentry/store/presentation/store_screen.dart';
+import 'package:studentry/student/presentation/university_screen.dart';
+import 'package:studentry/student/presentation/student_home_screen.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 
 class AppBottomNav extends StatelessWidget {

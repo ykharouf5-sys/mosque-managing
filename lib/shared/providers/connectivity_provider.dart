@@ -1,5 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:dentalcare/shared/data/connectivity_service.dart';
+import 'package:studentry/shared/data/connectivity_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final connectivityProvider = StreamProvider<bool>((ref) {

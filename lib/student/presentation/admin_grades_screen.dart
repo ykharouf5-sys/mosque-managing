@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'package:dentalcare/student/data/grade_service.dart';
-import 'package:dentalcare/student/data/subject_models.dart';
+import 'package:studentry/student/data/grade_service.dart';
+import 'package:studentry/student/data/subject_models.dart';
 
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:dentalcare/shared/data/app_database.dart';
-import 'package:dentalcare/shared/data/connectivity_service.dart';
-import 'package:dentalcare/store/data/store_api_service.dart';
+import 'package:studentry/shared/data/app_database.dart';
+import 'package:studentry/shared/data/connectivity_service.dart';
+import 'package:studentry/store/data/store_api_service.dart';
 import 'package:flutter/foundation.dart';
 
 class PendingOrderService {

@@ -1,4 +1,4 @@
-import 'package:dentalcare/shared/data/api_client.dart';
+import 'package:studentry/shared/data/api_client.dart';
 
 class AppointmentApiService {
   AppointmentApiService._();

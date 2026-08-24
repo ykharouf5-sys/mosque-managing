@@ -1,6 +1,6 @@
-import 'package:dentalcare/main.dart';
-import 'package:dentalcare/patients/data/patient_data.dart';
-import 'package:dentalcare/student/data/subject_models.dart';
+import 'package:studentry/main.dart';
+import 'package:studentry/patients/data/patient_data.dart';
+import 'package:studentry/student/data/subject_models.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;

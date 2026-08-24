@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'package:dentalcare/shared/data/auth_service.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 
-import 'package:dentalcare/shared/data/connectivity_service.dart';
-import 'package:dentalcare/store/data/store_models.dart';
-import 'package:dentalcare/store/data/store_api_service.dart';
+import 'package:studentry/shared/data/connectivity_service.dart';
+import 'package:studentry/store/data/store_models.dart';
+import 'package:studentry/store/data/store_api_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:dentalcare/shared/data/app_database.dart';
+import 'package:studentry/shared/data/app_database.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import 'result_models.dart';

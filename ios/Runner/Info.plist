@@ -39,9 +39,11 @@
 			<dict>
 				<key>CFBundleTypeRole</key>
 				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>io.studentry.app</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
-					<string>io.dentalcare.app</string>
+					<string>studentry</string>
 				</array>
 			</dict>
 		</array>

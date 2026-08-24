@@ -1,8 +1,8 @@
-import 'package:dentalcare/patients/data/patient_data.dart';
-import 'package:dentalcare/patients/data/patient_api_service.dart';
-import 'package:dentalcare/shared/cache/cache_manager.dart';
-import 'package:dentalcare/shared/data/app_database.dart';
-import 'package:dentalcare/shared/data/sync_service.dart';
+import 'package:studentry/patients/data/patient_data.dart';
+import 'package:studentry/patients/data/patient_api_service.dart';
+import 'package:studentry/shared/cache/cache_manager.dart';
+import 'package:studentry/shared/data/app_database.dart';
+import 'package:studentry/shared/data/sync_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final patientListProvider =

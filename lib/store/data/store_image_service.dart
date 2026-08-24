@@ -1,4 +1,4 @@
-import 'package:dentalcare/shared/data/api_client.dart';
+import 'package:studentry/shared/data/api_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 

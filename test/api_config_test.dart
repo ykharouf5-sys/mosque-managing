@@ -1,4 +1,4 @@
-import 'package:dentalcare/shared/data/api_config.dart';
+import 'package:studentry/shared/data/api_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

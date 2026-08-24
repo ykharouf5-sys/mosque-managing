@@ -1,11 +1,11 @@
-import 'package:dentalcare/shared/widgets/app_bottom_nav.dart';
-import 'package:dentalcare/store/data/store_models.dart';
-import 'package:dentalcare/store/presentation/product_detail_screen.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/store/data/store_models.dart';
+import 'package:studentry/store/presentation/product_detail_screen.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:dentalcare/store/presentation/providers/store_providers.dart';
+import 'package:studentry/store/presentation/providers/store_providers.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 

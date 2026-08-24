@@ -1,5 +1,5 @@
-import 'package:dentalcare/patients/data/patient_data.dart';
-import 'package:dentalcare/shared/data/api_client.dart';
+import 'package:studentry/patients/data/patient_data.dart';
+import 'package:studentry/shared/data/api_client.dart';
 
 class PatientPage {
   final List<Map<String, dynamic>> rows;

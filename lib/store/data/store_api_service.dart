@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:dentalcare/shared/data/api_client.dart';
-import 'package:dentalcare/shared/data/api_request_queue.dart';
-import 'package:dentalcare/shared/data/auth_service.dart';
+import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/data/api_request_queue.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:uuid/uuid.dart';
 
 class StoreApiService {

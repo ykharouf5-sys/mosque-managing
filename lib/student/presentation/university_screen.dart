@@ -1,7 +1,7 @@
-import 'package:dentalcare/shared/widgets/app_bottom_nav.dart';
-import 'package:dentalcare/student/presentation/lessons_screen.dart';
-import 'package:dentalcare/student/presentation/schedule_screen.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
+import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/student/presentation/lessons_screen.dart';
+import 'package:studentry/student/presentation/schedule_screen.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 

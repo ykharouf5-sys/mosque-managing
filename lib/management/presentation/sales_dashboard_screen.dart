@@ -1,13 +1,13 @@
 import 'dart:io';
 
-import 'package:dentalcare/store/data/store_data.dart';
-import 'package:dentalcare/store/data/store_models.dart';
-import 'package:dentalcare/store/data/store_image_service.dart';
-import 'package:dentalcare/utils/variable_colors.dart';
-import 'package:dentalcare/shared/providers/auth_provider.dart';
-import 'package:dentalcare/shared/data/api_client.dart';
-import 'package:dentalcare/shared/presentation/notification_campaign_screen.dart';
-import 'package:dentalcare/store/presentation/providers/store_providers.dart';
+import 'package:studentry/store/data/store_data.dart';
+import 'package:studentry/store/data/store_models.dart';
+import 'package:studentry/store/data/store_image_service.dart';
+import 'package:studentry/utils/variable_colors.dart';
+import 'package:studentry/shared/providers/auth_provider.dart';
+import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/presentation/notification_campaign_screen.dart';
+import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';

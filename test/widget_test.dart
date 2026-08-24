@@ -10,10 +10,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:dentalcare/auth/presentation/login_screen.dart';
-import 'package:dentalcare/auth/presentation/onboarding_screen.dart';
-import 'package:dentalcare/auth/presentation/register_screen.dart';
-import 'package:dentalcare/main.dart';
+import 'package:studentry/auth/presentation/login_screen.dart';
+import 'package:studentry/auth/presentation/onboarding_screen.dart';
+import 'package:studentry/auth/presentation/register_screen.dart';
+import 'package:studentry/main.dart';
 
 void main() {
   testWidgets('application renders inside ProviderScope', (tester) async {

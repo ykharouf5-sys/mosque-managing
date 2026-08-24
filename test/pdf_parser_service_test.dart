@@ -1,4 +1,4 @@
-import 'package:dentalcare/student/data/pdf_parser_service.dart';
+import 'package:studentry/student/data/pdf_parser_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
