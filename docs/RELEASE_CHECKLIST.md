@@ -4,7 +4,7 @@
 
 - Confirm ownership of the permanent application ID `io.studentry.app` before the first store record is created.
 - Generate Firebase Android/iOS applications for that exact ID; never commit their configuration files.
-- Configure `API_BASE_URL` as a public HTTPS URL ending in `/api/v1`.
+- Configure `API_BASE_URL=https://api.studentry.app/api/v1` after that endpoint is live and protected by a valid TLS certificate.
 - Generate and back up the Android upload keystore and configure Apple signing in the CI secret store.
 - Replace every bracketed field in the privacy and terms templates and obtain legal approval for target countries.
 
@@ -26,6 +26,6 @@
 
 ## Store operations
 
-- Provide privacy-policy and account-deletion URLs, support contact, screenshots, data-safety declarations and age rating.
+- Publish `https://studentry.app/privacy` and `https://studentry.app/account-deletion`, then provide those URLs, a working `privacy@studentry.app` mailbox, screenshots, data-safety declarations and age rating.
 - Configure crash reporting and privacy-safe analytics with consent where required.
 - Use staged rollout, monitor errors/latency/queues, and keep a tested rollback procedure.

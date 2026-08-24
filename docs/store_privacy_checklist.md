@@ -2,8 +2,8 @@
 
 ## Public URLs to configure after deployment
 
-- Privacy policy: `https://<production-domain>/privacy`
-- External account deletion: `https://<production-domain>/account-deletion`
+- Privacy policy: `https://studentry.app/privacy`
+- External account deletion: `https://studentry.app/account-deletion`
 - Set `APP_OPERATOR_NAME` and a working `PRIVACY_CONTACT_EMAIL` in the production backend.
 - Keep both pages public, HTTPS-only, and reachable without installing or opening the app.
 
@@ -24,7 +24,7 @@ Current implementation notes:
 - Production transport must use HTTPS; release builds reject local or HTTP API endpoints.
 - Local clinical data uses the encrypted, account-scoped database.
 - Account deletion is available in Settings and on the public deletion page.
-- Exact-alarm permissions were removed; reminders use inexact scheduling.
+- Android reminders request `SCHEDULE_EXACT_ALARM` through the system settings when supported, and safely fall back to inexact scheduling when the user does not grant it.
 - Complete the Data safety form for every collected category and disclose infrastructure providers used in production.
 
 ## Apple App Privacy / review

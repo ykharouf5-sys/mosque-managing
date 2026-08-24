@@ -22,7 +22,7 @@ class ApiConfig {
     if (uri?.scheme != 'https' || isLocalHost) {
       throw StateError(
         'Release builds require a public HTTPS API_BASE_URL. '
-        'Build with --dart-define=API_BASE_URL=https://api.example.com/api/v1',
+        'Build with --dart-define=API_BASE_URL=https://api.studentry.app/api/v1',
       );
     }
   }

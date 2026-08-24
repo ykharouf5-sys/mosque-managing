@@ -18,7 +18,7 @@ Android emulator default: `http://10.0.2.2:8000/api/v1`.
 Override for a device or production build:
 
 ```bash
-flutter run --dart-define=API_BASE_URL=https://api.example.com/api/v1
+flutter run --dart-define=API_BASE_URL=https://api.studentry.app/api/v1
 ```
 
 Use HTTPS in production. A physical phone must use an address reachable from the phone, not `localhost`.
