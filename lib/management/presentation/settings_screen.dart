@@ -77,9 +77,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     if (mounted) setState(() => _exactRemindersEnabled = enabled);
   }
 
-  Future<void> _enableExactReminders() async {
+  Future<void> _manageExactReminders() async {
     if (_requestingExactReminders) return;
     setState(() => _requestingExactReminders = true);
+    if (_exactRemindersEnabled) {
+      final opened = await NotificationService.openExactAlarmSettings();
+      if (!mounted) return;
+      setState(() => _requestingExactReminders = false);
+      if (!opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح إعدادات المنبهات')),
+        );
+      }
+      return;
+    }
     final enabled = await NotificationService.requestExactAlarmPermission();
     if (!mounted) return;
     setState(() {
@@ -357,14 +368,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : OutlinedButton(
-                        onPressed: _exactRemindersEnabled
-                            ? null
-                            : _enableExactReminders,
-                        child: Text(
-                          _exactRemindersEnabled ? 'مفعّلة' : 'تفعيل',
-                        ),
+                        onPressed: _manageExactReminders,
+                        child: Text(_exactRemindersEnabled ? 'إدارة' : 'تفعيل'),
                       ),
-                onTap: _exactRemindersEnabled ? null : _enableExactReminders,
+                onTap: _manageExactReminders,
               ),
               SizedBox(height: 24.h),
             ],

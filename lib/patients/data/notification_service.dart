@@ -2,11 +2,15 @@ import 'package:studentry/main.dart';
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/student/data/subject_models.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 
 class NotificationService {
+  static const MethodChannel _settingsChannel = MethodChannel(
+    'io.studentry.app/settings',
+  );
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
@@ -91,6 +95,18 @@ class NotificationService {
           >();
       await androidPlugin?.requestExactAlarmsPermission();
       return exactAlarmsEnabled();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> openExactAlarmSettings() async {
+    if (!supportsExactAlarmPermission) return false;
+    try {
+      return await _settingsChannel.invokeMethod<bool>(
+            'openExactAlarmSettings',
+          ) ??
+          false;
     } catch (_) {
       return false;
     }
