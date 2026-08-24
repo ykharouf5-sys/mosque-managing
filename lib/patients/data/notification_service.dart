@@ -12,6 +12,9 @@ class NotificationService {
   static bool _initialized = false;
   static bool _permissionsConfigured = false;
 
+  static bool get supportsExactAlarmPermission =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   static Future<void> init({bool requestPermissions = true}) async {
     if (!_initialized) {
       tz_data.initializeTimeZones();
@@ -37,8 +40,6 @@ class NotificationService {
 
     if (!requestPermissions || _permissionsConfigured) return;
 
-    // Exact alarms are intentionally not requested: all reminders use
-    // AndroidScheduleMode.inexactAllowWhileIdle.
     try {
       final androidPlugin = _plugin
           .resolvePlatformSpecificImplementation<
@@ -64,6 +65,35 @@ class NotificationService {
       );
       _permissionsConfigured = true;
     } catch (_) {}
+  }
+
+  static Future<bool> exactAlarmsEnabled() async {
+    if (!supportsExactAlarmPermission) return true;
+    try {
+      await init(requestPermissions: false);
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      return await androidPlugin?.canScheduleExactNotifications() ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> requestExactAlarmPermission() async {
+    if (!supportsExactAlarmPermission) return true;
+    try {
+      await init(requestPermissions: false);
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await androidPlugin?.requestExactAlarmsPermission();
+      return exactAlarmsEnabled();
+    } catch (_) {
+      return false;
+    }
   }
 
   static AndroidNotificationDetails _details() => AndroidNotificationDetails(
@@ -104,19 +134,49 @@ class NotificationService {
     try {
       final location = tz.local;
       final scheduledDate = tz.TZDateTime.from(dateTime, location);
-      await _plugin.zonedSchedule(
-        id: id,
-        title: title,
-        body: body,
-        scheduledDate: scheduledDate,
-        notificationDetails: NotificationDetails(
-          android: _details(),
-          iOS: const DarwinNotificationDetails(),
-        ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      );
+      final exactEnabled = await exactAlarmsEnabled();
+      final mode = exactEnabled
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle;
+      try {
+        await _zonedSchedule(
+          id: id,
+          title: title,
+          body: body,
+          scheduledDate: scheduledDate,
+          mode: mode,
+        );
+      } catch (_) {
+        if (mode == AndroidScheduleMode.exactAllowWhileIdle) {
+          await _zonedSchedule(
+            id: id,
+            title: title,
+            body: body,
+            scheduledDate: scheduledDate,
+            mode: AndroidScheduleMode.inexactAllowWhileIdle,
+          );
+        }
+      }
     } catch (_) {}
   }
+
+  static Future<void> _zonedSchedule({
+    required int id,
+    required String title,
+    required String body,
+    required tz.TZDateTime scheduledDate,
+    required AndroidScheduleMode mode,
+  }) => _plugin.zonedSchedule(
+    id: id,
+    title: title,
+    body: body,
+    scheduledDate: scheduledDate,
+    notificationDetails: NotificationDetails(
+      android: _details(),
+      iOS: const DarwinNotificationDetails(),
+    ),
+    androidScheduleMode: mode,
+  );
 
   static int _notificationId(Appointment a) =>
       '${a.patientId}_${a.time}'.hashCode;

@@ -93,15 +93,20 @@ void main() {
     });
 
     test(
-      'Android release configuration removes restricted ad and alarm access',
+      'Android release uses user-granted alarm access without restricted APIs',
       () {
         final manifest = _read('android/app/src/main/AndroidManifest.xml');
-        expect(manifest, isNot(contains('SCHEDULE_EXACT_ALARM')));
+        expect(manifest, contains('SCHEDULE_EXACT_ALARM'));
         expect(manifest, isNot(contains('USE_EXACT_ALARM')));
         final notifications = _read(
           'lib/patients/data/notification_service.dart',
         );
-        expect(notifications, isNot(contains('requestExactAlarmsPermission')));
+        expect(notifications, contains('requestExactAlarmsPermission'));
+        expect(notifications, contains('canScheduleExactNotifications'));
+        expect(
+          notifications,
+          contains('AndroidScheduleMode.exactAllowWhileIdle'),
+        );
         expect(
           notifications,
           contains('AndroidScheduleMode.inexactAllowWhileIdle'),

@@ -13,7 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:studentry/auth/presentation/login_screen.dart';
 import 'package:studentry/auth/presentation/onboarding_screen.dart';
 import 'package:studentry/auth/presentation/register_screen.dart';
+import 'package:studentry/management/presentation/settings_screen.dart';
 import 'package:studentry/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('application renders inside ProviderScope', (tester) async {
@@ -47,6 +49,28 @@ void main() {
     await tester.pumpWidget(buildApp(false));
     expect(find.byType(_LifecycleProbe), findsOneWidget);
     expect(_LifecycleProbeState.disposeCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('notification settings exposes an actionable reminder control', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: ScreenUtilInit(
+          designSize: Size(393, 852),
+          child: MaterialApp(home: SettingsScreen()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('المنبهات والتذكيرات'), findsOneWidget);
+    final enableButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'تفعيل'),
+    );
+    expect(enableButton.onPressed, isNotNull);
     expect(tester.takeException(), isNull);
   });
 

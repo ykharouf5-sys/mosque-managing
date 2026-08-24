@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:studentry/auth/data/biometric_service.dart';
 import 'package:studentry/management/presentation/privacy_policy_screen.dart';
+import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/utils/app_locale.dart';
@@ -20,16 +21,33 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with WidgetsBindingObserver {
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
   String _appLanguage = 'ar';
   bool _deletingAccount = false;
+  bool _exactRemindersEnabled = false;
+  bool _requestingExactReminders = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadExactReminderStatus();
+    }
   }
 
   Future<void> _loadBiometricStatus() async {
@@ -46,11 +64,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _loadBiometricStatus();
+    _loadExactReminderStatus();
     if (mounted) {
       setState(() {
         _appLanguage = prefs.getString('app_language') ?? 'ar';
       });
     }
+  }
+
+  Future<void> _loadExactReminderStatus() async {
+    final enabled = await NotificationService.exactAlarmsEnabled();
+    if (mounted) setState(() => _exactRemindersEnabled = enabled);
+  }
+
+  Future<void> _enableExactReminders() async {
+    if (_requestingExactReminders) return;
+    setState(() => _requestingExactReminders = true);
+    final enabled = await NotificationService.requestExactAlarmPermission();
+    if (!mounted) return;
+    setState(() {
+      _exactRemindersEnabled = enabled;
+      _requestingExactReminders = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          enabled
+              ? 'تم تفعيل المنبهات والتذكيرات الدقيقة'
+              : 'لم يتم منح الإذن. ستبقى التذكيرات تعمل بوضع تقريبي.',
+        ),
+      ),
+    );
   }
 
   Future<void> _setLanguage(String code) async {
@@ -298,6 +342,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             SizedBox(height: 24.h),
+            if (NotificationService.supportsExactAlarmPermission) ...[
+              _buildSection('الإشعارات'),
+              _buildSettingTile(
+                icon: Icons.alarm_on_outlined,
+                title: 'المنبهات والتذكيرات',
+                subtitle: _exactRemindersEnabled
+                    ? 'مفعّلة بدقة للمواعيد والمحاضرات'
+                    : 'تعمل تقريبياً — اضغط لتفعيل الدقة من أندرويد',
+                trailing: _requestingExactReminders
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : OutlinedButton(
+                        onPressed: _exactRemindersEnabled
+                            ? null
+                            : _enableExactReminders,
+                        child: Text(
+                          _exactRemindersEnabled ? 'مفعّلة' : 'تفعيل',
+                        ),
+                      ),
+                onTap: _exactRemindersEnabled ? null : _enableExactReminders,
+              ),
+              SizedBox(height: 24.h),
+            ],
             _buildSection('البيانات'),
             _buildSettingTile(
               icon: Icons.privacy_tip_outlined,
@@ -377,37 +447,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       margin: EdgeInsets.only(bottom: 8.h),
       decoration: BoxDecoration(
-        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
         boxShadow: AppShadows.soft,
       ),
-      child: ListTile(
-        leading: Container(
-          padding: EdgeInsets.all(8.r),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          leading: Container(
+            padding: EdgeInsets.all(8.r),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 20.sp),
           ),
-          child: Icon(icon, color: AppColors.primary, size: 20.sp),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 14.sp,
-            color: AppColors.textDark,
+          title: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14.sp,
+              color: AppColors.textDark,
+            ),
           ),
-        ),
-        subtitle: subtitle != null
-            ? Text(
-                subtitle,
-                style: TextStyle(fontSize: 12.sp, color: AppColors.textGray),
-              )
-            : null,
-        trailing: trailing,
-        onTap: onTap,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          subtitle: subtitle != null
+              ? Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 12.sp, color: AppColors.textGray),
+                )
+              : null,
+          trailing: trailing,
+          onTap: onTap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
         ),
       ),
     );
