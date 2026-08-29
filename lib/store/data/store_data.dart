@@ -99,37 +99,6 @@ Future<bool> loadStoreFromApi({bool refresh = false}) async {
       );
     }
 
-    final productRows = await StoreApiService.fetchProducts();
-    final categoryNames = {
-      for (final category in storeCategories) category.id: category.label,
-    };
-    storeProducts
-      ..clear()
-      ..addAll(
-        productRows.map((row) {
-          final m = StoreApiService.rowToProductMap(row);
-          final categoryId = m['categoryId'] as String? ?? '';
-          return Product(
-            id: m['id'] as String,
-            name: m['name'] as String,
-            brand: m['brand'] as String? ?? '',
-            description: m['description'] as String? ?? '',
-            imageUrl: m['imageUrl'] as String? ?? '',
-            categoryId: categoryId,
-            categoryName: categoryNames[categoryId] ?? '',
-            price: (m['price'] as num?)?.toDouble() ?? 0,
-            rating: (m['rating'] as num?)?.toDouble() ?? 0,
-            reviewsCount: (m['reviewsCount'] as num?)?.toInt() ?? 0,
-            stock: (m['stock'] as num?)?.toInt() ?? 0,
-            createdAt:
-                DateTime.tryParse(m['createdAt'] as String? ?? '') ??
-                DateTime.now(),
-            academicYear: m['academicYear'] as String?,
-            deliveryPrice: (m['deliveryPrice'] as num?)?.toDouble() ?? 0,
-          );
-        }),
-      );
-
     if (AuthService().hasPermission('coupons.manage')) {
       final couponRows = await StoreApiService.fetchCoupons();
       storeCoupons

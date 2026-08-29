@@ -33,12 +33,16 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
   }
 
   Future<void> _loadCatalog() async {
+    final orders = ref.read(ordersProvider.notifier).loadInitialOrders();
     await loadStoreFromApi(refresh: true);
     if (!mounted) return;
     ref
         .read(catalogProvider.notifier)
         .loadBannersAndCategories(storeBanners, storeCategories);
-    await ref.read(catalogProvider.notifier).loadInitialProducts();
+    await Future.wait<void>([
+      ref.read(catalogProvider.notifier).loadInitialProducts(),
+      orders,
+    ]);
     if (mounted) setState(() {});
   }
 

@@ -26,14 +26,16 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(_refreshTodayData);
+    Future.microtask(() => _refreshTodayData());
   }
 
-  Future<void> _refreshTodayData() async {
-    await Future.wait([
-      ref.read(patientListProvider.notifier).refreshFromApi(),
-      ref.read(appointmentListProvider.notifier).loadFromDb(),
-    ]);
+  Future<void> _refreshTodayData({bool force = false}) async {
+    final changed = await ref
+        .read(patientListProvider.notifier)
+        .refreshFromApi(force: force);
+    if (!changed) {
+      await ref.read(appointmentListProvider.notifier).loadFromDb();
+    }
   }
 
   @override
@@ -44,7 +46,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
       drawer: const AppDrawer(),
       drawerEnableOpenDragGesture: !widget.embedded,
       body: RefreshIndicator(
-        onRefresh: _refreshTodayData,
+        onRefresh: () => _refreshTodayData(force: true),
         color: AppColors.primary,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),

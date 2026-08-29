@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
@@ -147,11 +148,11 @@ class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
                     width: 24.w,
                     height: 24.h,
                   )
-                : Image.network(
-                    category.iconUrl,
+                : AppCachedNetworkImage(
+                    url: category.iconUrl,
                     width: 24.w,
                     height: 24.h,
-                    errorBuilder: (_, _, _) => Icon(
+                    errorBuilder: () => Icon(
                       Icons.category_outlined,
                       color: AppColors.primary,
                       size: 24.sp,

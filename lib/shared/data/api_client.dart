@@ -35,7 +35,7 @@ class ApiClient {
     Object? body,
     Map<String, String>? headers,
     bool authenticated = true,
-    int maxRetries = 3,
+    int maxRetries = 0,
   }) => _send(
     'POST',
     path,
@@ -48,17 +48,26 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? headers,
-  }) => _send('PUT', path, body: body, headers: headers);
+    int maxRetries = 0,
+  }) =>
+      _send('PUT', path, body: body, headers: headers, maxRetries: maxRetries);
   Future<ApiResult> patch(
     String path, {
     Object? body,
     Map<String, String>? headers,
-  }) => _send('PATCH', path, body: body, headers: headers);
+    int maxRetries = 0,
+  }) => _send(
+    'PATCH',
+    path,
+    body: body,
+    headers: headers,
+    maxRetries: maxRetries,
+  );
   Future<ApiResult> delete(
     String path, {
     Object? body,
     Map<String, String>? headers,
-    int maxRetries = 3,
+    int maxRetries = 0,
   }) => _send(
     'DELETE',
     path,

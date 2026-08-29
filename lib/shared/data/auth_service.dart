@@ -153,7 +153,8 @@ class AuthSession {
 
 class AuthChangeEvent {
   final AuthSession? session;
-  const AuthChangeEvent(this.session);
+  final bool rebindData;
+  const AuthChangeEvent(this.session, {this.rebindData = false});
 }
 
 class AuthService {
@@ -252,7 +253,7 @@ class AuthService {
       }
       _sessionGeneration++;
       await _activateUser(user);
-      await _setCurrentUser(user);
+      await _setCurrentUser(user, rebindData: true);
     } catch (error) {
       if (_isRejectedSession(error) || !await _restoreCachedUser()) {
         await _clearAndPurge();
@@ -276,13 +277,21 @@ class AuthService {
     if (updated == null || updated.emailConfirmedAt == null) {
       throw const ApiException(401, 'تعذر تحديث بيانات الجلسة.');
     }
+    final previous = _user;
+    final rebindData =
+        previous?.id != updated.id ||
+        previous?.clinicalScopeVersion != updated.clinicalScopeVersion ||
+        previous?.clinicId != updated.clinicId ||
+        previous?.role != updated.role ||
+        previous?.membershipStatus != updated.membershipStatus ||
+        previous?.permissions.join('|') != updated.permissions.join('|');
     await _runSessionMutation(() async {
       if (generation != _sessionGeneration) {
         throw const StaleSessionException();
       }
-      _sessionGeneration++;
+      if (rebindData) _sessionGeneration++;
       await _activateUser(updated);
-      await _setCurrentUser(updated);
+      await _setCurrentUser(updated, rebindData: rebindData);
     });
     return updated;
   }
@@ -417,7 +426,6 @@ class AuthService {
       if (generation != _sessionGeneration) {
         throw const StaleSessionException();
       }
-      _sessionGeneration++;
       await _activateUser(updated);
       await _setCurrentUser(updated);
     });
@@ -457,7 +465,7 @@ class AuthService {
       if (_token != null) await ApiClient.instance.post('/auth/logout');
     } finally {
       try {
-        await AccountDataLifecycle.clearAllUserData();
+        await AccountDataLifecycle.close();
       } finally {
         await _clear();
       }
@@ -491,7 +499,7 @@ class AuthService {
     );
     _tokenExpiresAt = tokenExpiry.toUtc();
     _scheduleExpiry(_tokenExpiresAt!);
-    await _setCurrentUser(user);
+    await _setCurrentUser(user, rebindData: true);
     try {
       await FcmTokenService.init(authenticated: true);
     } catch (_) {}
@@ -512,10 +520,10 @@ class AuthService {
 
   Future<void> invalidateRejectedSession() => _clearAndPurge();
 
-  Future<void> _setCurrentUser(AuthUser user) async {
+  Future<void> _setCurrentUser(AuthUser user, {bool rebindData = false}) async {
     _user = user;
     await _persistUser(user);
-    _events.add(AuthChangeEvent(AuthSession(user)));
+    _events.add(AuthChangeEvent(AuthSession(user), rebindData: rebindData));
   }
 
   Future<void> _persistUser(AuthUser user) async {
@@ -532,7 +540,7 @@ class AuthService {
       if (user.id.isEmpty || user.emailConfirmedAt == null) return false;
       _sessionGeneration++;
       await _activateUser(user);
-      await _setCurrentUser(user);
+      await _setCurrentUser(user, rebindData: true);
       return true;
     } catch (_) {
       return false;
@@ -575,7 +583,7 @@ class AuthService {
       try {
         await FcmTokenService.unregisterCurrentDevice();
       } catch (_) {}
-      await AccountDataLifecycle.clearAllUserData();
+      await AccountDataLifecycle.close();
     } finally {
       await _clear();
     }

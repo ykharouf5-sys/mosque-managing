@@ -8,12 +8,25 @@ class StoreApiService {
   static final _api = ApiClient.instance;
   static Map<String, dynamic>? _catalog;
   static String? _catalogEtag;
-  static Future<Map<String, dynamic>> _loadCatalog({
-    bool refresh = false,
+  static Future<Map<String, dynamic>>? _catalogRequest;
+  static Future<Map<String, dynamic>> _loadCatalog({bool refresh = false}) {
+    if (_catalog != null && !refresh) return Future.value(_catalog!);
+    final active = _catalogRequest;
+    if (active != null) return active;
+    late final Future<Map<String, dynamic>> request;
+    request = _requestCatalog(refresh: refresh).whenComplete(() {
+      if (identical(_catalogRequest, request)) _catalogRequest = null;
+    });
+    _catalogRequest = request;
+    return request;
+  }
+
+  static Future<Map<String, dynamic>> _requestCatalog({
+    required bool refresh,
   }) async {
-    if (_catalog != null && !refresh) return _catalog!;
     final r = await _api.get(
       '/store/catalog',
+      query: const {'include_products': '0'},
       headers: {
         if (refresh && _catalogEtag != null) 'If-None-Match': _catalogEtag!,
       },
@@ -36,11 +49,22 @@ class StoreApiService {
       _maps((await _loadCatalog())['products']);
   static Future<List<Map<String, dynamic>>> fetchProductsPage(
     int page,
-    int pageSize,
-  ) async {
+    int pageSize, {
+    String? search,
+    String? categoryId,
+    String? academicYear,
+  }) async {
     final r = await _api.get(
       '/store/products',
-      query: {'page': '${page + 1}', 'per_page': '$pageSize'},
+      query: {
+        'page': '${page + 1}',
+        'per_page': '$pageSize',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (categoryId != null && categoryId.isNotEmpty)
+          'category_id': categoryId,
+        if (academicYear != null && academicYear.isNotEmpty)
+          'academic_year': academicYear,
+      },
     );
     return _maps(r.data['data']['data']);
   }

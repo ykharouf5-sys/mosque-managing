@@ -1365,7 +1365,9 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         final url = await PatientPhotoService.upload(widget.patient.id, image);
         if (!mounted) return;
         setState(() => widget.patient.photos.add(url));
-        await ref.read(patientListProvider.notifier).refreshFromApi();
+        await ref
+            .read(patientListProvider.notifier)
+            .refreshFromApi(force: true);
       }
     } catch (_) {
       if (mounted) {
@@ -1389,7 +1391,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
       }
       if (!mounted) return;
       setState(() => widget.patient.photos.remove(path));
-      await ref.read(patientListProvider.notifier).refreshFromApi();
+      await ref.read(patientListProvider.notifier).refreshFromApi(force: true);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

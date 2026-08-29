@@ -27,21 +27,22 @@ class ApiRequestQueue {
   }
 
   Future<void> _run(_QueuedRequest<dynamic> r) async {
-    for (var attempt = 0; attempt <= r.maxRetries; attempt++) {
-      try {
-        r.completer.complete(await r.action());
+    try {
+      r.completer.complete(await r.action());
+    } catch (error, stack) {
+      final retryable =
+          error is ApiException &&
+          (error.statusCode == 429 || error.statusCode >= 500);
+      if (!retryable || r.attempt >= r.maxRetries) {
+        r.completer.completeError(error, stack);
         return;
-      } catch (error, stack) {
-        final retryable =
-            error is ApiException &&
-            (error.statusCode == 429 || error.statusCode >= 500);
-        if (!retryable || attempt == r.maxRetries) {
-          r.completer.completeError(error, stack);
-          return;
-        }
-        final delay = min(8000, 300 * (1 << attempt)) + Random().nextInt(350);
-        await Future<void>.delayed(Duration(milliseconds: delay));
       }
+      final delay = min(8000, 300 * (1 << r.attempt)) + Random().nextInt(350);
+      r.attempt++;
+      Timer(Duration(milliseconds: delay), () {
+        _requests.addLast(r);
+        _drain();
+      });
     }
   }
 }
@@ -50,6 +51,7 @@ class _QueuedRequest<T> {
   final Future<T> Function() action;
   final Completer<T> completer;
   final int maxRetries;
+  int attempt = 0;
   _QueuedRequest(this.action, this.completer, this.maxRetries);
 }
 

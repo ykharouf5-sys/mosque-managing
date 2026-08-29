@@ -21,9 +21,7 @@ import 'package:studentry/auth/presentation/onboarding_screen.dart';
 import 'package:studentry/auth/presentation/login_screen.dart';
 import 'package:studentry/auth/presentation/register_screen.dart';
 import 'package:studentry/auth/presentation/welcome_screen.dart';
-import 'package:studentry/auth/presentation/pending_membership_screen.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
-import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/api_config.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
@@ -64,8 +62,7 @@ Future<void> main() async {
     }
   }
 
-  // ═══ Local-First Initialization ═══
-  await AppDatabase.database;
+  // The encrypted account database is opened only after authentication.
   await CacheManager.instance.init();
   ConnectivityService.init();
   await AuthService().init();
@@ -109,6 +106,9 @@ class _AppLockGateState extends ConsumerState<_AppLockGate>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final active = state == AppLifecycleState.resumed;
+    SyncService.setAppActive(active);
+    StorePollingService.setAppActive(active);
     if ((state == AppLifecycleState.inactive ||
             state == AppLifecycleState.hidden ||
             state == AppLifecycleState.paused) &&
@@ -324,15 +324,9 @@ class _AuthGate extends ConsumerWidget {
       case 'warehouse_manager':
         return const WarehouseDashboardScreen();
       case 'student':
-        return ClinicalMembershipGate(
-          hasActiveMembership: auth.hasActiveClinicalMembership,
-          child: const MainNavigationScreen(),
-        );
+        return const MainNavigationScreen();
       default:
-        return ClinicalMembershipGate(
-          hasActiveMembership: auth.hasActiveClinicalMembership,
-          child: const MainNavigationScreen(),
-        );
+        return const MainNavigationScreen();
     }
   }
 }
@@ -359,7 +353,6 @@ class _MyAppState extends ConsumerState<MyApp> {
     currentUserId = authService.userId;
     currentUserRole = authService.role;
     authService.onAuthChange.listen((event) async {
-      _invalidateUserScopedProviders();
       if (event.session?.user != null) {
         final user = event.session!.user;
         final uid = user.id;
@@ -367,18 +360,31 @@ class _MyAppState extends ConsumerState<MyApp> {
         ref.read(authProvider.notifier).setAuthUser(user);
         currentUserId = uid;
         currentUserRole = role;
+        if (event.rebindData) {
+          _invalidateUserScopedProviders();
+          await Future.wait<dynamic>([
+            PendingOrderService.retryPending(),
+            SyncService.syncNow(force: true),
+            AcademicStore.instance.rebindToCurrentSession(),
+            StorePollingService.rebindToCurrentSession(),
+          ]);
+        }
       } else {
+        _invalidateUserScopedProviders();
         ref.read(authProvider.notifier).clearAuth();
         currentUserId = null;
         currentUserRole = null;
+        await Future.wait<void>([
+          AcademicStore.instance.rebindToCurrentSession(),
+          StorePollingService.rebindToCurrentSession(),
+        ]);
       }
-      await AcademicStore.instance.rebindToCurrentSession();
-      await StorePollingService.rebindToCurrentSession();
     });
   }
 
   void _invalidateUserScopedProviders() {
     ref.invalidate(patientListProvider);
+    ref.invalidate(patientDirectoryProvider);
     ref.invalidate(appointmentListProvider);
     ref.invalidate(patientsProvider);
     ref.invalidate(appointmentsProvider);
@@ -422,15 +428,8 @@ class _MyAppState extends ConsumerState<MyApp> {
             '/sales-dashboard': (context) => const SalesDashboardScreen(),
             '/my-orders': (context) => const MyOrdersScreen(),
             '/student-home': (context) => Consumer(
-              builder: (context, ref, _) {
-                final auth = ref.watch(authProvider);
-                return ClinicalMembershipGate(
-                  hasActiveMembership: auth.hasActiveClinicalMembership,
-                  child: const MainNavigationScreen(),
-                );
-              },
+              builder: (context, ref, _) => const MainNavigationScreen(),
             ),
-            '/membership-pending': (context) => const PendingMembershipScreen(),
             '/schedule': (context) => const ScheduleScreen(),
             '/lessons': (context) => const LessonsScreen(),
             '/university': (context) => const UniversityScreen(),

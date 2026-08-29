@@ -1,6 +1,5 @@
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/data/auth_service.dart';
-import 'package:studentry/auth/presentation/pending_membership_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -79,19 +78,11 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> {
       if (user == null) return;
       ref.read(authProvider.notifier).setAuthUser(user);
       if (mounted) {
-        if (user.hasActiveClinicalMembership) {
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/student-home',
-            (_) => false,
-          );
-        } else {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const PendingMembershipScreen()),
-            (_) => false,
-          );
-        }
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/student-home',
+          (_) => false,
+        );
       }
     } catch (error) {
       if (mounted) {

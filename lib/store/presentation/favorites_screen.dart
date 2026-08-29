@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 
@@ -93,10 +94,10 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 child: SizedBox(
                   width: 64.w,
                   height: 64.h,
-                  child: Image.network(
-                    product.imageUrl,
+                  child: AppCachedNetworkImage(
+                    url: product.imageUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
+                    errorBuilder: () => Container(
                       color: AppColors.primarySurface,
                       child: Icon(
                         Icons.image_outlined,

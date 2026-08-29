@@ -14,54 +14,123 @@ import '../../patients/data/appointment_api_service.dart';
 
 enum SyncFailureDisposition { retry, discard, resolveConflict, rejectSession }
 
+typedef AsyncSyncListener = Future<void> Function();
+
 class SyncService {
   static Timer? _timer;
   static Timer? _reconnectTimer;
-  static bool _isSyncing = false;
+  static Timer? _writeDebounceTimer;
+  static Completer<void>? _writeDebounceCompleter;
+  static Future<bool>? _inFlight;
   static bool _wasOffline = false;
-  static bool get isSyncing => _isSyncing;
-  static final Set<VoidCallback> _syncCompleteListeners = {};
-  static final Set<VoidCallback> _dbReloadListeners = {};
+  static bool _isAppActive = true;
+  static bool _initialized = false;
+  static DateTime? _lastCompletedAt;
+  static bool get isSyncing => _inFlight != null;
+  static const _minimumAutomaticInterval = Duration(seconds: 15);
+  static const _periodicSyncBase = Duration(minutes: 4);
+  static const _periodicSyncJitter = Duration(minutes: 2);
+  static final Random _random = Random();
+  static final Set<AsyncSyncListener> _syncCompleteListeners = {};
+  static final Set<AsyncSyncListener> _dbReloadListeners = {};
 
-  static void addSyncCompleteListener(VoidCallback listener) =>
+  static void addSyncCompleteListener(AsyncSyncListener listener) =>
       _syncCompleteListeners.add(listener);
 
-  static void removeSyncCompleteListener(VoidCallback listener) =>
+  static void removeSyncCompleteListener(AsyncSyncListener listener) =>
       _syncCompleteListeners.remove(listener);
 
-  static void addDbReloadListener(VoidCallback listener) =>
+  static void addDbReloadListener(AsyncSyncListener listener) =>
       _dbReloadListeners.add(listener);
 
-  static void removeDbReloadListener(VoidCallback listener) =>
+  static void removeDbReloadListener(AsyncSyncListener listener) =>
       _dbReloadListeners.remove(listener);
 
   static Future<void> init() async {
+    _initialized = true;
+    _timer?.cancel();
+    ConnectivityService.isOnline.removeListener(_onConnectivityChanged);
     ConnectivityService.isOnline.addListener(_onConnectivityChanged);
-    _timer = Timer.periodic(const Duration(minutes: 2), (_) {
-      if (ConnectivityService.isOnline.value) syncNow();
-    });
+    _scheduleNextPeriodicSync();
     if (ConnectivityService.isOnline.value) {
-      Future.delayed(Duration(seconds: Random().nextInt(120)), syncNow);
+      // Resume the active account's cloud synchronization immediately after
+      // restoring a session. Write-triggered retries still use jitter below.
+      Future<void>.microtask(() async {
+        await syncNow();
+      });
     }
+  }
+
+  static void _scheduleNextPeriodicSync() {
+    _timer?.cancel();
+    if (!_initialized) return;
+    final delay =
+        _periodicSyncBase +
+        Duration(
+          milliseconds: _random.nextInt(_periodicSyncJitter.inMilliseconds + 1),
+        );
+    _timer = Timer(delay, () async {
+      if (_isAppActive && ConnectivityService.isOnline.value) {
+        await syncNow();
+      }
+      if (_initialized) _scheduleNextPeriodicSync();
+    });
   }
 
   static void _onConnectivityChanged() {
     final online = ConnectivityService.isOnline.value;
     if (online && _wasOffline) {
       _reconnectTimer?.cancel();
-      _reconnectTimer = Timer(Duration(seconds: Random().nextInt(30)), syncNow);
+      _reconnectTimer = Timer(Duration(seconds: Random().nextInt(10)), () {
+        syncNow(force: true);
+      });
     }
     _wasOffline = !online;
   }
 
-  static Future<void> syncNow() async {
-    if (_isSyncing ||
-        !ConnectivityService.isOnline.value ||
-        !AuthService().hasPermission('sync.use')) {
+  static void setAppActive(bool active) {
+    if (_isAppActive == active) return;
+    _isAppActive = active;
+    if (!active) {
+      _reconnectTimer?.cancel();
       return;
     }
-    _isSyncing = true;
+    if (active && ConnectivityService.isOnline.value) {
+      _reconnectTimer?.cancel();
+      _reconnectTimer = Timer(
+        Duration(milliseconds: _random.nextInt(3001)),
+        syncNow,
+      );
+    }
+  }
+
+  static Future<bool> syncNow({bool force = false}) {
+    if (!_isAppActive ||
+        !ConnectivityService.isOnline.value ||
+        !AuthService().hasPermission('sync.use')) {
+      return Future.value(false);
+    }
+    final active = _inFlight;
+    if (active != null) return active;
+    final lastCompleted = _lastCompletedAt;
+    if (!force &&
+        lastCompleted != null &&
+        DateTime.now().difference(lastCompleted) < _minimumAutomaticInterval) {
+      return Future.value(false);
+    }
+
+    late final Future<bool> run;
+    run = _runSync().whenComplete(() {
+      if (identical(_inFlight, run)) _inFlight = null;
+      _lastCompletedAt = DateTime.now();
+    });
+    _inFlight = run;
+    return run;
+  }
+
+  static Future<bool> _runSync() async {
     int? generation;
+    var dataChanged = false;
     try {
       generation = AppDatabase.captureActiveDataGeneration();
       await LocalDatabaseService.resetFailedItems(
@@ -72,12 +141,13 @@ class SyncService {
       final pullResult = await _pull(generation);
       generation = pullResult.generation;
       AppDatabase.ensureDataGeneration(generation);
-      _notify(_dbReloadListeners);
-      if (changed || pullResult.changed) _notify(_syncCompleteListeners);
+      dataChanged = changed || pullResult.changed;
+      if (dataChanged) {
+        await _notify(_dbReloadListeners);
+        await _notify(_syncCompleteListeners);
+      }
     } catch (e) {
       await _handleSyncAuthorizationFailure(e);
-    } finally {
-      _isSyncing = false;
     }
     if (generation != null &&
         AuthService().isLoggedIn &&
@@ -85,29 +155,100 @@ class SyncService {
           limit: 1,
           expectedGeneration: generation,
         )).isNotEmpty) {
-      Future.delayed(const Duration(seconds: 2), syncNow);
+      Timer(Duration(seconds: 2 + _random.nextInt(4)), () {
+        syncNow(force: true);
+      });
     }
+    return dataChanged;
   }
 
-  static Future<void> syncNowWithJitter() async {
-    await Future<void>.delayed(Duration(seconds: Random().nextInt(4)));
-    await syncNow();
+  static Future<void> syncNowWithJitter() {
+    _writeDebounceTimer?.cancel();
+    final completer = _writeDebounceCompleter ??= Completer<void>();
+    _writeDebounceTimer = Timer(
+      Duration(milliseconds: 700 + _random.nextInt(801)),
+      () async {
+        _writeDebounceTimer = null;
+        try {
+          await syncNow(force: true);
+          if (!completer.isCompleted) completer.complete();
+        } catch (error, stack) {
+          if (!completer.isCompleted) completer.completeError(error, stack);
+        } finally {
+          if (identical(_writeDebounceCompleter, completer)) {
+            _writeDebounceCompleter = null;
+          }
+        }
+      },
+    );
+    return completer.future;
   }
 
-  static void _notify(Set<VoidCallback> listeners) {
-    for (final listener in listeners.toList(growable: false)) {
-      listener();
-    }
+  static Future<void> _notify(Set<AsyncSyncListener> listeners) async {
+    await Future.wait(
+      listeners.toList(growable: false).map((listener) => listener()),
+    );
   }
 
   static Future<bool> _push(int generation) async {
-    final items = await LocalDatabaseService.getPendingQueue(
+    var items = await LocalDatabaseService.getPendingQueue(
       limit: 100,
       expectedGeneration: generation,
     );
     AppDatabase.ensureDataGeneration(generation);
     if (items.isEmpty) return false;
     var changed = false;
+
+    final clinicalItems = items
+        .where(
+          (item) =>
+              item.tableName == 'patients' || item.tableName == 'appointments',
+        )
+        .toList(growable: false);
+    if (clinicalItems.isNotEmpty) {
+      try {
+        await ApiClient.instance.post(
+          '/sync/push',
+          maxRetries: 2,
+          body: {
+            'operations': clinicalItems
+                .map(
+                  (item) => {
+                    'operation_id': item.operationId,
+                    'id': item.recordId,
+                    'table': item.tableName,
+                    'operation': item.operation,
+                    'payload': jsonDecode(item.payload),
+                  },
+                )
+                .toList(growable: false),
+          },
+        );
+        final completedIds = clinicalItems.map((item) => item.id).toSet();
+        for (final item in clinicalItems) {
+          await LocalDatabaseService.markAsCompleted(
+            item.id,
+            expectedGeneration: generation,
+          );
+        }
+        items = items
+            .where((item) => !completedIds.contains(item.id))
+            .toList(growable: false);
+        changed = true;
+      } catch (error) {
+        if (error is StaleSessionException ||
+            error is StaleAccountDataException) {
+          rethrow;
+        }
+        if (classifyFailure(error) == SyncFailureDisposition.rejectSession) {
+          await AuthService().invalidateRejectedSession();
+          return changed;
+        }
+        // A single conflict aborts the atomic batch. Fall back to the
+        // per-record path below so the valid operations can still progress.
+      }
+    }
+    if (items.isEmpty) return changed;
     final legacy = [];
     for (final item in items) {
       if (item.tableName != 'patients' &&
@@ -563,8 +704,13 @@ class SyncService {
   }
 
   static void dispose() {
+    _initialized = false;
     _timer?.cancel();
     _reconnectTimer?.cancel();
+    _writeDebounceTimer?.cancel();
+    final completer = _writeDebounceCompleter;
+    if (completer != null && !completer.isCompleted) completer.complete();
+    _writeDebounceCompleter = null;
     ConnectivityService.isOnline.removeListener(_onConnectivityChanged);
     _syncCompleteListeners.clear();
     _dbReloadListeners.clear();

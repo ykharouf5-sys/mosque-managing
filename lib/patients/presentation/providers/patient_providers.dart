@@ -21,9 +21,7 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   @override
   List<PatientProfile> build() {
     _loadedCount = pageSize.clamp(0, _patients.length);
-    void reloadFromDatabase() {
-      loadFromDb();
-    }
+    Future<void> reloadFromDatabase() => loadFromDb();
 
     SyncService.addDbReloadListener(reloadFromDatabase);
     ref.onDispose(() {
@@ -43,9 +41,10 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
     _resetPagination();
   }
 
-  Future<void> refreshFromApi() async {
-    await SyncService.syncNow();
-    await loadFromDb();
+  Future<bool> refreshFromApi({bool force = false}) async {
+    final changed = await SyncService.syncNow(force: force);
+    if (!changed) await loadFromDb();
+    return changed;
   }
 
   void _cachePatients() {
@@ -123,6 +122,69 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   }
 }
 
+/// Database-backed directory pagination used by the full patients screen.
+/// Dashboards and reports keep their separate complete working set.
+final patientDirectoryProvider =
+    NotifierProvider<PatientDirectoryNotifier, List<PatientProfile>>(
+      PatientDirectoryNotifier.new,
+    );
+
+class PatientDirectoryNotifier extends Notifier<List<PatientProfile>> {
+  static const pageSize = 25;
+  bool isLoadingMore = false;
+  bool hasMore = true;
+  bool _loadingFirstPage = false;
+
+  @override
+  List<PatientProfile> build() {
+    Future<void> reload() => loadFirstPage();
+    SyncService.addDbReloadListener(reload);
+    ref.onDispose(() => SyncService.removeDbReloadListener(reload));
+    Future.microtask(loadFirstPage);
+    return const [];
+  }
+
+  Future<void> loadFirstPage() async {
+    if (_loadingFirstPage) return;
+    _loadingFirstPage = true;
+    try {
+      final rows = await AppDatabase.getPatientsPage(0, pageSize);
+      final patients = rows
+          .map(patientRowToProfile)
+          .whereType<PatientProfile>();
+      state = patients.toList(growable: false);
+      hasMore = rows.length == pageSize;
+      isLoadingMore = false;
+    } finally {
+      _loadingFirstPage = false;
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (isLoadingMore || !hasMore || _loadingFirstPage) return;
+    isLoadingMore = true;
+    state = [...state];
+    try {
+      final rows = await AppDatabase.getPatientsPage(state.length, pageSize);
+      final knownIds = state.map((patient) => patient.id).toSet();
+      final next = rows
+          .map(patientRowToProfile)
+          .whereType<PatientProfile>()
+          .where((patient) => knownIds.add(patient.id));
+      state = [...state, ...next];
+      hasMore = rows.length == pageSize;
+    } finally {
+      isLoadingMore = false;
+      state = [...state];
+    }
+  }
+
+  Future<void> refreshFromApi({bool force = false}) async {
+    final changed = await SyncService.syncNow(force: force);
+    if (!changed) await loadFirstPage();
+  }
+}
+
 final appointmentListProvider =
     NotifierProvider<AppointmentListNotifier, List<Appointment>>(
       AppointmentListNotifier.new,
@@ -140,9 +202,7 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   @override
   List<Appointment> build() {
     _loadedCount = pageSize.clamp(0, _appointments.length);
-    void reloadFromDatabase() {
-      loadFromDb();
-    }
+    Future<void> reloadFromDatabase() => loadFromDb();
 
     SyncService.addDbReloadListener(reloadFromDatabase);
     ref.onDispose(() {

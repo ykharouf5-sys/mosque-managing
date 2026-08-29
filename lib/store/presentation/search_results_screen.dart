@@ -1,14 +1,17 @@
 import 'dart:io';
 
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/store/data/store_models.dart';
+import 'package:studentry/store/data/store_api_service.dart';
 import 'package:studentry/store/presentation/product_detail_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
-import 'package:studentry/shared/providers/auth_provider.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 
@@ -23,46 +26,127 @@ class SearchResultsScreen extends ConsumerStatefulWidget {
 
 class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   late TextEditingController _searchController;
-  late List<Product> _results;
+  final ScrollController _scrollController = ScrollController();
+  final SearchDebouncer _searchDebouncer = SearchDebouncer();
+  List<Product> _results = const [];
   String? _studentAcademicYear;
+  bool _isLoading = false;
+  bool _hasMore = true;
+  int _page = 0;
+  int _searchGeneration = 0;
+  static const int _pageSize = 25;
 
   @override
   void initState() {
     super.initState();
-    _loadAcademicYear();
     _searchController = TextEditingController(text: widget.query);
+    _scrollController.addListener(_onScroll);
+    _loadAcademicYear();
   }
 
   Future<void> _loadAcademicYear() async {
-    if (ref.read(authProvider).role == 'student') {
-      _studentAcademicYear = null;
+    final auth = AuthService();
+    if (auth.role == 'student') {
+      _studentAcademicYear = auth.academicYear;
     }
-    _filter(widget.query);
+    await _search(widget.query);
   }
 
-  List<Product> _allProducts(List<Product> products, String? role) {
-    if (role == 'student' && _studentAcademicYear != null) {
-      return ref
-          .read(catalogProvider.notifier)
-          .getProductsByAcademicYear(_studentAcademicYear);
+  void _onScroll() {
+    if (_scrollController.position.extentAfter < 400) {
+      _loadMore();
     }
-    return products;
   }
 
-  void _filter(String query) {
-    final catalog = ref.read(catalogProvider);
-    final role = ref.read(authProvider).role;
-    final allProducts = _allProducts(catalog.products, role);
-    final q = query.trim().toLowerCase();
+  Future<void> _search(String query) async {
+    final generation = ++_searchGeneration;
+    _page = 0;
     setState(() {
-      _results = q.isEmpty
-          ? List.from(allProducts)
-          : allProducts.where((p) => p.name.toLowerCase().contains(q)).toList();
+      _isLoading = true;
+      _hasMore = true;
+      _results = const [];
     });
+    await _loadPage(query.trim(), generation, reset: true);
+  }
+
+  void _scheduleSearch(String query) {
+    _searchDebouncer.schedule(() => _search(query));
+  }
+
+  void _submitSearch(String query) {
+    _searchDebouncer.runNow(() => _search(query));
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || !_hasMore) return;
+    await _loadPage(
+      _searchController.text.trim(),
+      _searchGeneration,
+      reset: false,
+    );
+  }
+
+  Future<void> _loadPage(
+    String query,
+    int generation, {
+    required bool reset,
+  }) async {
+    if (!reset && (_isLoading || !_hasMore)) return;
+    if (!reset) setState(() => _isLoading = true);
+    try {
+      final requestedPage = reset ? 0 : _page + 1;
+      final rows = await StoreApiService.fetchProductsPage(
+        requestedPage,
+        _pageSize,
+        search: query,
+        academicYear: _studentAcademicYear,
+      );
+      if (!mounted || generation != _searchGeneration) return;
+      final categoryNames = {
+        for (final category in ref.read(catalogProvider).categories)
+          category.id: category.label,
+      };
+      final products = rows
+          .map((row) {
+            final item = StoreApiService.rowToProductMap(row);
+            return Product(
+              id: item['id'] as String,
+              name: item['name'] as String,
+              brand: item['brand'] as String? ?? '',
+              description: item['description'] as String? ?? '',
+              imageUrl: item['imageUrl'] as String? ?? '',
+              categoryId: item['categoryId'] as String? ?? '',
+              categoryName: categoryNames[item['categoryId']] ?? '',
+              price: (item['price'] as num?)?.toDouble() ?? 0,
+              rating: (item['rating'] as num?)?.toDouble() ?? 0,
+              reviewsCount: (item['reviewsCount'] as num?)?.toInt() ?? 0,
+              stock: (item['stock'] as num?)?.toInt() ?? 0,
+              createdAt:
+                  DateTime.tryParse(item['createdAt'] as String? ?? '') ??
+                  DateTime.now(),
+              academicYear: item['academicYear'] as String?,
+              deliveryPrice: (item['deliveryPrice'] as num?)?.toDouble() ?? 0,
+            );
+          })
+          .toList(growable: false);
+      setState(() {
+        _page = requestedPage;
+        _results = reset ? products : [..._results, ...products];
+        _hasMore = rows.length == _pageSize;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _searchGeneration++;
+    _searchDebouncer.dispose();
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -77,7 +161,9 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
         body: Column(
           children: [
             _buildSearchBar(),
-            if (_results.isEmpty)
+            if (_results.isEmpty && _isLoading)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else if (_results.isEmpty)
               Expanded(child: _buildEmptyState())
             else
               Expanded(child: _buildProductGrid()),
@@ -112,7 +198,8 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
               child: TextField(
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
-                onSubmitted: _filter,
+                onChanged: _scheduleSearch,
+                onSubmitted: _submitSearch,
                 decoration: InputDecoration(
                   hintText: 'ابحث عن منتج...',
                   hintStyle: TextStyle(
@@ -130,7 +217,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                       color: AppColors.primary,
                       size: 20.sp,
                     ),
-                    onPressed: () => _filter(_searchController.text),
+                    onPressed: () => _submitSearch(_searchController.text),
                   ),
                 ),
               ),
@@ -149,7 +236,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
           Icon(Icons.search_off_rounded, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            'لا توجد نتائج لـ "${widget.query}"',
+            'لا توجد نتائج لـ "${_searchController.text.trim()}"',
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
           SizedBox(height: 8.h),
@@ -166,6 +253,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     return Padding(
       padding: EdgeInsets.all(16.r),
       child: GridView.builder(
+        controller: _scrollController,
         itemCount: _results.length,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
@@ -225,10 +313,10 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                             ),
                           ),
                         )
-                      : Image.network(
-                          product.imageUrl,
+                      : AppCachedNetworkImage(
+                          url: product.imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
+                          errorBuilder: () => Container(
                             color: AppColors.primarySurface,
                             child: Icon(
                               Icons.image_outlined,

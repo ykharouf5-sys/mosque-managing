@@ -1,4 +1,5 @@
 import 'package:studentry/student/data/result_models.dart';
+import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,11 +15,13 @@ class ResultSearchScreen extends ConsumerStatefulWidget {
 class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final SearchDebouncer _searchDebouncer = SearchDebouncer();
   List<ResultRecord> _results = [];
   bool _loading = false;
   bool _searched = false;
   List<String> _storedExamNumbers = [];
   bool _loadingSamples = false;
+  int _searchGeneration = 0;
 
   @override
   void initState() {
@@ -28,6 +31,8 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
 
   @override
   void dispose() {
+    _searchGeneration++;
+    _searchDebouncer.dispose();
     _searchCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -36,6 +41,7 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
   Future<void> _search() async {
     final query = _searchCtrl.text.trim();
     if (query.isEmpty) return;
+    final generation = ++_searchGeneration;
 
     setState(() {
       _loading = true;
@@ -45,17 +51,17 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
 
     try {
       final results = <ResultRecord>[];
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() {
           _results = results;
           _loading = false;
         });
       }
-      if (results.isEmpty && mounted) {
+      if (results.isEmpty && mounted && generation == _searchGeneration) {
         _fetchSampleExamNumbers();
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(
           context,
@@ -63,6 +69,23 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
       }
     }
   }
+
+  void _onSearchChanged(String value) {
+    _searchGeneration++;
+    setState(() {});
+    if (value.trim().isEmpty) {
+      _searchDebouncer.cancel();
+      setState(() {
+        _results = [];
+        _searched = false;
+        _loading = false;
+      });
+      return;
+    }
+    _searchDebouncer.schedule(_search);
+  }
+
+  void _submitSearch() => _searchDebouncer.runNow(_search);
 
   Future<void> _fetchSampleExamNumbers() async {
     setState(() => _loadingSamples = false);
@@ -133,10 +156,7 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
                   ),
                   onPressed: () {
                     _searchCtrl.clear();
-                    setState(() {
-                      _results = [];
-                      _searched = false;
-                    });
+                    _onSearchChanged('');
                   },
                 )
               : null,
@@ -147,8 +167,8 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
           ),
         ),
         style: TextStyle(fontSize: 14.sp),
-        onSubmitted: (_) => _search(),
-        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _submitSearch(),
+        onChanged: _onSearchChanged,
       ),
     );
   }
@@ -454,7 +474,7 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
                     (n) => GestureDetector(
                       onTap: () {
                         _searchCtrl.text = n;
-                        _search();
+                        _submitSearch();
                       },
                       child: Container(
                         padding: EdgeInsets.symmetric(

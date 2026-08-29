@@ -32,10 +32,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _money(num value) => NumberFormat('#,##0.##', 'ar').format(value);
 
   Future<void> _refresh() async {
-    await Future.wait([
-      ref.read(patientListProvider.notifier).refreshFromApi(),
-      ref.read(appointmentListProvider.notifier).loadFromDb(),
-    ]);
+    final changed = await ref
+        .read(patientListProvider.notifier)
+        .refreshFromApi(force: true);
+    if (!changed) {
+      await ref.read(appointmentListProvider.notifier).loadFromDb();
+    }
   }
 
   Future<void> _exportExcel(List<PatientProfile> patients) async {

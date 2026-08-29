@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 const Color _kStarFilled = Color(0xFFFFC107);
@@ -116,10 +117,10 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
             Icon(Icons.medical_services_outlined, color: _kGrey, size: 60.sp),
       );
     } else {
-      imageWidget = Image.network(
-        product.imageUrl,
+      imageWidget = AppCachedNetworkImage(
+        url: product.imageUrl,
         fit: BoxFit.contain,
-        errorBuilder: (_, _, _) =>
+        errorBuilder: () =>
             Icon(Icons.medical_services_outlined, color: _kGrey, size: 60.sp),
       );
     }

@@ -24,7 +24,7 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     Future.microtask(
-      () => ref.read(patientListProvider.notifier).refreshFromApi(),
+      () => ref.read(patientDirectoryProvider.notifier).refreshFromApi(),
     );
   }
 
@@ -36,7 +36,7 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
   }
 
   void _onScroll() {
-    final notifier = ref.read(patientListProvider.notifier);
+    final notifier = ref.read(patientDirectoryProvider.notifier);
     if (!notifier.isLoadingMore &&
         notifier.hasMore &&
         _scrollController.position.pixels >=
@@ -47,8 +47,8 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final patients = ref.watch(patientListProvider);
-    final pagination = ref.read(patientListProvider.notifier);
+    final patients = ref.watch(patientDirectoryProvider);
+    final pagination = ref.read(patientDirectoryProvider.notifier);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -101,7 +101,9 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
             )
           : RefreshIndicator(
               onRefresh: () async {
-                await ref.read(patientListProvider.notifier).refreshFromApi();
+                await ref
+                    .read(patientDirectoryProvider.notifier)
+                    .refreshFromApi(force: true);
               },
               color: AppColors.primary,
               child: ListView.separated(
@@ -249,6 +251,7 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
       }
       ref.read(patientListProvider.notifier).remove(patient.id);
       ref.read(appointmentListProvider.notifier).remove(patient.id);
+      await ref.read(patientDirectoryProvider.notifier).loadFirstPage();
     }
   }
 }

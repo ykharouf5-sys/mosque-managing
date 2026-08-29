@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:studentry/shared/data/auth_service.dart';
 
 import 'package:studentry/shared/data/connectivity_service.dart';
@@ -11,13 +12,18 @@ typedef NewOrdersCallback = void Function(List<Order> orders);
 class StorePollingService {
   static Timer? _timer;
   static const String _lastCheckKeyPrefix = 'store_orders_last_check';
-  static const Duration _pollInterval = Duration(seconds: 60);
+  static const Duration _pollInterval = Duration(minutes: 2);
+  static const Duration _pollJitter = Duration(seconds: 30);
+  static final Random _random = Random();
   static NewOrdersCallback? _onNewOrders;
   static final List<Order> _pendingOrders = [];
   static int _generation = 0;
   static int? _pollingGeneration;
   static String? _accountId;
   static String? _clinicId;
+  static bool _isAppActive = true;
+  static DateTime? _lastPollAt;
+  static int? _lastPolledGeneration;
 
   static NewOrdersCallback? get onNewOrders => _onNewOrders;
 
@@ -30,6 +36,17 @@ class StorePollingService {
   }
 
   static Future<void> init() => rebindToCurrentSession();
+
+  static void setAppActive(bool active) {
+    if (_isAppActive == active) return;
+    _isAppActive = active;
+    if (active &&
+        ConnectivityService.isOnline.value &&
+        _accountId != null &&
+        _clinicId != null) {
+      _pollNow(_generation, _accountId!, _clinicId!);
+    }
+  }
 
   static Future<void> rebindToCurrentSession() async {
     final generation = ++_generation;
@@ -51,12 +68,29 @@ class StorePollingService {
     }
     _accountId = accountId;
     _clinicId = clinicId;
-    await _pollNow(generation, accountId, clinicId);
+    if (_isAppActive) await _pollNow(generation, accountId, clinicId);
     if (!_isCurrent(generation, accountId, clinicId)) return;
-    _timer = Timer.periodic(_pollInterval, (_) {
-      if (ConnectivityService.isOnline.value) {
-        _pollNow(generation, accountId, clinicId);
+    _scheduleNextPoll(generation, accountId, clinicId);
+  }
+
+  static void _scheduleNextPoll(
+    int generation,
+    String accountId,
+    String clinicId,
+  ) {
+    if (!_isCurrent(generation, accountId, clinicId)) return;
+    _timer?.cancel();
+    final delay =
+        _pollInterval -
+        _pollJitter +
+        Duration(
+          milliseconds: _random.nextInt(_pollJitter.inMilliseconds * 2 + 1),
+        );
+    _timer = Timer(delay, () async {
+      if (_isAppActive && ConnectivityService.isOnline.value) {
+        await _pollNow(generation, accountId, clinicId);
       }
+      _scheduleNextPoll(generation, accountId, clinicId);
     });
   }
 
@@ -69,15 +103,24 @@ class StorePollingService {
         _pollingGeneration == generation) {
       return;
     }
+    if (_lastPolledGeneration == generation &&
+        _lastPollAt != null &&
+        DateTime.now().difference(_lastPollAt!) < const Duration(seconds: 30)) {
+      return;
+    }
     _pollingGeneration = generation;
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastCheckKey = '$_lastCheckKeyPrefix:$accountId:$clinicId';
       final lastCheck =
           prefs.getString(lastCheckKey) ?? '1970-01-01T00:00:00.000';
+      final requestStartedAt = DateTime.now().toUtc().toIso8601String();
 
       final rows = await StoreApiService.fetchOrdersSince(lastCheck);
       if (!_isCurrent(generation, accountId, clinicId)) return;
+      _lastPollAt = DateTime.now();
+      _lastPolledGeneration = generation;
+      await prefs.setString(lastCheckKey, requestStartedAt);
       if (rows.isEmpty) return;
 
       final newOrders = <Order>[];
@@ -128,11 +171,6 @@ class StorePollingService {
         _onNewOrders!(newOrders);
       } else {
         _pendingOrders.addAll(newOrders);
-      }
-
-      final now = DateTime.now().toUtc().toIso8601String();
-      if (_isCurrent(generation, accountId, clinicId)) {
-        await prefs.setString(lastCheckKey, now);
       }
     } catch (_) {
     } finally {

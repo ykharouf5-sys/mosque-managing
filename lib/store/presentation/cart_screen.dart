@@ -6,6 +6,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
@@ -181,10 +182,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                           ),
                         ),
                       )
-                    : Image.network(
-                        item.product.imageUrl,
+                    : AppCachedNetworkImage(
+                        url: item.product.imageUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
+                        errorBuilder: () => Container(
                           color: AppColors.primarySurface,
                           child: Icon(
                             Icons.image_outlined,

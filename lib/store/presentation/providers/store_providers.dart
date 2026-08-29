@@ -52,7 +52,7 @@ class CatalogState {
 }
 
 class CatalogNotifier extends Notifier<CatalogState> {
-  static const int productPageSize = 30;
+  static const int productPageSize = 25;
   final List<Product> _products = [];
   final List<PromoBanner> _banners = [];
   final List<ProductCategory> _categories = [];
@@ -137,6 +137,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
 
   /// Loads the first page of products from REST (replaces existing).
   Future<void> loadInitialProducts() async {
+    if (state.isLoadingProducts) return;
     state = state.copyWith(isLoadingProducts: true);
     _currentProductPage = 0;
     try {
@@ -752,6 +753,7 @@ class ReviewsState {
 
 class ReviewsNotifier extends Notifier<ReviewsState> {
   final Map<String, List<Review>> _productReviews = {};
+  final Map<String, DateTime> _loadedAt = {};
 
   @override
   ReviewsState build() =>
@@ -776,15 +778,23 @@ class ReviewsNotifier extends Notifier<ReviewsState> {
         (item) => item.userId != review.userId,
       ),
     ];
+    _loadedAt[productId] = DateTime.now();
     state = ReviewsState(productReviews: Map.from(_productReviews));
   }
 
   Future<void> listenToReviews(String productId) async {
+    final loadedAt = _loadedAt[productId];
+    if (_productReviews.containsKey(productId) &&
+        loadedAt != null &&
+        DateTime.now().difference(loadedAt) < const Duration(minutes: 5)) {
+      return;
+    }
     final generation = AuthService().sessionGeneration;
     try {
       final rows = await StoreApiService.fetchReviews(productId);
       if (generation != AuthService().sessionGeneration) return;
       _productReviews[productId] = rows.map(Review.fromJson).toList();
+      _loadedAt[productId] = DateTime.now();
       state = ReviewsState(productReviews: Map.from(_productReviews));
     } on StaleSessionException {
       return;
@@ -828,6 +838,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
   static const int pageSize = 20;
   final List<Order> _orders = [];
   int _currentPage = 0;
+  Future<void>? _initialLoad;
 
   @override
   OrdersState build() {
@@ -846,7 +857,18 @@ class OrdersNotifier extends Notifier<OrdersState> {
   }
 
   /// Loads the first page of orders from REST, replacing existing.
-  Future<void> loadInitialOrders() async {
+  Future<void> loadInitialOrders() {
+    final active = _initialLoad;
+    if (active != null) return active;
+    late final Future<void> request;
+    request = _loadInitialOrders().whenComplete(() {
+      if (identical(_initialLoad, request)) _initialLoad = null;
+    });
+    _initialLoad = request;
+    return request;
+  }
+
+  Future<void> _loadInitialOrders() async {
     _currentPage = 0;
     final rows = await StoreApiService.fetchOrdersPage(0, pageSize);
     final parsed = _parseOrders(rows);

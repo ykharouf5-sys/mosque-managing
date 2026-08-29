@@ -1,6 +1,7 @@
 import 'package:studentry/student/data/result_models.dart';
 import 'package:studentry/student/data/academic_result_api_service.dart';
 import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,12 +22,14 @@ class StudentGradesScreen extends ConsumerStatefulWidget {
 class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final SearchDebouncer _searchDebouncer = SearchDebouncer();
   List<ResultRecord> _results = [];
   bool _loading = false;
   bool _searched = false;
   bool _exporting = false;
   bool _loadingSamples = false;
   final List<String> _storedExamNumbers = [];
+  int _searchGeneration = 0;
 
   @override
   void initState() {
@@ -37,6 +40,8 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
 
   @override
   void dispose() {
+    _searchGeneration++;
+    _searchDebouncer.dispose();
     _searchCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -52,6 +57,7 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
   Future<void> _search() async {
     final query = _searchCtrl.text.trim();
     if (query.isEmpty) return;
+    final generation = ++_searchGeneration;
 
     setState(() {
       _loading = true;
@@ -62,17 +68,17 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
       final results = await const AcademicResultApiService().results(
         examNumber: query,
       );
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() {
           _results = results;
           _loading = false;
         });
       }
-      if (results.isEmpty && mounted) {
+      if (results.isEmpty && mounted && generation == _searchGeneration) {
         _fetchSampleExamNumbers();
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(
           context,
@@ -80,6 +86,23 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
       }
     }
   }
+
+  void _onSearchChanged(String value) {
+    _searchGeneration++;
+    setState(() {});
+    if (value.trim().isEmpty) {
+      _searchDebouncer.cancel();
+      setState(() {
+        _results = [];
+        _searched = false;
+        _loading = false;
+      });
+      return;
+    }
+    _searchDebouncer.schedule(_search);
+  }
+
+  void _submitSearch() => _searchDebouncer.runNow(_search);
 
   Future<void> _fetchSampleExamNumbers() async {
     final examNumber = AuthService().examNumber?.trim();
@@ -381,10 +404,7 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
                   ),
                   onPressed: () {
                     _searchCtrl.clear();
-                    setState(() {
-                      _results = [];
-                      _searched = false;
-                    });
+                    _onSearchChanged('');
                   },
                 )
               : null,
@@ -395,8 +415,8 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
           ),
         ),
         style: TextStyle(fontSize: 14.sp),
-        onSubmitted: (_) => _search(),
-        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _submitSearch(),
+        onChanged: _onSearchChanged,
       ),
     );
   }

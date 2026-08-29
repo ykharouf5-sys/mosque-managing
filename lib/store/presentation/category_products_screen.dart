@@ -7,6 +7,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 
@@ -204,10 +205,10 @@ class _CategoryProductsScreenState
                             ),
                           ),
                         )
-                      : Image.network(
-                          product.imageUrl,
+                      : AppCachedNetworkImage(
+                          url: product.imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
+                          errorBuilder: () => Container(
                             color: AppColors.primarySurface,
                             child: Icon(
                               Icons.image_outlined,

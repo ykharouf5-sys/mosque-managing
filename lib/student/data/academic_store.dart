@@ -15,6 +15,7 @@ class AcademicStore extends ChangeNotifier {
   final List<StudentSubject> _enrollments = [];
   int _generation = 0;
   bool _loading = false;
+  bool _loaded = false;
   String? _error;
 
   List<Subject> get subjects => List.unmodifiable(_subjects);
@@ -27,6 +28,7 @@ class AcademicStore extends ChangeNotifier {
     _subjects.clear();
     _enrollments.clear();
     _error = null;
+    _loaded = false;
     notifyListeners();
     final auth = AuthService();
     if (!auth.isLoggedIn || !auth.hasActiveClinicalMembership) return;
@@ -36,7 +38,7 @@ class AcademicStore extends ChangeNotifier {
   Future<void> load({bool force = false}) async {
     final auth = AuthService();
     if (!auth.isLoggedIn || !auth.hasActiveClinicalMembership) return;
-    if (_loading || (!force && _subjects.isNotEmpty)) return;
+    if (_loading || (!force && _loaded)) return;
     await _load(_generation);
   }
 
@@ -53,6 +55,7 @@ class AcademicStore extends ChangeNotifier {
       _enrollments
         ..clear()
         ..addAll(values[1] as List<StudentSubject>);
+      _loaded = true;
     } on StaleSessionException {
       return;
     } catch (error) {

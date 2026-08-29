@@ -1,7 +1,6 @@
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/widgets/main_navigation_screen.dart';
-import 'package:studentry/auth/presentation/pending_membership_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -426,14 +425,6 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         );
         return;
       default:
-        if (!AuthService().hasActiveClinicalMembership) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const PendingMembershipScreen()),
-            (_) => false,
-          );
-          return;
-        }
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
@@ -444,14 +435,6 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   void navigateAuthenticatedUser(AuthUser user, BuildContext context) {
     ref.read(authProvider.notifier).setAuthUser(user);
-    if (user.role == 'student' && !user.profileCompleted) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/student-profile',
-        (_) => false,
-      );
-      return;
-    }
     navigateByRoleSync(user.role, context);
   }
 
@@ -481,14 +464,6 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       }
       ref.read(authProvider.notifier).setAuth(uid, 'student');
       if (!mounted) return;
-      if (!AuthService().hasActiveClinicalMembership) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const PendingMembershipScreen()),
-          (_) => false,
-        );
-        return;
-      }
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const MainNavigationScreen()),

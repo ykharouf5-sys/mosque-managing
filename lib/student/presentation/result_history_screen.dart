@@ -1,5 +1,6 @@
 import 'package:studentry/student/data/result_models.dart';
 import 'package:studentry/student/data/academic_result_api_service.dart';
+import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,11 +17,13 @@ class ResultHistoryScreen extends ConsumerStatefulWidget {
 
 class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
   final TextEditingController _examCtrl = TextEditingController();
+  final SearchDebouncer _searchDebouncer = SearchDebouncer();
   String? _currentExamNumber;
   List<ResultRecord> _allResults = [];
   String? _selectedSubject;
   List<String> _availableSubjects = [];
   bool _loading = false;
+  int _searchGeneration = 0;
 
   @override
   void initState() {
@@ -35,6 +38,8 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
 
   @override
   void dispose() {
+    _searchGeneration++;
+    _searchDebouncer.dispose();
     _examCtrl.dispose();
     super.dispose();
   }
@@ -42,6 +47,7 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
   Future<void> _loadHistory() async {
     final examNumber = _examCtrl.text.trim();
     if (examNumber.isEmpty) return;
+    final generation = ++_searchGeneration;
 
     setState(() {
       _loading = true;
@@ -55,7 +61,7 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
       final subjects =
           results.map((result) => result.subjectName).toSet().toList()..sort();
 
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() {
           _availableSubjects = subjects;
           _allResults = results;
@@ -63,7 +69,7 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(
           context,
@@ -71,6 +77,24 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
       }
     }
   }
+
+  void _onSearchChanged(String value) {
+    _searchGeneration++;
+    if (value.trim().isEmpty) {
+      _searchDebouncer.cancel();
+      setState(() {
+        _currentExamNumber = null;
+        _allResults = [];
+        _availableSubjects = [];
+        _selectedSubject = null;
+        _loading = false;
+      });
+      return;
+    }
+    _searchDebouncer.schedule(_loadHistory);
+  }
+
+  void _submitSearch() => _searchDebouncer.runNow(_loadHistory);
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +166,8 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
                   ),
                 ),
                 style: TextStyle(fontSize: 14.sp),
-                onSubmitted: (_) => _loadHistory(),
+                onSubmitted: (_) => _submitSearch(),
+                onChanged: _onSearchChanged,
               ),
             ),
           ),
@@ -163,7 +188,7 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
                       ),
                     )
                   : const Icon(Icons.search_rounded, color: Colors.white),
-              onPressed: _loading ? null : _loadHistory,
+              onPressed: _loading ? null : _submitSearch,
             ),
           ),
         ],
@@ -193,7 +218,6 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
         setState(() {
           _selectedSubject = isSelected ? null : label;
         });
-        _loadHistory();
       },
       child: Container(
         margin: EdgeInsets.only(left: 8.w),

@@ -20,6 +20,9 @@ class FcmTokenService {
   static const _deviceIdKey = 'aqua_device_id_v1';
   static bool _initialized = false;
   static bool _authenticated = false;
+  static String? _registeredToken;
+  static String? _registeringToken;
+  static Future<void>? _registrationInFlight;
 
   static Future<void> init({required bool authenticated}) async {
     _authenticated = authenticated;
@@ -68,6 +71,23 @@ class FcmTokenService {
 
   static Future<void> registerToken(String token) async {
     if (!_authenticated) return;
+    if (_registeredToken == token) return;
+    if (_registeringToken == token && _registrationInFlight != null) {
+      return _registrationInFlight!;
+    }
+    late final Future<void> registration;
+    registration = _registerToken(token).whenComplete(() {
+      if (identical(_registrationInFlight, registration)) {
+        _registrationInFlight = null;
+        _registeringToken = null;
+      }
+    });
+    _registeringToken = token;
+    _registrationInFlight = registration;
+    return registration;
+  }
+
+  static Future<void> _registerToken(String token) async {
     final deviceId = await _deviceId();
     try {
       await ApiClient.instance.post(
@@ -79,6 +99,7 @@ class FcmTokenService {
         },
         maxRetries: 1,
       );
+      _registeredToken = token;
     } catch (_) {}
   }
 
@@ -92,6 +113,8 @@ class FcmTokenService {
       );
     } catch (_) {}
     _authenticated = false;
+    _registeredToken = null;
+    _registeringToken = null;
     await FirebaseMessaging.instance.deleteToken();
   }
 

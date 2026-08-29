@@ -22,6 +22,11 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    Future.microtask(() {
+      if (ref.read(ordersProvider).orders.isEmpty) {
+        ref.read(ordersProvider.notifier).loadInitialOrders();
+      }
+    });
   }
 
   @override

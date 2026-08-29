@@ -30,8 +30,20 @@ class AccountDataLifecycle {
     await _clearAncillaryClinicalData();
   }
 
+  /// Ends access to the active account without deleting its encrypted file.
+  static Future<void> close() async {
+    await AppDatabase.close();
+    await _clearAncillaryClinicalData();
+  }
+
   static Future<void> _clearAncillaryClinicalData() async {
-    await CacheManager.instance.invalidateAll();
+    // Catalog/product data is public and identical for every account. Keep it
+    // warm across sign-out while removing every account-scoped cache entry.
+    CacheManager.instance.invalidateTags(const [
+      CacheTags.patients,
+      CacheTags.appointments,
+      CacheTags.orders,
+    ]);
     await PhotoService.clearAllLocalPhotos();
     await StorageService.clearLegacyClinicalData();
     try {

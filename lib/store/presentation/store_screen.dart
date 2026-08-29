@@ -17,6 +17,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
+import 'package:studentry/shared/widgets/app_cached_network_image.dart';
+import 'package:studentry/shared/utils/search_debouncer.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 const Color kFieldBg = Color(0xFFF4F9FA);
@@ -37,8 +39,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   bool _showSearch = false;
   final _bannerController = PageController();
   final _searchController = TextEditingController();
+  final SearchDebouncer _searchDebouncer = SearchDebouncer();
   String? _studentAcademicYear;
   Timer? _catalogTimer;
+  Future<void>? _catalogRefresh;
   bool _isInitialCatalogLoading = true;
   bool _initialCatalogFailed = false;
 
@@ -57,7 +61,18 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     _scheduleCatalogRefresh();
   }
 
-  Future<void> _refreshCatalog() async {
+  Future<void> _refreshCatalog() {
+    final active = _catalogRefresh;
+    if (active != null) return active;
+    late final Future<void> refresh;
+    refresh = _performCatalogRefresh().whenComplete(() {
+      if (identical(_catalogRefresh, refresh)) _catalogRefresh = null;
+    });
+    _catalogRefresh = refresh;
+    return refresh;
+  }
+
+  Future<void> _performCatalogRefresh() async {
     final loaded = await loadStoreFromApi(refresh: true);
     if (!mounted) return;
     if (!loaded) {
@@ -80,6 +95,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
 
   void _scheduleCatalogRefresh() {
     _catalogTimer?.cancel();
+    _searchDebouncer.dispose();
     final stagger = Duration(seconds: Random().nextInt(61));
     _catalogTimer = Timer(ApiConfig.catalogRefreshInterval + stagger, () async {
       await _refreshCatalog();
@@ -113,6 +129,22 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   void _onSearch(String query) {
     if (query.trim().isEmpty) return;
     Navigator.pushNamed(context, '/search-results', arguments: query);
+  }
+
+  void _scheduleSearch(String query) {
+    if (query.trim().isEmpty) {
+      _searchDebouncer.cancel();
+      return;
+    }
+    _searchDebouncer.schedule(() {
+      if (mounted) _onSearch(query);
+    });
+  }
+
+  void _submitSearch(String query) {
+    _searchDebouncer.runNow(() {
+      if (mounted) _onSearch(query);
+    });
   }
 
   @override
@@ -238,7 +270,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           onPressed: () {
             setState(() {
               _showSearch = !_showSearch;
-              if (!_showSearch) _searchController.clear();
+              if (!_showSearch) {
+                _searchDebouncer.cancel();
+                _searchController.clear();
+              }
             });
           },
         ),
@@ -300,7 +335,9 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           Expanded(
             child: TextField(
               controller: _searchController,
-              onSubmitted: _onSearch,
+              textInputAction: TextInputAction.search,
+              onChanged: _scheduleSearch,
+              onSubmitted: _submitSearch,
               decoration: InputDecoration(
                 hintText: 'ابحث عن منتج...',
                 hintStyle: TextStyle(color: _kGrey, fontSize: 14.sp),
@@ -441,10 +478,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                   errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 );
               }
-              return Image.network(
-                url,
+              return AppCachedNetworkImage(
+                url: url,
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                errorBuilder: () => const SizedBox.shrink(),
               );
             }(),
           ),
@@ -702,10 +739,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                             ),
                           ),
                         )
-                      : Image.network(
-                          product.imageUrl,
+                      : AppCachedNetworkImage(
+                          url: product.imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
+                          errorBuilder: () => Container(
                             color: AppColors.primarySurface,
                             child: Icon(
                               Icons.image_outlined,
@@ -960,11 +997,11 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                     width: 28,
                     height: 28,
                   )
-                : Image.network(
-                    category.iconUrl,
+                : AppCachedNetworkImage(
+                    url: category.iconUrl,
                     width: 28,
                     height: 28,
-                    errorBuilder: (_, _, _) => const Icon(
+                    errorBuilder: () => const Icon(
                       Icons.category_outlined,
                       color: AppColors.primary,
                       size: 28,

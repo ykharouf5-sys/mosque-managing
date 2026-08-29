@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:sqflite/sqflite.dart' as plain;
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:path/path.dart' as p;
@@ -28,7 +29,8 @@ class StaleAccountDataException implements Exception {
 
 class AppDatabase {
   static Database? _db;
-  static const _dbName = 'aqua_app_secure.db';
+  static Future<Database>? _openingDb;
+  static const _legacySecureDbName = 'aqua_app_secure.db';
   static const _legacyDbName = 'aqua_app.db';
   static const _obsoleteSyncDbName = 'dentalcare_sync.db';
   static const _dbVersion = 7;
@@ -56,23 +58,39 @@ class AppDatabase {
   }
 
   static Future<Database> get database async {
+    if (_activeAccountId == null) {
+      throw StateError('No local account is active.');
+    }
     if (_db != null) return _db!;
-    _db = await _init();
-    return _db!;
+    final opening = _openingDb ??= _init(_activeAccountId!);
+    try {
+      return _db = await opening;
+    } finally {
+      if (identical(_openingDb, opening)) _openingDb = null;
+    }
   }
 
-  static Future<Database> _init() async {
+  static Future<Database> _init(String accountId) async {
     final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, _dbName);
+    final path = p.join(dbPath, _databaseNameFor(accountId));
     final legacyPath = p.join(dbPath, _legacyDbName);
-    final secureExists = await databaseExists(path);
-    final existingKey = await DatabaseKeyService.read();
+    var secureExists = await databaseExists(path);
+    var existingKey = await DatabaseKeyService.readForAccount(accountId);
+    if (!secureExists && existingKey == null) {
+      existingKey = await _adoptLegacySecureDatabase(
+        accountId: accountId,
+        targetPath: path,
+      );
+      secureExists = await databaseExists(path);
+    }
     if (secureExists && existingKey == null) {
       throw StateError(
         'The encrypted database key is unavailable. Refusing to overwrite local data.',
       );
     }
-    final key = existingKey ?? await DatabaseKeyService.getOrCreate();
+    final key =
+        existingKey ??
+        await DatabaseKeyService.getOrCreateForAccount(accountId);
     if (!secureExists && await plain.databaseExists(legacyPath)) {
       await _migratePlaintextDatabase(legacyPath, path, key);
     }
@@ -90,6 +108,44 @@ class AppDatabase {
       await plain.deleteDatabase(obsoleteSyncPath);
     }
     return db;
+  }
+
+  static String _databaseNameFor(String accountId) {
+    final safeId = accountId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    return 'aqua_account_$safeId.db';
+  }
+
+  static Future<String?> _adoptLegacySecureDatabase({
+    required String accountId,
+    required String targetPath,
+  }) async {
+    final dbPath = await getDatabasesPath();
+    final legacyPath = p.join(dbPath, _legacySecureDbName);
+    if (!await databaseExists(legacyPath)) return null;
+    final legacyKey = await DatabaseKeyService.read();
+    if (legacyKey == null || legacyKey.isEmpty) return null;
+
+    Database? legacy;
+    try {
+      legacy = await openDatabase(
+        legacyPath,
+        password: legacyKey,
+        readOnly: true,
+        singleInstance: false,
+      );
+      final storedAccount = await _readMetadata(legacy, _activeAccountKey);
+      if (storedAccount != accountId) return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await legacy?.close();
+    }
+
+    await File(legacyPath).rename(targetPath);
+    return DatabaseKeyService.getOrCreateForAccount(
+      accountId,
+      migrationKey: legacyKey,
+    );
   }
 
   static Future<void> _migratePlaintextDatabase(
@@ -407,18 +463,40 @@ class AppDatabase {
     if (accountId.trim().isEmpty || clinicalScopeVersion < 1) {
       throw ArgumentError('A valid account and clinical scope are required.');
     }
-    final db = await database;
+    final previousAccount = _activeAccountId;
+    final switchedAccount = previousAccount != accountId;
+    if (switchedAccount) {
+      _dataGeneration++;
+      await _closeDatabase();
+      _activeAccountId = accountId;
+      _activeClinicalScopeVersion = null;
+    }
+
+    late final Database db;
+    try {
+      db = await database;
+    } catch (_) {
+      if (switchedAccount) _activeAccountId = null;
+      rethrow;
+    }
     final storedAccount = await _readMetadata(db, _activeAccountKey);
     final storedScope = int.tryParse(
       await _readMetadata(db, _clinicalScopeVersionKey) ?? '',
     );
-    final accountChanged = storedAccount != accountId;
-    final scopeChanged = !accountChanged && storedScope != clinicalScopeVersion;
+    final storedAccountMismatch =
+        storedAccount != null && storedAccount != accountId;
+    final accountChanged = switchedAccount || storedAccountMismatch;
+    final scopeChanged =
+        !storedAccountMismatch &&
+        storedAccount == accountId &&
+        storedScope != clinicalScopeVersion;
 
-    if (accountChanged || scopeChanged) _dataGeneration++;
+    if (!switchedAccount && (storedAccountMismatch || scopeChanged)) {
+      _dataGeneration++;
+    }
 
     await db.transaction((txn) async {
-      if (accountChanged) {
+      if (storedAccountMismatch) {
         await _clearAllUserRows(txn);
         await txn.delete('metadata');
       } else if (scopeChanged) {
@@ -969,6 +1047,8 @@ class AppDatabase {
   }
 
   static Future<void> clearAllLocalData() async {
+    final accountId = _activeAccountId;
+    if (accountId == null) return;
     _dataGeneration++;
     final db = await database;
     await db.transaction((txn) async {
@@ -977,5 +1057,32 @@ class AppDatabase {
     });
     _activeAccountId = null;
     _activeClinicalScopeVersion = null;
+    await _closeDatabase();
+    final dbPath = await getDatabasesPath();
+    await deleteDatabase(p.join(dbPath, _databaseNameFor(accountId)));
+    await DatabaseKeyService.deleteForAccount(accountId);
+  }
+
+  static Future<void> close() async {
+    if (_activeAccountId == null && _db == null && _openingDb == null) return;
+    _dataGeneration++;
+    await _closeDatabase();
+    _activeAccountId = null;
+    _activeClinicalScopeVersion = null;
+  }
+
+  static Future<void> _closeDatabase() async {
+    final opening = _openingDb;
+    if (opening != null) {
+      try {
+        _db = await opening;
+      } catch (_) {
+        // Nothing was opened, so there is nothing to close.
+      }
+    }
+    _openingDb = null;
+    final db = _db;
+    _db = null;
+    await db?.close();
   }
 }
