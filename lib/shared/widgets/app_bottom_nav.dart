@@ -5,6 +5,7 @@ import 'package:studentry/store/presentation/store_screen.dart';
 import 'package:studentry/student/presentation/university_screen.dart';
 import 'package:studentry/student/presentation/student_home_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
+import 'package:studentry/shared/widgets/sync_status_indicator.dart';
 import 'package:flutter/material.dart';
 
 class AppBottomNav extends StatelessWidget {
@@ -44,119 +45,135 @@ class AppBottomNav extends StatelessWidget {
           ),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final partWidth = constraints.maxWidth / (showAddButton ? 6 : 5);
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInOutCubic,
-              height: showAddButton ? 78 : 62,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  AnimatedPadding(
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.easeInOutCubic,
-                    padding: EdgeInsets.only(top: showAddButton ? 14 : 0),
-                    child: Row(
-                      children: [
-                        _item(
-                          context,
-                          Icons.home_rounded,
-                          'الرئيسية',
-                          selectedIndex == 0,
-                          () => _select(context, 0, const StudentHomeScreen()),
-                          partWidth,
-                        ),
-                        _item(
-                          context,
-                          Icons.calendar_month_rounded,
-                          'المواعيد',
-                          selectedIndex == 1,
-                          () => _select(context, 1, const AppointmentsScreen()),
-                          partWidth,
-                          badge: appointmentBadgeCount,
-                        ),
-                        SizedBox(width: showAddButton ? partWidth : 0),
-                        _item(
-                          context,
-                          Icons.school_rounded,
-                          'جامعتي',
-                          selectedIndex == 2,
-                          () => _select(context, 2, const UniversityScreen()),
-                          partWidth,
-                        ),
-                        _item(
-                          context,
-                          Icons.store_rounded,
-                          'المتجر',
-                          selectedIndex == 3,
-                          () => _select(context, 3, const StoreScreen()),
-                          partWidth,
-                        ),
-                        _item(
-                          context,
-                          Icons.analytics_rounded,
-                          'التقارير',
-                          selectedIndex == 4,
-                          () => _select(context, 4, const ReportsScreen()),
-                          partWidth,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (showAddButton)
-                    Positioned(
-                      top: -6,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AddPatientScreen(),
-                            ),
-                          ),
-                          child: Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.primary,
-                                  AppColors.primaryLight,
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SyncStatusIndicator(),
+          SafeArea(
+            top: false,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final partWidth =
+                    constraints.maxWidth / (showAddButton ? 6 : 5);
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeInOutCubic,
+                  height: showAddButton ? 78 : 62,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AnimatedPadding(
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeInOutCubic,
+                        padding: EdgeInsets.only(top: showAddButton ? 14 : 0),
+                        child: Row(
+                          children: [
+                            _item(
+                              context,
+                              Icons.home_rounded,
+                              'الرئيسية',
+                              selectedIndex == 0,
+                              () => _select(
+                                context,
+                                0,
+                                const StudentHomeScreen(),
                               ),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.35,
-                                  ),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                              partWidth,
                             ),
-                            child: const Icon(
-                              Icons.person_add_rounded,
-                              color: Colors.white,
-                              size: 28,
+                            _item(
+                              context,
+                              Icons.calendar_month_rounded,
+                              'المواعيد',
+                              selectedIndex == 1,
+                              () => _select(
+                                context,
+                                1,
+                                const AppointmentsScreen(),
+                              ),
+                              partWidth,
+                              badge: appointmentBadgeCount,
                             ),
-                          ),
+                            SizedBox(width: showAddButton ? partWidth : 0),
+                            _item(
+                              context,
+                              Icons.school_rounded,
+                              'جامعتي',
+                              selectedIndex == 2,
+                              () =>
+                                  _select(context, 2, const UniversityScreen()),
+                              partWidth,
+                            ),
+                            _item(
+                              context,
+                              Icons.store_rounded,
+                              'المتجر',
+                              selectedIndex == 3,
+                              () => _select(context, 3, const StoreScreen()),
+                              partWidth,
+                            ),
+                            _item(
+                              context,
+                              Icons.analytics_rounded,
+                              'التقارير',
+                              selectedIndex == 4,
+                              () => _select(context, 4, const ReportsScreen()),
+                              partWidth,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
+                      if (showAddButton)
+                        Positioned(
+                          top: -6,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: GestureDetector(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AddPatientScreen(),
+                                ),
+                              ),
+                              child: Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      AppColors.primary,
+                                      AppColors.primaryLight,
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.person_add_rounded,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

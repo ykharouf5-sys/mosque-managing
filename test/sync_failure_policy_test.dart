@@ -13,6 +13,21 @@ void main() {
         SyncService.classifyFailure(const ApiException(503, 'unavailable')),
         SyncFailureDisposition.retry,
       );
+      expect(
+        SyncService.classifyFailure(const ApiException(429, 'busy')),
+        SyncFailureDisposition.retry,
+      );
+    });
+
+    test('keeps permanent validation failures for user review', () {
+      expect(
+        SyncService.classifyFailure(const ApiException(422, 'invalid data')),
+        SyncFailureDisposition.permanentFailure,
+      );
+      expect(
+        SyncService.classifyFailure(const ApiException(413, 'too large')),
+        SyncFailureDisposition.permanentFailure,
+      );
     });
 
     test('discards records that are no longer authorized or visible', () {

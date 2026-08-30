@@ -37,7 +37,10 @@ class ApiRequestQueue {
         r.completer.completeError(error, stack);
         return;
       }
-      final delay = min(8000, 300 * (1 << r.attempt)) + Random().nextInt(350);
+      final serverDelay = error.retryAfter;
+      final delay = serverDelay == null
+          ? min(8000, 300 * (1 << r.attempt)) + Random().nextInt(350)
+          : min(60000, serverDelay.inMilliseconds) + Random().nextInt(350);
       r.attempt++;
       Timer(Duration(milliseconds: delay), () {
         _requests.addLast(r);
@@ -59,7 +62,23 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
   final Object? details;
-  const ApiException(this.statusCode, this.message, [this.details]);
+  final Map<String, String> headers;
+  const ApiException(
+    this.statusCode,
+    this.message, [
+    this.details,
+    this.headers = const {},
+  ]);
+
+  Duration? get retryAfter {
+    final value = headers.entries
+        .where((entry) => entry.key.toLowerCase() == 'retry-after')
+        .map((entry) => entry.value.trim())
+        .firstOrNull;
+    final seconds = value == null ? null : int.tryParse(value);
+    return seconds == null || seconds < 1 ? null : Duration(seconds: seconds);
+  }
+
   @override
   String toString() => message;
 }

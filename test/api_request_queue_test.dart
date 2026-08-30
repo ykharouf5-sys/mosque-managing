@@ -2,6 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
 
 void main() {
+  test('API exception parses Retry-After case-insensitively', () {
+    const error = ApiException(429, 'busy', null, {'Retry-After': '30'});
+
+    expect(error.retryAfter, const Duration(seconds: 30));
+  });
+
+  test('API exception ignores invalid Retry-After values', () {
+    const error = ApiException(429, 'busy', null, {'retry-after': 'later'});
+
+    expect(error.retryAfter, isNull);
+  });
+
   test(
     'retry queue retries transient server failures only up to the limit',
     () async {

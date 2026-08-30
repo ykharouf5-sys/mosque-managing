@@ -108,6 +108,7 @@ class ApiClient {
           response.statusCode,
           decoded?['message']?.toString() ?? 'Upload failed',
           decoded,
+          response.headers,
         );
       }
       return ApiResult(response.statusCode, decoded, response.headers);
@@ -160,7 +161,12 @@ class ApiClient {
         final message = decoded is Map
             ? (decoded['message']?.toString() ?? 'API error')
             : 'API error ${response.statusCode}';
-        throw ApiException(response.statusCode, message, decoded);
+        throw ApiException(
+          response.statusCode,
+          message,
+          decoded,
+          response.headers,
+        );
       }
       return ApiResult(response.statusCode, decoded, response.headers);
     }, maxRetries: maxRetries);

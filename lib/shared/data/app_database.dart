@@ -33,7 +33,7 @@ class AppDatabase {
   static const _legacySecureDbName = 'aqua_app_secure.db';
   static const _legacyDbName = 'aqua_app.db';
   static const _obsoleteSyncDbName = 'dentalcare_sync.db';
-  static const _dbVersion = 7;
+  static const _dbVersion = 8;
   static const _activeAccountKey = 'active_account_id';
   static const _clinicalScopeVersionKey = 'clinical_scope_version';
   static String? _activeAccountId;
@@ -313,6 +313,22 @@ class AppDatabase {
       await _clearAllUserRows(db);
       await db.delete('metadata');
     }
+    if (oldVersion < 8) {
+      await db.execute(
+        'ALTER TABLE sync_queue ADD COLUMN next_attempt_at TEXT',
+      );
+      await db.execute('ALTER TABLE sync_queue ADD COLUMN last_error TEXT');
+      await db.execute(
+        'ALTER TABLE sync_queue ADD COLUMN last_http_status INTEGER',
+      );
+      // Older releases used a temporary `failed` state and reset it on every
+      // sync cycle. Preserve those operations, but let the new durable
+      // backoff scheduler decide when they are due.
+      await db.rawUpdate(
+        "UPDATE sync_queue SET status = 'pending', retry_count = 0 WHERE status = 'failed' AND retry_count < 99",
+      );
+      await _createSyncQueueIndexes(db);
+    }
   }
 
   static Future<void> _createTables(Database db, int version) async {
@@ -378,9 +394,12 @@ class AppDatabase {
         record_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        retry_count INTEGER DEFAULT 0,
-          status TEXT DEFAULT 'pending'
-          ,operation_id TEXT
+          retry_count INTEGER DEFAULT 0,
+          status TEXT DEFAULT 'pending',
+          operation_id TEXT,
+          next_attempt_at TEXT,
+          last_error TEXT,
+          last_http_status INTEGER
         )
     ''');
     await _createAcademicResultTables(db);
@@ -430,6 +449,13 @@ class AppDatabase {
     );
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_operation_id_idx ON sync_queue(operation_id)',
+    );
+    await _createSyncQueueIndexes(db);
+  }
+
+  static Future<void> _createSyncQueueIndexes(DatabaseExecutor db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS sync_queue_due_idx ON sync_queue(status, next_attempt_at, created_at)',
     );
   }
 

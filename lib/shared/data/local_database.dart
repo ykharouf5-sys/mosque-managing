@@ -10,6 +10,11 @@ class SyncQueueItem {
   final String recordId;
   final String payload;
   final String operationId;
+  final int retryCount;
+  final String status;
+  final DateTime? nextAttemptAt;
+  final String? lastError;
+  final int? lastHttpStatus;
 
   SyncQueueItem({
     required this.id,
@@ -18,6 +23,11 @@ class SyncQueueItem {
     required this.recordId,
     required this.payload,
     required this.operationId,
+    required this.retryCount,
+    required this.status,
+    this.nextAttemptAt,
+    this.lastError,
+    this.lastHttpStatus,
   });
 
   factory SyncQueueItem.fromMap(Map<String, dynamic> map) {
@@ -28,8 +38,28 @@ class SyncQueueItem {
       recordId: map['record_id'] as String,
       payload: map['payload'] as String,
       operationId: (map['operation_id'] as String?) ?? const Uuid().v4(),
+      retryCount: (map['retry_count'] as num?)?.toInt() ?? 0,
+      status: map['status'] as String? ?? 'pending',
+      nextAttemptAt: DateTime.tryParse(map['next_attempt_at'] as String? ?? ''),
+      lastError: map['last_error'] as String?,
+      lastHttpStatus: (map['last_http_status'] as num?)?.toInt(),
     );
   }
+}
+
+class SyncQueueSummary {
+  final int pending;
+  final int retrying;
+  final int failedPermanent;
+
+  const SyncQueueSummary({
+    this.pending = 0,
+    this.retrying = 0,
+    this.failedPermanent = 0,
+  });
+
+  int get waiting => pending + retrying;
+  bool get isEmpty => waiting == 0 && failedPermanent == 0;
 }
 
 class LocalDatabaseService {
@@ -93,6 +123,9 @@ class LocalDatabaseService {
         'retry_count': 0,
         'status': 'pending',
         'operation_id': const Uuid().v4(),
+        'next_attempt_at': null,
+        'last_error': null,
+        'last_http_status': null,
       });
     } catch (_) {}
   }
@@ -105,10 +138,12 @@ class LocalDatabaseService {
       final generation =
           expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
+      final now = DateTime.now().toUtc().toIso8601String();
       final rows = await db.query(
         'sync_queue',
-        where: 'status = ?',
-        whereArgs: ['pending'],
+        where:
+            "status IN ('pending', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
+        whereArgs: [now],
         orderBy: 'created_at ASC',
         limit: limit,
       );
@@ -124,7 +159,11 @@ class LocalDatabaseService {
           AppDatabase.ensureDataGeneration(generation);
           await db.update(
             'sync_queue',
-            {'status': 'failed', 'retry_count': 99},
+            {
+              'status': 'failed_permanent',
+              'retry_count': 99,
+              'last_error': 'The encrypted sync payload could not be read.',
+            },
             where: 'id = ?',
             whereArgs: [row['id']],
           );
@@ -147,7 +186,13 @@ class LocalDatabaseService {
     } catch (_) {}
   }
 
-  static Future<void> markAsFailed(int id, {int? expectedGeneration}) async {
+  static Future<DateTime?> scheduleRetry(
+    int id, {
+    required Duration delay,
+    int? httpStatus,
+    String? error,
+    int? expectedGeneration,
+  }) async {
     try {
       final generation =
           expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
@@ -158,30 +203,108 @@ class LocalDatabaseService {
         whereArgs: [id],
         limit: 1,
       );
-      if (rows.isEmpty) return;
-      final retryCount = (rows.first['retry_count'] as int?) ?? 0;
-      final nextStatus = retryCount >= 2 ? 'failed' : 'pending';
+      if (rows.isEmpty) return null;
+      final nextAttemptAt = DateTime.now().toUtc().add(delay);
       AppDatabase.ensureDataGeneration(generation);
-      await db.rawUpdate(
-        'UPDATE sync_queue SET retry_count = retry_count + 1, status = ? WHERE id = ?',
-        [nextStatus, id],
+      await db.update(
+        'sync_queue',
+        {
+          'retry_count':
+              ((rows.first['retry_count'] as num?)?.toInt() ?? 0) + 1,
+          'status': 'retrying',
+          'next_attempt_at': nextAttemptAt.toIso8601String(),
+          'last_error': error,
+          'last_http_status': httpStatus,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
       );
+      return nextAttemptAt;
     } catch (_) {}
+    return null;
   }
 
-  static Future<void> resetFailedItems({int? expectedGeneration}) async {
+  static Future<void> markAsPermanentFailure(
+    int id, {
+    int? httpStatus,
+    String? error,
+    int? expectedGeneration,
+  }) async {
     try {
       final generation =
           expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
       AppDatabase.ensureDataGeneration(generation);
-      await db.rawUpdate(
-        "UPDATE sync_queue SET retry_count = 0, status = 'pending' WHERE status = 'failed'",
+      await db.update(
+        'sync_queue',
+        {
+          'status': 'failed_permanent',
+          'next_attempt_at': null,
+          'last_error': error,
+          'last_http_status': httpStatus,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
       );
     } catch (_) {}
   }
 
+  static Future<DateTime?> getNextRetryAt({int? expectedGeneration}) async {
+    try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
+      final db = await AppDatabase.database;
+      final rows = await db.query(
+        'sync_queue',
+        columns: ['next_attempt_at'],
+        where: "status = 'retrying' AND next_attempt_at IS NOT NULL",
+        orderBy: 'next_attempt_at ASC',
+        limit: 1,
+      );
+      AppDatabase.ensureDataGeneration(generation);
+      if (rows.isEmpty) return null;
+      return DateTime.tryParse(rows.first['next_attempt_at'] as String? ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Sync time ──
+
+  static Future<SyncQueueSummary> getQueueSummary({
+    int? expectedGeneration,
+  }) async {
+    try {
+      final generation =
+          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
+      final db = await AppDatabase.database;
+      final rows = await db.rawQuery(
+        'SELECT status, COUNT(*) AS count FROM sync_queue GROUP BY status',
+      );
+      AppDatabase.ensureDataGeneration(generation);
+      var pending = 0;
+      var retrying = 0;
+      var failedPermanent = 0;
+      for (final row in rows) {
+        final count = (row['count'] as num?)?.toInt() ?? 0;
+        switch (row['status']) {
+          case 'pending':
+            pending += count;
+          case 'retrying':
+            retrying += count;
+          case 'failed_permanent':
+            failedPermanent += count;
+        }
+      }
+      return SyncQueueSummary(
+        pending: pending,
+        retrying: retrying,
+        failedPermanent: failedPermanent,
+      );
+    } catch (_) {
+      return const SyncQueueSummary();
+    }
+  }
 
   static Future<String> getLastSyncTime() async {
     final value = await AppDatabase.getMetadata('last_sync_time');

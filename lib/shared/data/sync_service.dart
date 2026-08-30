@@ -9,23 +9,45 @@ import 'app_database.dart';
 import 'auth_service.dart';
 import 'connectivity_service.dart';
 import 'local_database.dart';
+import 'sync_backoff.dart';
 import '../../patients/data/patient_api_service.dart';
 import '../../patients/data/appointment_api_service.dart';
 
-enum SyncFailureDisposition { retry, discard, resolveConflict, rejectSession }
+enum SyncFailureDisposition {
+  retry,
+  permanentFailure,
+  discard,
+  resolveConflict,
+  rejectSession,
+}
 
 typedef AsyncSyncListener = Future<void> Function();
+
+class SyncStatusSnapshot {
+  final int waiting;
+  final int failedPermanent;
+  final bool isSyncing;
+
+  const SyncStatusSnapshot({
+    this.waiting = 0,
+    this.failedPermanent = 0,
+    this.isSyncing = false,
+  });
+}
 
 class SyncService {
   static Timer? _timer;
   static Timer? _reconnectTimer;
   static Timer? _writeDebounceTimer;
+  static Timer? _retryTimer;
+  static DateTime? _retryDueAt;
   static Completer<void>? _writeDebounceCompleter;
   static Future<bool>? _inFlight;
   static bool _wasOffline = false;
   static bool _isAppActive = true;
   static bool _initialized = false;
   static DateTime? _lastCompletedAt;
+  static int _pullRetryCount = 0;
   static bool get isSyncing => _inFlight != null;
   static const _minimumAutomaticInterval = Duration(seconds: 15);
   static const _periodicSyncBase = Duration(minutes: 4);
@@ -33,6 +55,9 @@ class SyncService {
   static final Random _random = Random();
   static final Set<AsyncSyncListener> _syncCompleteListeners = {};
   static final Set<AsyncSyncListener> _dbReloadListeners = {};
+  static final ValueNotifier<SyncStatusSnapshot> status = ValueNotifier(
+    const SyncStatusSnapshot(),
+  );
 
   static void addSyncCompleteListener(AsyncSyncListener listener) =>
       _syncCompleteListeners.add(listener);
@@ -52,6 +77,7 @@ class SyncService {
     ConnectivityService.isOnline.removeListener(_onConnectivityChanged);
     ConnectivityService.isOnline.addListener(_onConnectivityChanged);
     _scheduleNextPeriodicSync();
+    await refreshStatus();
     if (ConnectivityService.isOnline.value) {
       // Resume the active account's cloud synchronization immediately after
       // restoring a session. Write-triggered retries still use jitter below.
@@ -84,6 +110,10 @@ class SyncService {
       _reconnectTimer = Timer(Duration(seconds: Random().nextInt(10)), () {
         syncNow(force: true);
       });
+    } else if (!online) {
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _retryDueAt = null;
     }
     _wasOffline = !online;
   }
@@ -93,6 +123,9 @@ class SyncService {
     _isAppActive = active;
     if (!active) {
       _reconnectTimer?.cancel();
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _retryDueAt = null;
       return;
     }
     if (active && ConnectivityService.isOnline.value) {
@@ -120,9 +153,15 @@ class SyncService {
     }
 
     late final Future<bool> run;
-    run = _runSync().whenComplete(() {
+    status.value = SyncStatusSnapshot(
+      waiting: status.value.waiting,
+      failedPermanent: status.value.failedPermanent,
+      isSyncing: true,
+    );
+    run = _runSync().whenComplete(() async {
       if (identical(_inFlight, run)) _inFlight = null;
       _lastCompletedAt = DateTime.now();
+      await refreshStatus();
     });
     _inFlight = run;
     return run;
@@ -133,21 +172,23 @@ class SyncService {
     var dataChanged = false;
     try {
       generation = AppDatabase.captureActiveDataGeneration();
-      await LocalDatabaseService.resetFailedItems(
-        expectedGeneration: generation,
-      );
-      final changed = await _push(generation);
+      final pushResult = await _push(generation);
       AppDatabase.ensureDataGeneration(generation);
-      final pullResult = await _pull(generation);
-      generation = pullResult.generation;
-      AppDatabase.ensureDataGeneration(generation);
-      dataChanged = changed || pullResult.changed;
+      dataChanged = pushResult.changed;
+      if (pushResult.serverAvailable) {
+        final pullResult = await _pull(generation);
+        generation = pullResult.generation;
+        AppDatabase.ensureDataGeneration(generation);
+        dataChanged = dataChanged || pullResult.changed;
+        _pullRetryCount = 0;
+      }
       if (dataChanged) {
         await _notify(_dbReloadListeners);
         await _notify(_syncCompleteListeners);
       }
     } catch (e) {
       await _handleSyncAuthorizationFailure(e);
+      if (_isRetryableFailure(e)) _scheduleTransientRetry(e);
     }
     if (generation != null &&
         AuthService().isLoggedIn &&
@@ -159,10 +200,14 @@ class SyncService {
         syncNow(force: true);
       });
     }
+    if (generation != null && AuthService().isLoggedIn) {
+      await _scheduleStoredRetry(generation);
+    }
     return dataChanged;
   }
 
   static Future<void> syncNowWithJitter() {
+    unawaited(refreshStatus());
     _writeDebounceTimer?.cancel();
     final completer = _writeDebounceCompleter ??= Completer<void>();
     _writeDebounceTimer = Timer(
@@ -190,14 +235,26 @@ class SyncService {
     );
   }
 
-  static Future<bool> _push(int generation) async {
+  static Future<void> refreshStatus() async {
+    final summary = await LocalDatabaseService.getQueueSummary();
+    status.value = SyncStatusSnapshot(
+      waiting: summary.waiting,
+      failedPermanent: summary.failedPermanent,
+      isSyncing: _inFlight != null,
+    );
+  }
+
+  static Future<({bool changed, bool serverAvailable})> _push(
+    int generation,
+  ) async {
     var items = await LocalDatabaseService.getPendingQueue(
-      limit: 100,
+      limit: 25,
       expectedGeneration: generation,
     );
     AppDatabase.ensureDataGeneration(generation);
-    if (items.isEmpty) return false;
+    if (items.isEmpty) return (changed: false, serverAvailable: true);
     var changed = false;
+    var serverAvailable = true;
 
     final clinicalItems = items
         .where(
@@ -209,7 +266,7 @@ class SyncService {
       try {
         await ApiClient.instance.post(
           '/sync/push',
-          maxRetries: 2,
+          maxRetries: 0,
           body: {
             'operations': clinicalItems
                 .map(
@@ -240,17 +297,27 @@ class SyncService {
             error is StaleAccountDataException) {
           rethrow;
         }
-        if (classifyFailure(error) == SyncFailureDisposition.rejectSession) {
+        final disposition = classifyFailure(error);
+        if (disposition == SyncFailureDisposition.rejectSession) {
           await AuthService().invalidateRejectedSession();
-          return changed;
+          return (changed: changed, serverAvailable: false);
+        }
+        if (disposition == SyncFailureDisposition.retry) {
+          for (final item in clinicalItems) {
+            await _defer(item, error, generation);
+          }
+          return (changed: changed, serverAvailable: false);
         }
         // A single conflict aborts the atomic batch. Fall back to the
         // per-record path below so the valid operations can still progress.
       }
     }
-    if (items.isEmpty) return changed;
+    if (items.isEmpty) {
+      return (changed: changed, serverAvailable: serverAvailable);
+    }
     final legacy = [];
-    for (final item in items) {
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
+      final item = items[itemIndex];
       if (item.tableName != 'patients' &&
           item.tableName != 'appointments' &&
           item.tableName != 'patient_payments') {
@@ -383,9 +450,29 @@ class SyncService {
             error is StaleAccountDataException) {
           rethrow;
         }
+        final disposition = classifyFailure(error);
         changed = await _handlePushFailure(item, error, generation) || changed;
-        if (!AuthService().isLoggedIn) return changed;
+        if (disposition == SyncFailureDisposition.retry) {
+          serverAvailable = false;
+          for (final remaining in items.skip(itemIndex + 1)) {
+            await _defer(remaining, error, generation);
+          }
+          break;
+        }
+        if (!AuthService().isLoggedIn) {
+          return (changed: changed, serverAvailable: false);
+        }
       }
+    }
+    if (!serverAvailable) {
+      for (final item in legacy) {
+        await _defer(
+          item,
+          const ApiException(503, 'Synchronization is temporarily delayed.'),
+          generation,
+        );
+      }
+      return (changed: changed, serverAvailable: false);
     }
     if (legacy.isNotEmpty) {
       try {
@@ -420,12 +507,17 @@ class SyncService {
         final disposition = classifyFailure(error);
         if (disposition == SyncFailureDisposition.rejectSession) {
           await AuthService().invalidateRejectedSession();
-          return changed;
+          return (changed: changed, serverAvailable: false);
         }
         for (final item in legacy) {
           if (disposition == SyncFailureDisposition.retry) {
-            await LocalDatabaseService.markAsFailed(
+            serverAvailable = false;
+            await _defer(item, error, generation);
+          } else if (disposition == SyncFailureDisposition.permanentFailure) {
+            await LocalDatabaseService.markAsPermanentFailure(
               item.id,
+              httpStatus: error is ApiException ? error.statusCode : null,
+              error: _errorMessage(error),
               expectedGeneration: generation,
             );
           } else {
@@ -437,7 +529,7 @@ class SyncService {
         }
       }
     }
-    return changed;
+    return (changed: changed, serverAvailable: serverAvailable);
   }
 
   @visibleForTesting
@@ -448,6 +540,11 @@ class SyncService {
     }
     if (error.statusCode == 409) {
       return SyncFailureDisposition.resolveConflict;
+    }
+    if (error.statusCode == 400 ||
+        error.statusCode == 413 ||
+        error.statusCode == 422) {
+      return SyncFailureDisposition.permanentFailure;
     }
     if (error.statusCode == 403 || error.statusCode == 404) {
       return SyncFailureDisposition.discard;
@@ -486,8 +583,14 @@ class SyncService {
       }
     }
     if (disposition == SyncFailureDisposition.retry) {
-      await LocalDatabaseService.markAsFailed(
+      await _defer(item, error, generation);
+      return false;
+    }
+    if (disposition == SyncFailureDisposition.permanentFailure) {
+      await LocalDatabaseService.markAsPermanentFailure(
         item.id,
+        httpStatus: error is ApiException ? error.statusCode : null,
+        error: _errorMessage(error),
         expectedGeneration: generation,
       );
       return false;
@@ -516,6 +619,13 @@ class SyncService {
         );
         return true;
       }
+      await LocalDatabaseService.markAsPermanentFailure(
+        item.id,
+        httpStatus: error.statusCode,
+        error: _errorMessage(error),
+        expectedGeneration: generation,
+      );
+      return false;
     }
 
     await LocalDatabaseService.markAsCompleted(
@@ -577,10 +687,7 @@ class SyncService {
         );
         return true;
       }
-      await LocalDatabaseService.markAsFailed(
-        item.id,
-        expectedGeneration: generation,
-      );
+      await _defer(item, error, generation);
       return false;
     }
   }
@@ -599,6 +706,74 @@ class SyncService {
         // session; rejected tokens are purged by refreshCurrentUser itself.
       }
     }
+  }
+
+  static Future<void> _defer(
+    SyncQueueItem item,
+    Object error,
+    int generation,
+  ) async {
+    final retryAfter = error is ApiException ? error.retryAfter : null;
+    final delay = SyncBackoffPolicy.delayFor(
+      retryCount: item.retryCount,
+      retryAfter: retryAfter,
+      jitterMilliseconds: _random.nextInt(3001),
+    );
+    final nextAttemptAt = await LocalDatabaseService.scheduleRetry(
+      item.id,
+      delay: delay,
+      httpStatus: error is ApiException ? error.statusCode : null,
+      error: _errorMessage(error),
+      expectedGeneration: generation,
+    );
+    if (nextAttemptAt != null) _scheduleRetryAt(nextAttemptAt);
+  }
+
+  static String _errorMessage(Object error) {
+    final message = error is ApiException ? error.message : error.toString();
+    return message.length <= 500 ? message : message.substring(0, 500);
+  }
+
+  static Future<void> _scheduleStoredRetry(int generation) async {
+    final nextAttemptAt = await LocalDatabaseService.getNextRetryAt(
+      expectedGeneration: generation,
+    );
+    if (nextAttemptAt != null) _scheduleRetryAt(nextAttemptAt);
+  }
+
+  static bool _isRetryableFailure(Object error) {
+    return error is! ApiException ||
+        classifyFailure(error) == SyncFailureDisposition.retry;
+  }
+
+  static void _scheduleTransientRetry(Object error) {
+    final delay = SyncBackoffPolicy.delayFor(
+      retryCount: _pullRetryCount,
+      retryAfter: error is ApiException ? error.retryAfter : null,
+      jitterMilliseconds: _random.nextInt(3001),
+    );
+    _pullRetryCount++;
+    _scheduleRetryAt(DateTime.now().toUtc().add(delay));
+  }
+
+  static void _scheduleRetryAt(DateTime nextAttemptAt) {
+    if (!_initialized || !_isAppActive || !ConnectivityService.isOnline.value) {
+      return;
+    }
+    final existingDueAt = _retryDueAt;
+    if (_retryTimer?.isActive == true &&
+        existingDueAt != null &&
+        !nextAttemptAt.isBefore(existingDueAt)) {
+      return;
+    }
+    _retryTimer?.cancel();
+    _retryDueAt = nextAttemptAt;
+    final delay = nextAttemptAt.difference(DateTime.now().toUtc());
+    _retryTimer = Timer(delay.isNegative ? Duration.zero : delay, () {
+      _retryTimer = null;
+      _retryDueAt = null;
+      syncNow(force: true);
+    });
   }
 
   static Map<String, dynamic>? _conflictRecord(
@@ -637,6 +812,7 @@ class SyncService {
     do {
       final r = await ApiClient.instance.get(
         '/sync/pull',
+        maxRetries: 0,
         query: {
           'since': since,
           'limit': '25',
@@ -708,9 +884,13 @@ class SyncService {
     _timer?.cancel();
     _reconnectTimer?.cancel();
     _writeDebounceTimer?.cancel();
+    _retryTimer?.cancel();
+    _retryDueAt = null;
+    _pullRetryCount = 0;
     final completer = _writeDebounceCompleter;
     if (completer != null && !completer.isCompleted) completer.complete();
     _writeDebounceCompleter = null;
+    status.value = const SyncStatusSnapshot();
     ConnectivityService.isOnline.removeListener(_onConnectivityChanged);
     _syncCompleteListeners.clear();
     _dbReloadListeners.clear();
