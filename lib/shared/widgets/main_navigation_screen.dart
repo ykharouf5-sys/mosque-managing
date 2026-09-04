@@ -1,9 +1,11 @@
 import 'package:studentry/patients/presentation/appointments_screen.dart';
+import 'package:studentry/patients/presentation/add_patient_screen.dart';
 import 'package:studentry/patients/presentation/reports_screen.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/store/presentation/store_screen.dart';
 import 'package:studentry/student/presentation/student_home_screen.dart';
 import 'package:studentry/student/presentation/university_screen.dart';
+import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -57,9 +59,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
       bottomNavigationBar: AppBottomNav(
         selectedIndex: _index,
-        showAddButton: _index == 0 || _index == 1,
         onSelected: _select,
       ),
+      floatingActionButton: _index == 0 || _index == 1
+          ? FloatingActionButton(
+              tooltip: 'إضافة مريض',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+              ),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.person_add_rounded),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

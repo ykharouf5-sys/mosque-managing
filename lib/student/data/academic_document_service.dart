@@ -17,6 +17,6 @@ class AcademicDocumentService {
       file.uri.pathSegments.last,
       fieldName: 'document',
     );
-    return response.data['data']['url'].toString();
+    return response.data['data']['reference'].toString();
   }
 }

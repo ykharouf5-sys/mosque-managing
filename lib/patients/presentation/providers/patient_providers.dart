@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:studentry/patients/data/patient_data.dart';
+import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/app_database.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/sync_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +12,15 @@ final patientListProvider =
     NotifierProvider<PatientListNotifier, List<PatientProfile>>(
       PatientListNotifier.new,
     );
+
+final localClinicalReportProvider = FutureProvider<ClinicalReportSummary>((
+  ref,
+) {
+  Future<void> reload() async => ref.invalidateSelf();
+  SyncService.addDbReloadListener(reload);
+  ref.onDispose(() => SyncService.removeDbReloadListener(reload));
+  return AppDatabase.getClinicalReportSummary();
+});
 
 class PatientListNotifier extends Notifier<List<PatientProfile>> {
   static const int pageSize = 25;
@@ -75,36 +88,44 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
     });
   }
 
-  void add(PatientProfile patient) {
+  Future<void> add(
+    PatientProfile patient, {
+    double initialPayment = 0,
+    String? initialPaymentId,
+  }) async {
+    await AuthService().ensureLocalAccountActive();
+    await AppDatabase.insertPatient(
+      profileToPatientRow(patient),
+      initialPayment: initialPayment,
+      initialPaymentId: initialPaymentId,
+    );
     _patients.add(patient);
     _loadedCount = _loadedCount.clamp(0, _patients.length);
     CacheManager.instance.invalidate(CacheTags.patients);
-    AppDatabase.insertPatient(
-      profileToPatientRow(patient),
-    ).then((_) => SyncService.syncNowWithJitter());
     state = _display();
+    ref.invalidate(localClinicalReportProvider);
+    unawaited(SyncService.syncNowWithJitter());
   }
 
-  void remove(String id) {
+  Future<void> remove(String id) async {
+    await AppDatabase.softDeletePatient(id);
     _patients.removeWhere((p) => p.id == id);
     _loadedCount = _loadedCount.clamp(0, _patients.length);
     CacheManager.instance.invalidate(CacheTags.patients);
-    AppDatabase.softDeletePatient(
-      id,
-    ).then((_) => SyncService.syncNowWithJitter());
     state = _display();
+    ref.invalidate(localClinicalReportProvider);
+    unawaited(SyncService.syncNowWithJitter());
   }
 
-  void update(String id, PatientProfile updated) {
+  Future<void> update(String id, PatientProfile updated) async {
     final idx = _patients.indexWhere((p) => p.id == id);
     if (idx >= 0) {
+      await AppDatabase.updatePatient(id, profileToPatientRow(updated));
       _patients[idx] = updated;
       CacheManager.instance.invalidate(CacheTags.patients);
-      AppDatabase.updatePatient(
-        id,
-        profileToPatientRow(updated),
-      ).then((_) => SyncService.syncNowWithJitter());
       if (idx < _loadedCount) state = _display();
+      ref.invalidate(localClinicalReportProvider);
+      unawaited(SyncService.syncNowWithJitter());
     }
   }
 
@@ -220,6 +241,7 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
     }
     _cacheAppointments();
     _resetPagination();
+    await NotificationService.scheduleAllAppointments(_appointments);
   }
 
   void _cacheAppointments() {
@@ -250,14 +272,14 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
     });
   }
 
-  void add(Appointment appointment) {
+  Future<void> add(Appointment appointment) async {
+    await AppDatabase.insertAppointment(appointmentToRow(appointment));
     _appointments.add(appointment);
     _loadedCount = _loadedCount.clamp(0, _appointments.length);
     CacheManager.instance.invalidate(CacheTags.appointments);
-    AppDatabase.insertAppointment(
-      appointmentToRow(appointment),
-    ).then((_) => SyncService.syncNowWithJitter());
     state = _display();
+    await NotificationService.scheduleAllAppointments(_appointments);
+    unawaited(SyncService.syncNowWithJitter());
   }
 
   void remove(String patientId) {
@@ -265,28 +287,28 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
     _loadedCount = _loadedCount.clamp(0, _appointments.length);
     CacheManager.instance.invalidate(CacheTags.appointments);
     state = _display();
+    unawaited(NotificationService.scheduleAllAppointments(_appointments));
   }
 
-  void removeById(String id) {
+  Future<void> removeById(String id) async {
+    await AppDatabase.softDeleteAppointment(id);
     _appointments.removeWhere((a) => a.id == id);
     _loadedCount = _loadedCount.clamp(0, _appointments.length);
     CacheManager.instance.invalidate(CacheTags.appointments);
-    AppDatabase.softDeleteAppointment(
-      id,
-    ).then((_) => SyncService.syncNowWithJitter());
     state = _display();
+    await NotificationService.scheduleAllAppointments(_appointments);
+    unawaited(SyncService.syncNowWithJitter());
   }
 
-  void update(String id, Appointment updated) {
+  Future<void> update(String id, Appointment updated) async {
     final idx = _appointments.indexWhere((a) => a.id == id);
     if (idx >= 0) {
+      await AppDatabase.updateAppointment(id, appointmentToRow(updated));
       _appointments[idx] = updated;
       CacheManager.instance.invalidate(CacheTags.appointments);
-      AppDatabase.updateAppointment(
-        id,
-        appointmentToRow(updated),
-      ).then((_) => SyncService.syncNowWithJitter());
       if (idx < _loadedCount) state = _display();
+      await NotificationService.scheduleAllAppointments(_appointments);
+      unawaited(SyncService.syncNowWithJitter());
     }
   }
 
@@ -297,6 +319,7 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
     _loadedCount = pageSize.clamp(0, _appointments.length);
     _cacheAppointments();
     state = _display();
+    unawaited(NotificationService.scheduleAllAppointments(_appointments));
   }
 
   void refresh() {

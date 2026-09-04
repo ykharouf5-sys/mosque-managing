@@ -1,11 +1,11 @@
 import 'package:studentry/patients/data/patient_data.dart';
-import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:table_calendar/table_calendar.dart';
+import 'package:uuid/uuid.dart';
 
 class AddPatientScreen extends ConsumerStatefulWidget {
   const AddPatientScreen({super.key});
@@ -344,6 +344,19 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
 
+    final amountDue = double.tryParse(_dueCtrl.text) ?? 0;
+    final initialPayment = double.tryParse(_paidCtrl.text) ?? 0;
+    if (initialPayment > amountDue) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'الدفعة لا يمكن أن تتجاوز المستحق (${amountDue.toStringAsFixed(0)} ل.س)',
+          ),
+        ),
+      );
+      return;
+    }
+
     final name = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
 
@@ -358,8 +371,9 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
       registrationDate: DateFormat('yyyy-MM-dd').format(now),
       notes: _notesCtrl.text,
       photoUrl: 'https://i.pravatar.cc/150?u=$id',
-      amountDue: double.tryParse(_dueCtrl.text) ?? 0,
-      amountPaid: double.tryParse(_paidCtrl.text) ?? 0,
+      amountDue: amountDue,
+      amountPaid: initialPayment,
+      todayPayment: initialPayment,
       appointmentDate: _selectedDate,
       treatmentPlan: List.from(_treatmentPlan),
     );
@@ -378,12 +392,23 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
       date: _selectedDate,
     );
 
-    NotificationService.onAppointmentAdded(appointment);
-
-    ref.read(patientListProvider.notifier).add(patient);
-    ref.read(appointmentListProvider.notifier).add(appointment);
-
-    if (mounted) Navigator.pop(context, true);
+    try {
+      await ref
+          .read(patientListProvider.notifier)
+          .add(
+            patient,
+            initialPayment: initialPayment,
+            initialPaymentId: initialPayment > 0 ? const Uuid().v4() : null,
+          );
+      await ref.read(appointmentListProvider.notifier).add(appointment);
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر حفظ المريض محلياً: $error')));
+    }
   }
 
   @override
@@ -625,6 +650,7 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
                         'المستحق',
                         _dueCtrl,
                         keyboardType: TextInputType.number,
+                        validator: _validateNonNegativeAmount,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -633,6 +659,18 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
                         'المدفوع',
                         _paidCtrl,
                         keyboardType: TextInputType.number,
+                        validator: (value) {
+                          final basic = _validateNonNegativeAmount(value);
+                          if (basic != null) return basic;
+                          final paid =
+                              double.tryParse(value?.trim() ?? '') ?? 0;
+                          final due =
+                              double.tryParse(_dueCtrl.text.trim()) ?? 0;
+                          if (paid > due) {
+                            return 'أكبر من المستحق';
+                          }
+                          return null;
+                        },
                       ),
                     ),
                   ],
@@ -732,5 +770,13 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
         ),
       ),
     );
+  }
+
+  String? _validateNonNegativeAmount(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final amount = double.tryParse(value.trim());
+    if (amount == null) return 'أدخل رقماً صحيحاً';
+    if (amount < 0) return 'لا يمكن أن يكون سالباً';
+    return null;
   }
 }

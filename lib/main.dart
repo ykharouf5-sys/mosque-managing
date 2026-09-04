@@ -22,6 +22,7 @@ import 'package:studentry/auth/presentation/login_screen.dart';
 import 'package:studentry/auth/presentation/register_screen.dart';
 import 'package:studentry/auth/presentation/welcome_screen.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
+import 'package:studentry/patients/presentation/notifications_screen.dart';
 import 'package:studentry/shared/data/api_config.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
@@ -324,7 +325,9 @@ class _AuthGate extends ConsumerWidget {
       case 'warehouse_manager':
         return const WarehouseDashboardScreen();
       case 'student':
-        return const MainNavigationScreen();
+        return auth.profileCompleted
+            ? const MainNavigationScreen()
+            : const StudentProfileScreen();
       default:
         return const MainNavigationScreen();
     }
@@ -438,6 +441,7 @@ class _MyAppState extends ConsumerState<MyApp> {
             '/result-upload': (context) => const ResultUploadScreen(),
             '/warehouse-dashboard': (context) =>
                 const WarehouseDashboardScreen(),
+            '/notifications': (context) => const NotificationsScreen(),
           },
           onGenerateRoute: (settings) {
             if (settings.name == '/category-products') {

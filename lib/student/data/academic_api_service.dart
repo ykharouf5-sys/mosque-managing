@@ -87,8 +87,10 @@ class AcademicApiService {
     'doctor_name': subject.doctorName,
     'color': subject.color,
     'total_lectures': subject.totalLectures,
+    'theoretical_hours': subject.theoreticalHours,
+    'practical_hours': subject.practicalHours,
     'lectures': subject.lectures.map((lecture) => lecture.toJson()).toList(),
-    'pdf_url': subject.pdfUrl,
+    'pdf_url': subject.pdfReference,
     if (includeVersion) 'version': subject.version,
   };
 
@@ -109,6 +111,8 @@ class AcademicApiService {
     'hall': enrollment.hall,
     'next_lecture': enrollment.nextLecture,
     'total_lectures': enrollment.totalLectures,
+    'theoretical_hours': enrollment.theoreticalHours,
+    'practical_hours': enrollment.practicalHours,
     if (includeVersion) 'version': enrollment.version,
   };
 

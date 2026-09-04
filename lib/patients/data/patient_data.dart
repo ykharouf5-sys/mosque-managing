@@ -26,9 +26,9 @@ class TreatmentItem {
   };
 
   factory TreatmentItem.fromJson(Map<String, dynamic> j) => TreatmentItem(
-    procedureName: j['procedureName'] as String,
-    status: j['status'] as String,
-    statusColor: _hexToColor(j['statusColor'] as String),
+    procedureName: j['procedureName'] as String? ?? '',
+    status: j['status'] as String? ?? 'معلق',
+    statusColor: _hexToColor(j['statusColor'] as String? ?? '#FFFFA000'),
   );
 }
 
@@ -77,24 +77,24 @@ class PatientProfile {
   };
 
   factory PatientProfile.fromJson(Map<String, dynamic> j) => PatientProfile(
-    id: j['id'] as String,
-    name: j['name'] as String,
-    phone: j['phone'] as String,
-    age: j['age'] as int,
-    address: j['address'] as String,
-    registrationDate: j['registrationDate'] as String,
-    notes: j['notes'] as String,
-    photoUrl: j['photoUrl'] as String,
-    amountDue: (j['amountDue'] as num).toDouble(),
-    amountPaid: (j['amountPaid'] as num).toDouble(),
-    todayPayment: (j['todayPayment'] as num).toDouble(),
+    id: j['id'] as String? ?? '',
+    name: j['name'] as String? ?? '',
+    phone: j['phone'] as String? ?? '',
+    age: (j['age'] as num?)?.toInt() ?? 0,
+    address: j['address'] as String? ?? '',
+    registrationDate: j['registrationDate'] as String? ?? '',
+    notes: j['notes'] as String? ?? '',
+    photoUrl: j['photoUrl'] as String? ?? '',
+    amountDue: (j['amountDue'] as num?)?.toDouble() ?? 0,
+    amountPaid: (j['amountPaid'] as num?)?.toDouble() ?? 0,
+    todayPayment: (j['todayPayment'] as num?)?.toDouble() ?? 0,
     appointmentDate: j['appointmentDate'] != null
         ? DateTime.parse(j['appointmentDate'] as String)
         : null,
-    treatmentPlan: (j['treatmentPlan'] as List)
-        .map((t) => TreatmentItem.fromJson(t as Map<String, dynamic>))
+    treatmentPlan: (j['treatmentPlan'] as List? ?? const [])
+        .map((t) => TreatmentItem.fromJson(Map<String, dynamic>.from(t as Map)))
         .toList(),
-    photos: List<String>.from(j['photos'] as List),
+    photos: List<String>.from(j['photos'] as List? ?? const []),
   );
 }
 

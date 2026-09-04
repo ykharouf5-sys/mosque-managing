@@ -75,6 +75,8 @@ class AcademicStore extends ChangeNotifier {
     String doctorName = '',
     String color = '#2196F3',
     int totalLectures = 20,
+    int theoreticalHours = 0,
+    int practicalHours = 0,
     String? pdfUrl,
   }) async {
     final generation = _generation;
@@ -87,8 +89,11 @@ class AcademicStore extends ChangeNotifier {
         doctorName: doctorName,
         color: color,
         totalLectures: totalLectures,
+        theoreticalHours: theoreticalHours,
+        practicalHours: practicalHours,
+        creditHours: theoreticalHours + (practicalHours / 2),
         lectures: Subject.generateLectures(totalLectures),
-        pdfUrl: pdfUrl,
+        pdfReference: pdfUrl,
       ),
     );
     _ensureGeneration(generation);
@@ -120,6 +125,9 @@ class AcademicStore extends ChangeNotifier {
           hall: enrollment.hall,
           nextLecture: enrollment.nextLecture,
           totalLectures: updated.totalLectures,
+          theoreticalHours: updated.theoreticalHours,
+          practicalHours: updated.practicalHours,
+          creditHours: updated.creditHours,
           grade: enrollment.grade,
           viewedLectures: enrollment.viewedLectures,
           version: enrollment.version + 1,

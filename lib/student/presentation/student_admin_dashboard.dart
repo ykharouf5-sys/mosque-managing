@@ -335,6 +335,13 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      Text(
+                        '${subject.creditHours.toStringAsFixed(1)} ساعة معتمدة',
+                        style: TextStyle(
+                          fontSize: 10.sp,
+                          color: AppColors.textGray,
+                        ),
+                      ),
                       SizedBox(height: 4.h),
                       Container(
                         padding: EdgeInsets.symmetric(
@@ -752,10 +759,16 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
     final totalC = TextEditingController(
       text: '${subject?.totalLectures ?? 20}',
     );
+    final theoreticalC = TextEditingController(
+      text: '${subject?.theoreticalHours ?? 0}',
+    );
+    final practicalC = TextEditingController(
+      text: '${subject?.practicalHours ?? 0}',
+    );
     final isEdit = subject != null;
     String selectedYear = subject?.academicYear ?? _selectedYear;
     String selectedColor = subject?.color ?? '#2196F3';
-    String? pdfUrl = subject?.pdfUrl;
+    String? pdfReference = subject?.pdfReference;
     bool uploading = false;
 
     final colorOptions = [
@@ -845,6 +858,45 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                       textDirection: TextDirection.rtl,
                     ),
                     SizedBox(height: 10.h),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: theoreticalC,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'نظري أسبوعياً',
+                              suffixText: 'ساعة',
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 10.w),
+                        Expanded(
+                          child: TextField(
+                            controller: practicalC,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'عملي أسبوعياً',
+                              suffixText: 'ساعة',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(top: 6.h),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'الساعات المعتمدة = النظري + نصف العملي',
+                          style: TextStyle(
+                            color: AppColors.textGray,
+                            fontSize: 11.sp,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 10.h),
                     DropdownButtonFormField<String>(
                       initialValue: selectedYear,
                       decoration: const InputDecoration(
@@ -904,8 +956,9 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                               if (file.path == null) return;
                               setDialogState(() => uploading = true);
                               try {
-                                pdfUrl = await const AcademicDocumentService()
-                                    .uploadPdf(file.path!);
+                                pdfReference =
+                                    await const AcademicDocumentService()
+                                        .uploadPdf(file.path!);
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -925,7 +978,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                         ),
                         decoration: BoxDecoration(
                           border: Border.all(
-                            color: pdfUrl != null
+                            color: pdfReference != null
                                 ? AppColors.success
                                 : AppColors.divider,
                           ),
@@ -936,13 +989,13 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                             Icon(
                               uploading
                                   ? Icons.hourglass_top
-                                  : (pdfUrl != null
+                                  : (pdfReference != null
                                         ? Icons.check_circle
                                         : Icons.picture_as_pdf_outlined),
                               size: 20.sp,
                               color: uploading
                                   ? AppColors.pending
-                                  : (pdfUrl != null
+                                  : (pdfReference != null
                                         ? AppColors.success
                                         : AppColors.textGray),
                             ),
@@ -951,14 +1004,14 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                               child: Text(
                                 uploading
                                     ? 'جاري الرفع...'
-                                    : (pdfUrl != null
+                                    : (pdfReference != null
                                           ? 'تم رفع ملف PDF'
                                           : 'إرفاق ملف PDF للمادة'),
                                 style: TextStyle(
                                   fontSize: 13.sp,
                                   color: uploading
                                       ? AppColors.pending
-                                      : (pdfUrl != null
+                                      : (pdfReference != null
                                             ? AppColors.success
                                             : AppColors.textGray),
                                 ),
@@ -990,6 +1043,9 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                       return;
                     }
                     final total = int.tryParse(totalC.text) ?? 20;
+                    final theoretical = int.tryParse(theoreticalC.text) ?? 0;
+                    final practical = int.tryParse(practicalC.text) ?? 0;
+                    if (theoretical < 0 || practical < 0) return;
                     try {
                       if (isEdit) {
                         final currentLectures = subject.lectures;
@@ -1010,8 +1066,11 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                             doctorName: doctorC.text.trim(),
                             color: selectedColor,
                             totalLectures: total,
+                            theoreticalHours: theoretical,
+                            practicalHours: practical,
+                            creditHours: theoretical + (practical / 2),
                             lectures: lectures,
-                            pdfUrl: pdfUrl,
+                            pdfReference: pdfReference,
                           ),
                         );
                       } else {
@@ -1022,7 +1081,9 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                           doctorName: doctorC.text.trim(),
                           color: selectedColor,
                           totalLectures: total,
-                          pdfUrl: pdfUrl,
+                          theoreticalHours: theoretical,
+                          practicalHours: practical,
+                          pdfUrl: pdfReference,
                         );
                       }
                       if (ctx.mounted) Navigator.pop(ctx);

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
+import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -32,18 +33,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _money(num value) => NumberFormat('#,##0.##', 'ar').format(value);
 
   Future<void> _refresh() async {
-    final changed = await ref
-        .read(patientListProvider.notifier)
-        .refreshFromApi(force: true);
-    if (!changed) {
-      await ref.read(appointmentListProvider.notifier).loadFromDb();
-    }
+    ref.invalidate(localClinicalReportProvider);
+    await ref.read(localClinicalReportProvider.future);
   }
 
-  Future<void> _exportExcel(List<PatientProfile> patients) async {
+  Future<void> _exportExcel() async {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
+      final rows = await AppDatabase.exportAllPatients();
+      final patients = rows
+          .map(patientRowToProfile)
+          .whereType<PatientProfile>()
+          .toList(growable: false);
       final workbook = Workbook(2);
       final summary = workbook.worksheets[0]..name = 'الملخص';
       final details = workbook.worksheets[1]..name = 'المرضى';
@@ -186,15 +188,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final patients = ref.watch(patientListProvider);
-    final due = patients.fold<double>(0, (sum, p) => sum + p.amountDue);
-    final paid = patients.fold<double>(0, (sum, p) => sum + p.amountPaid);
-    final remaining = patients.fold<double>(
-      0,
-      (sum, p) => sum + (p.amountDue - p.amountPaid).clamp(0, double.infinity),
-    );
-    final completed = patients.where(_isCompleted).length;
-    final active = patients.length - completed;
+    final reportAsync = ref.watch(localClinicalReportProvider);
+    final report = reportAsync.value ?? ClinicalReportSummary.empty;
+    final due = report.totalDue;
+    final paid = report.totalPaid;
+    final remaining = report.totalRemaining;
+    final completed = report.completedPatients;
+    final active = report.activePatients;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -215,7 +215,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           actions: [
             IconButton(
               tooltip: 'تصدير Excel',
-              onPressed: _exporting ? null : () => _exportExcel(patients),
+              onPressed: _exporting ? null : _exportExcel,
               icon: _exporting
                   ? const SizedBox(
                       width: 20,
@@ -262,7 +262,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   Expanded(
                     child: _metricCard(
                       'عدد المرضى',
-                      '${patients.length}',
+                      '${report.totalPatients}',
                       Icons.groups_rounded,
                       AppColors.primary,
                     ),
@@ -281,6 +281,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               SizedBox(height: 18.h),
               _chartCard(
                 title: 'حالة الحسابات',
+                height: 214,
                 child: BarChart(
                   BarChartData(
                     maxY:
@@ -335,7 +336,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               SizedBox(height: 14.h),
               _chartCard(
                 title: 'إنجاز المرضى',
-                child: patients.isEmpty
+                child: report.totalPatients == 0
                     ? const Center(
                         child: Text(
                           'لا توجد بيانات لعرضها',
@@ -375,7 +376,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               ),
               SizedBox(height: 16.h),
               FilledButton.icon(
-                onPressed: _exporting ? null : () => _exportExcel(patients),
+                onPressed: _exporting ? null : _exportExcel,
                 icon: const Icon(Icons.table_view_rounded),
                 label: const Text('تصدير التقرير كملف Excel'),
                 style: FilledButton.styleFrom(
@@ -401,9 +402,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     barRods: [
       BarChartRodData(
         toY: value,
-        width: 25.w,
-        color: color,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+        width: 17.w.clamp(14, 20),
+        color: color.withValues(alpha: 0.22),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
       ),
     ],
   );
@@ -446,29 +448,32 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ),
       );
 
-  Widget _chartCard({required String title, required Widget child}) =>
-      Container(
-        height: 260.h,
-        padding: EdgeInsets.all(16.r),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          boxShadow: AppShadows.soft,
+  Widget _chartCard({
+    required String title,
+    required Widget child,
+    double height = 244,
+  }) => Container(
+    height: height.h,
+    padding: EdgeInsets.all(13.r),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      boxShadow: AppShadows.soft,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16.sp,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textDark,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16.sp,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            SizedBox(height: 16.h),
-            Expanded(child: child),
-          ],
-        ),
-      );
+        SizedBox(height: 10.h),
+        Expanded(child: child),
+      ],
+    ),
+  );
 }

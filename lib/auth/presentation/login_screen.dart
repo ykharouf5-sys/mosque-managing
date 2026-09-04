@@ -77,6 +77,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           final data = details['data'] is Map
               ? Map<String, dynamic>.from(details['data'] as Map)
               : const <String, dynamic>{};
+          final proceed = await _showVerificationRequiredDialog();
+          if (!proceed || !mounted) return;
           Navigator.push(
             this.context,
             MaterialPageRoute(
@@ -102,6 +104,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<bool> _showVerificationRequiredDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'تأكيد البريد الإلكتروني',
+              textAlign: TextAlign.right,
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: const Text(
+              'حسابك موجود، لكنه غير مفعّل بعد. أرسلنا رمز تحقق إلى بريدك الإلكتروني. '
+              'لن تتمكن من الدخول قبل إدخال الرمز.',
+              textAlign: TextAlign.right,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('إدخال الرمز'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   void _showForgotPasswordDialog(BuildContext context) {

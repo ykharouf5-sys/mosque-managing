@@ -341,6 +341,15 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                       ),
                     ],
                   ),
+                  SizedBox(height: 3.h),
+                  Text(
+                    '${enrollment.creditHours.toStringAsFixed(1)} ساعة معتمدة • نظري ${enrollment.theoreticalHours} • عملي ${enrollment.practicalHours}',
+                    style: TextStyle(
+                      fontSize: 11.sp,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -467,7 +476,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                s.code,
+                                '${s.code} • ${s.creditHours.toStringAsFixed(1)} ساعة معتمدة',
                                 style: const TextStyle(fontSize: 12),
                               ),
                               trailing: ElevatedButton(
@@ -494,6 +503,10 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                                     scheduleDays: [_selectedDay],
                                     scheduleTimes: ['09:00 - 11:00'],
                                     hall: '',
+                                    totalLectures: s.totalLectures,
+                                    theoreticalHours: s.theoreticalHours,
+                                    practicalHours: s.practicalHours,
+                                    creditHours: s.creditHours,
                                   );
                                   try {
                                     await _academic.addEnrollment(enrollment);

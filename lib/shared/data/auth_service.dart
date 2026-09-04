@@ -518,6 +518,21 @@ class AuthService {
     );
   }
 
+  /// Re-opens this session's encrypted local store if an Android process
+  /// recreation closed it while the authenticated session remained valid.
+  Future<void> ensureLocalAccountActive() async {
+    final user = _user;
+    if (user == null || !isLoggedIn) {
+      throw StateError('No authenticated account is active.');
+    }
+    await _runSessionMutation(() async {
+      if (_user?.id != user.id || !isLoggedIn) {
+        throw const StaleSessionException();
+      }
+      await _activateUser(user);
+    });
+  }
+
   Future<void> invalidateRejectedSession() => _clearAndPurge();
 
   Future<void> _setCurrentUser(AuthUser user, {bool rebindData = false}) async {

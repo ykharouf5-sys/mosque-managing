@@ -650,6 +650,10 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
       0,
       (s, e) => s + e.totalLectures,
     );
+    final totalCredits = _academic.enrollments.fold<double>(
+      0,
+      (sum, enrollment) => sum + enrollment.creditHours,
+    );
     final avg = total > 0
         ? _academic.enrollments.fold<double>(0, (s, e) => s + e.grade) / total
         : 0.0;
@@ -675,6 +679,11 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
               _statRow('عدد المواد المسجلة', '$total'),
               SizedBox(height: 8.h),
               _statRow('إجمالي المحاضرات', '$totalLect'),
+              SizedBox(height: 8.h),
+              _statRow(
+                'الساعات المعتمدة المسجلة',
+                totalCredits.toStringAsFixed(1),
+              ),
               SizedBox(height: 8.h),
               _statRow('إجمالي الحضور', '$attended'),
               SizedBox(height: 8.h),

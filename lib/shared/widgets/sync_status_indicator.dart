@@ -17,19 +17,33 @@ class SyncStatusIndicator extends StatelessWidget {
           );
         }
         if (status.waiting > 0) {
+          final details = _waitingDetails(status.waitingByTable);
           return _StatusBar(
             icon: status.isSyncing
                 ? Icons.sync_rounded
                 : Icons.cloud_upload_outlined,
             color: Theme.of(context).colorScheme.primary,
             label: status.isSyncing
-                ? 'تتم مزامنة ${status.waiting} تغييرات'
-                : '${status.waiting} تغييرات بانتظار المزامنة',
+                ? 'تتم مزامنة ${status.waiting} تغييرات$details'
+                : '${status.waiting} تغييرات بانتظار المزامنة$details',
           );
         }
         return const SizedBox.shrink();
       },
     );
+  }
+
+  String _waitingDetails(Map<String, int> values) {
+    const labels = {
+      'patients': 'مرضى',
+      'appointments': 'مواعيد',
+      'patient_payments': 'دفعات',
+    };
+    final parts = values.entries
+        .where((entry) => entry.value > 0)
+        .map((entry) => '${entry.value} ${labels[entry.key] ?? entry.key}')
+        .toList(growable: false);
+    return parts.isEmpty ? '' : ' (${parts.join('، ')})';
   }
 }
 

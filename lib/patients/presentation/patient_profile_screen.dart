@@ -1,13 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:studentry/patients/data/patient_photo_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/patients/data/patient_data.dart';
-import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/patients/presentation/appointments_screen.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/shared/data/app_database.dart';
-import 'package:studentry/shared/data/local_database.dart';
 import 'package:studentry/shared/data/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:table_calendar/table_calendar.dart';
 import 'package:uuid/uuid.dart';
+import 'package:studentry/patients/presentation/widgets/appointment_datetime_picker.dart';
 
 class PatientProfileScreen extends ConsumerStatefulWidget {
   final PatientProfile patient;
@@ -31,7 +29,50 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
   late final TabController _tabController;
   final _stepController = TextEditingController();
 
-  void _notifyAndSync() {
+  Future<bool> _persistPatientLocally() async {
+    try {
+      await ref
+          .read(patientListProvider.notifier)
+          .update(widget.patient.id, widget.patient);
+      ref.read(appointmentListProvider.notifier).refresh();
+      return true;
+    } catch (error) {
+      try {
+        final row = await AppDatabase.getPatientById(widget.patient.id);
+        final restored = row == null ? null : patientRowToProfile(row);
+        if (restored != null) {
+          final patient = widget.patient;
+          patient.name = restored.name;
+          patient.phone = restored.phone;
+          patient.age = restored.age;
+          patient.address = restored.address;
+          patient.registrationDate = restored.registrationDate;
+          patient.notes = restored.notes;
+          patient.amountDue = restored.amountDue;
+          patient.amountPaid = restored.amountPaid;
+          patient.todayPayment = restored.todayPayment;
+          patient.appointmentDate = restored.appointmentDate;
+          patient.treatmentPlan
+            ..clear()
+            ..addAll(restored.treatmentPlan);
+          patient.photos
+            ..clear()
+            ..addAll(restored.photos);
+          if (mounted) setState(() {});
+        }
+      } catch (_) {
+        // The original persistence error is the useful error to surface.
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر حفظ التعديل محلياً: $error')),
+        );
+      }
+      return false;
+    }
+  }
+
+  void _notifyLocalState() {
     ref.read(patientListProvider.notifier).refresh();
     ref.read(appointmentListProvider.notifier).refresh();
   }
@@ -41,6 +82,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
   DateTime _selectedDay = DateTime.now();
   DateTime _focusedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
+  TimeOfDay _selectedAppointmentTime = const TimeOfDay(hour: 9, minute: 0);
 
   @override
   void initState() {
@@ -49,6 +91,9 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
     if (widget.patient.appointmentDate != null) {
       _selectedDay = widget.patient.appointmentDate!;
       _focusedDay = widget.patient.appointmentDate!;
+      _selectedAppointmentTime = TimeOfDay.fromDateTime(
+        widget.patient.appointmentDate!,
+      );
     }
   }
 
@@ -269,10 +314,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
   }
 
   Widget _buildCalendarCard() {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final calendarHeight = screenHeight > 800
-        ? 190.0
-        : (screenHeight > 600 ? 160.0 : 140.0);
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(12.r),
@@ -306,90 +347,132 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
             ],
           ),
           const Divider(height: 12),
-          SizedBox(
-            height: calendarHeight,
-            child: TableCalendar(
-              firstDay: DateTime(2020),
-              lastDay: DateTime(2030),
-              focusedDay: _focusedDay,
-              calendarFormat: _calendarFormat,
-              selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-              locale: 'ar',
-              onDaySelected: (selectedDay, focusedDay) {
-                setState(() {
-                  _selectedDay = selectedDay;
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final rowHeight = constraints.maxWidth < 350 ? 29.0 : 31.0;
+              return TableCalendar(
+                firstDay: DateTime(2020),
+                lastDay: DateTime(2030),
+                focusedDay: _focusedDay,
+                calendarFormat: _calendarFormat,
+                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                locale: 'ar',
+                onDaySelected: (selectedDay, focusedDay) {
+                  setState(() {
+                    _selectedDay = selectedDay;
+                    _focusedDay = focusedDay;
+                  });
+                },
+                onFormatChanged: (format) {
+                  setState(() => _calendarFormat = format);
+                },
+                onPageChanged: (focusedDay) {
                   _focusedDay = focusedDay;
-                  widget.patient.appointmentDate = selectedDay;
-                });
-              },
-              onFormatChanged: (format) {
-                setState(() => _calendarFormat = format);
-              },
-              onPageChanged: (focusedDay) {
-                _focusedDay = focusedDay;
-              },
-              headerStyle: HeaderStyle(
-                formatButtonVisible: false,
-                titleCentered: true,
-                titleTextStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+                },
+                headerStyle: HeaderStyle(
+                  formatButtonVisible: false,
+                  titleCentered: true,
+                  titleTextStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                  headerPadding: const EdgeInsets.symmetric(vertical: 2),
+                  leftChevronPadding: const EdgeInsets.all(4),
+                  rightChevronPadding: const EdgeInsets.all(4),
+                  leftChevronIcon: const Icon(
+                    Icons.chevron_right,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  rightChevronIcon: const Icon(
+                    Icons.chevron_left,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
                 ),
-                leftChevronIcon: const Icon(
-                  Icons.chevron_right,
-                  color: AppColors.primary,
-                  size: 20,
+                calendarStyle: CalendarStyle(
+                  selectedDecoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  todayDecoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.25),
+                    shape: BoxShape.circle,
+                  ),
+                  defaultDecoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      width: 0.7,
+                    ),
+                  ),
+                  weekendDecoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      width: 0.7,
+                    ),
+                  ),
+                  defaultTextStyle: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textDark,
+                  ),
+                  weekendTextStyle: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textDark,
+                  ),
+                  outsideTextStyle: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textGrey,
+                  ),
+                  cellMargin: const EdgeInsets.all(2),
                 ),
-                rightChevronIcon: const Icon(
-                  Icons.chevron_left,
-                  color: AppColors.primary,
-                  size: 20,
+                rowHeight: rowHeight,
+                daysOfWeekHeight: 20,
+                daysOfWeekStyle: const DaysOfWeekStyle(
+                  weekdayStyle: TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGrey,
+                  ),
+                  weekendStyle: TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textGrey,
+                  ),
                 ),
-              ),
-              calendarStyle: CalendarStyle(
-                selectedDecoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                todayDecoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.25),
-                  shape: BoxShape.circle,
-                ),
-                defaultTextStyle: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textDark,
-                ),
-                weekendTextStyle: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textDark,
-                ),
-                outsideTextStyle: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textGrey,
-                ),
-                cellMargin: const EdgeInsets.all(2),
-              ),
-              daysOfWeekStyle: const DaysOfWeekStyle(
-                weekdayStyle: TextStyle(
-                  fontSize: 10,
-                  color: AppColors.textGrey,
-                ),
-                weekendStyle: TextStyle(
-                  fontSize: 10,
-                  color: AppColors.textGrey,
-                ),
-              ),
-            ),
+              );
+            },
           ),
           const SizedBox(height: 6),
           Center(
             child: Text(
-              'الموعد المحدد: ${DateFormat('yyyy-MM-dd').format(_selectedDay)}',
+              'الموعد: ${DateFormat('yyyy-MM-dd').format(_selectedDay)} • ${_selectedAppointmentTime.format(context)}',
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.primary,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.center,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: _selectedAppointmentTime,
+                );
+                if (picked != null && mounted) {
+                  setState(() => _selectedAppointmentTime = picked);
+                }
+              },
+              icon: const Icon(Icons.schedule_rounded, size: 17),
+              label: const Text('تحديد الوقت'),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
               ),
             ),
           ),
@@ -436,19 +519,23 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
           const Divider(height: 20),
           Row(
             children: [
-              GestureDetector(
-                onTap: () => _showEditAmountDialog(context),
-                child: _buildAmountCard(
-                  'المستحق',
-                  widget.patient.amountDue,
-                  AppColors.primary,
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _showEditAmountDialog(context),
+                  child: _buildAmountCard(
+                    'المستحق',
+                    widget.patient.amountDue,
+                    AppColors.primary,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
-              _buildAmountCard(
-                'المدفوع',
-                widget.patient.amountPaid,
-                AppColors.success,
+              Expanded(
+                child: _buildAmountCard(
+                  'المدفوع',
+                  widget.patient.amountPaid,
+                  AppColors.success,
+                ),
               ),
             ],
           ),
@@ -514,28 +601,26 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
   }
 
   Widget _buildAmountCard(String label, double amount, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TextStyle(fontSize: 12, color: color)),
-            const SizedBox(height: 4),
-            Text(
-              NumberFormat('#,###').format(amount),
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 12, color: color)),
+          const SizedBox(height: 4),
+          Text(
+            NumberFormat('#,###').format(amount),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -599,30 +684,28 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                   );
                   return;
                 }
-                setState(() {
-                  p.amountPaid += amount;
-                  p.todayPayment += amount;
-                });
                 final paymentId = const Uuid().v4();
-                final dataGeneration = await AppDatabase.applyLocalPayment(
-                  p.id,
-                  amount,
-                );
-                await LocalDatabaseService.addToQueue(
-                  operation: 'insert',
-                  tableName: 'patient_payments',
-                  recordId: paymentId,
-                  payload: jsonEncode({
-                    'patientId': p.id,
-                    'amount': amount,
-                    'method': 'cash',
-                    'paidAt': DateTime.now().toUtc().toIso8601String(),
-                  }),
-                  expectedGeneration: dataGeneration,
-                );
-                SyncService.syncNowWithJitter();
-                _notifyAndSync();
-                if (ctx.mounted) Navigator.pop(ctx);
+                try {
+                  await AppDatabase.applyLocalPayment(
+                    patientId: p.id,
+                    paymentId: paymentId,
+                    amount: amount,
+                  );
+                  if (!mounted) return;
+                  setState(() {
+                    p.amountPaid += amount;
+                    p.todayPayment += amount;
+                  });
+                  ref.invalidate(localClinicalReportProvider);
+                  SyncService.syncNowWithJitter();
+                  _notifyLocalState();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('تعذر حفظ الدفعة محلياً: $error')),
+                  );
+                }
               },
               child: const Text('إضافة'),
             ),
@@ -710,7 +793,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       setState(() {
                         p.name = nameCtrl.text;
                         p.phone = phoneCtrl.text;
@@ -718,8 +801,9 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                         p.address = addressCtrl.text;
                         p.notes = notesCtrl.text;
                       });
-                      _notifyAndSync();
-                      Navigator.pop(ctx);
+                      if (await _persistPatientLocally() && ctx.mounted) {
+                        Navigator.pop(ctx);
+                      }
                     },
                     child: const Text('حفظ'),
                   ),
@@ -792,12 +876,13 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
               ),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final amount = double.tryParse(ctrl.text);
                 if (amount == null || amount < 0) return;
                 setState(() => widget.patient.amountDue = amount);
-                _notifyAndSync();
-                Navigator.pop(ctx);
+                if (await _persistPatientLocally() && ctx.mounted) {
+                  Navigator.pop(ctx);
+                }
               },
               child: const Text('حفظ'),
             ),
@@ -1015,13 +1100,13 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                             child: ElevatedButton.icon(
                                               onPressed: isCompleted
                                                   ? null
-                                                  : () {
+                                                  : () async {
                                                       setState(() {
                                                         item.status = 'مكتمل';
                                                         item.statusColor =
                                                             AppColors.success;
                                                       });
-                                                      _notifyAndSync();
+                                                      await _persistPatientLocally();
                                                     },
                                               icon: const Icon(
                                                 Icons.check,
@@ -1066,13 +1151,13 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                             child: ElevatedButton.icon(
                                               onPressed: !isCompleted
                                                   ? null
-                                                  : () {
+                                                  : () async {
                                                       setState(() {
                                                         item.status = 'معلق';
                                                         item.statusColor =
                                                             AppColors.pending;
                                                       });
-                                                      _notifyAndSync();
+                                                      await _persistPatientLocally();
                                                     },
                                               icon: const Icon(
                                                 Icons.schedule,
@@ -1114,11 +1199,11 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                         SizedBox(
                                           height: 36,
                                           child: IconButton(
-                                            onPressed: () {
+                                            onPressed: () async {
                                               setState(
                                                 () => plan.removeAt(index),
                                               );
-                                              _notifyAndSync();
+                                              await _persistPatientLocally();
                                             },
                                             icon: const Icon(
                                               Icons.delete_outline,
@@ -1198,7 +1283,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                 SizedBox(
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       final text = _stepController.text.trim();
                       if (text.isEmpty) return;
                       setState(() {
@@ -1211,7 +1296,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                         );
                         _stepController.clear();
                       });
-                      _notifyAndSync();
+                      await _persistPatientLocally();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
@@ -1407,11 +1492,22 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: () {
+        onPressed: () async {
+          final selection = await showAppointmentDateTimePicker(
+            context: context,
+            initialDate: _selectedDay,
+            initialTime: _selectedAppointmentTime,
+          );
+          if (selection == null || !mounted) return;
+          setState(() {
+            _selectedDay = selection.date;
+            _focusedDay = selection.date;
+            _selectedAppointmentTime = selection.time;
+          });
           final p = widget.patient;
-          final now = DateTime.now();
           final timeStr =
-              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+              '${_selectedAppointmentTime.hour.toString().padLeft(2, '0')}:${_selectedAppointmentTime.minute.toString().padLeft(2, '0')}';
+          final scheduledAt = selection.dateTime;
           final apt = Appointment(
             time: timeStr,
             patientName: p.name,
@@ -1420,11 +1516,21 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                 : 'كشف',
             status: 'مؤكد',
             patientId: p.id,
-            date: _selectedDay,
+            date: scheduledAt,
           );
-          ref.read(appointmentListProvider.notifier).add(apt);
-          NotificationService.onAppointmentAdded(apt);
+          try {
+            await ref.read(appointmentListProvider.notifier).add(apt);
+          } catch (error) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('تعذر حفظ الموعد محلياً: $error')),
+            );
+            return;
+          }
+          p.appointmentDate = scheduledAt;
+          await _persistPatientLocally();
           ref.read(patientListProvider.notifier).refresh();
+          if (!mounted) return;
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const AppointmentsScreen()),

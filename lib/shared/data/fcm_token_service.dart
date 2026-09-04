@@ -48,12 +48,13 @@ class FcmTokenService {
         final notification = message.notification;
         if (notification != null && !kIsWeb && Platform.isAndroid) {
           await NotificationService.init();
-          await NotificationService.showNow(
+          await NotificationService.showCampaignNotification(
             id:
                 message.messageId?.hashCode ??
                 DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
             title: notification.title ?? '',
             body: notification.body ?? '',
+            payload: message.data['action_route']?.toString(),
           );
         }
       });

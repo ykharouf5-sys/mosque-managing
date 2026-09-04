@@ -1,4 +1,5 @@
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
+import 'package:studentry/patients/presentation/add_patient_screen.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/patients/data/patient_data.dart';
@@ -51,6 +52,9 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
       } else {
         _currentMonth--;
       }
+      _selectedDay = _selectedDay
+          .clamp(1, _daysInMonth(_currentMonth, _currentYear))
+          .toInt();
     });
   }
 
@@ -62,6 +66,9 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
       } else {
         _currentMonth++;
       }
+      _selectedDay = _selectedDay
+          .clamp(1, _daysInMonth(_currentMonth, _currentYear))
+          .toInt();
     });
   }
 
@@ -119,31 +126,52 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
       ),
       body: Column(
         children: [
-          _buildCalendarSection(),
+          _buildCalendarSection(appointments),
           SizedBox(height: 16.h),
           Expanded(child: _buildAppointmentsList(selectedAppts)),
         ],
       ),
       bottomNavigationBar: widget.embedded
           ? null
-          : const AppBottomNav(selectedIndex: 1, showAddButton: true),
+          : const AppBottomNav(selectedIndex: 1),
+      floatingActionButton: widget.embedded
+          ? null
+          : FloatingActionButton(
+              tooltip: 'إضافة مريض',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+              ),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.person_add_rounded),
+            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
-  Widget _buildCalendarSection() {
+  Widget _buildCalendarSection(List<Appointment> appointments) {
+    final appointmentDays = appointments
+        .where(
+          (appointment) =>
+              appointment.date.year == _currentYear &&
+              appointment.date.month == _currentMonth,
+        )
+        .map((appointment) => appointment.date.day)
+        .toSet();
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
         boxShadow: AppShadows.soft,
       ),
-      padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
+      padding: EdgeInsets.fromLTRB(14.w, 5.h, 14.w, 6.h),
       child: Column(
         children: [
           _buildMonthNavigator(),
-          SizedBox(height: 8.h),
+          SizedBox(height: 4.h),
           _buildWeekDaysHeader(),
           SizedBox(height: 2.h),
-          _buildWeekDaysNumbers(),
+          _buildWeekDaysNumbers(appointmentDays),
         ],
       ),
     );
@@ -162,6 +190,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
             IconButton(
               icon: const Icon(Icons.chevron_right, color: AppColors.primary),
               onPressed: _prevMonth,
+              visualDensity: VisualDensity.compact,
             ),
             Text(
               monthName,
@@ -174,6 +203,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
             IconButton(
               icon: const Icon(Icons.chevron_left, color: AppColors.primary),
               onPressed: _nextMonth,
+              visualDensity: VisualDensity.compact,
             ),
           ],
         ),
@@ -196,11 +226,9 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
 
   Widget _buildWeekDaysHeader() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: _weekDays
           .map(
-            (d) => SizedBox(
-              width: 30.w,
+            (d) => Expanded(
               child: Text(
                 d,
                 textAlign: TextAlign.center,
@@ -216,7 +244,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
     );
   }
 
-  Widget _buildWeekDaysNumbers() {
+  Widget _buildWeekDaysNumbers(Set<int> appointmentDays) {
     final days = _daysInMonth(_currentMonth, _currentYear);
     final firstWeekday = _firstWeekday(_currentMonth, _currentYear);
     final now = DateTime.now();
@@ -224,38 +252,89 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
         now.month == _currentMonth && now.year == _currentYear;
     final today = now.day;
 
-    return Wrap(
-      children: [
-        for (int i = 0; i < firstWeekday; i++)
-          SizedBox(width: 30.w, height: 32.h),
-        for (int day = 1; day <= days; day++)
-          _buildDayCell(day, isCurrentMonth && day == today),
-      ],
+    final populatedCells = firstWeekday + days;
+    final cellCount = ((populatedCells + 6) ~/ 7) * 7;
+
+    return GridView.builder(
+      key: const ValueKey('appointments-calendar-grid'),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        mainAxisExtent: 33,
+      ),
+      itemCount: cellCount,
+      itemBuilder: (context, index) {
+        final day = index - firstWeekday + 1;
+        if (day < 1 || day > days) return const SizedBox.shrink();
+        return _buildDayCell(
+          day,
+          isCurrentMonth && day == today,
+          appointmentDays.contains(day),
+        );
+      },
     );
   }
 
-  Widget _buildDayCell(int day, bool isToday) {
+  Widget _buildDayCell(int day, bool isToday, bool hasAppointment) {
     final isSelected = day == _selectedDay;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedDay = day),
-      child: Container(
-        width: 30.w,
-        height: 32.h,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary
-              : (isToday ? AppColors.primary.withValues(alpha: 0.12) : null),
-          shape: BoxShape.circle,
-        ),
-        child: Text(
-          day.toString(),
-          style: TextStyle(
-            fontSize: 11.sp,
-            fontWeight: isSelected || isToday
-                ? FontWeight.bold
-                : FontWeight.normal,
-            color: isSelected ? AppColors.textLight : AppColors.textDark,
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '$_currentYear-$_currentMonth-$day',
+      child: InkWell(
+        key: ValueKey('calendar-day-$day'),
+        onTap: () => setState(() => _selectedDay = day),
+        borderRadius: BorderRadius.circular(20),
+        child: Center(
+          child: SizedBox.square(
+            dimension: 29,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary
+                        : (isToday
+                              ? AppColors.primary.withValues(alpha: 0.12)
+                              : null),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.primary.withValues(alpha: 0.22),
+                      width: isSelected ? 1.5 : 0.8,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    day.toString(),
+                    style: TextStyle(
+                      fontSize: 11.sp,
+                      fontWeight: isSelected || isToday
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: isSelected
+                          ? AppColors.textLight
+                          : AppColors.textDark,
+                    ),
+                  ),
+                ),
+                if (hasAppointment)
+                  Positioned(
+                    bottom: 2,
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.white : AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

@@ -11,7 +11,12 @@ void main() {
         'code': 'CS-201',
         'academicYear': 'second',
         'totalLectures': 2,
+        'theoreticalHours': 3,
+        'practicalHours': 2,
+        'creditHours': 4,
         'version': 7,
+        'pdfUrl': 'https://api.example.test/signed-document',
+        'pdfReference': 'academic/clinic/documents/document.pdf',
         'lectures': [
           {
             'number': 1,
@@ -23,8 +28,11 @@ void main() {
 
       expect(subject.version, 7);
       expect(subject.totalLectures, 2);
+      expect(subject.creditHours, 4);
       expect(subject.lectures.single.links.single, contains('lecture'));
       expect(subject.toJson()['version'], 7);
+      expect(subject.pdfUrl, contains('signed-document'));
+      expect(subject.pdfReference, startsWith('academic/'));
     });
 
     test('enrollment keeps its own identifier and optimistic version', () {
@@ -36,6 +44,9 @@ void main() {
         'academicYear': 'third',
         'viewedLectures': [1, 3],
         'totalLectures': 10,
+        'theoreticalHours': 2,
+        'practicalHours': 4,
+        'creditHours': 4,
         'grade': 84.6,
         'version': 4,
       });
@@ -44,6 +55,7 @@ void main() {
       expect(enrollment.viewedLectures, [1, 3]);
       expect(enrollment.grade, 85);
       expect(enrollment.version, 4);
+      expect(enrollment.creditHours, 4);
     });
   });
 

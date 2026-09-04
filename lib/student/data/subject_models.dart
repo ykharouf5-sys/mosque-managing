@@ -34,8 +34,11 @@ class SubjectLecture {
 class Subject {
   final String id, name, code, academicYear, doctorName, color;
   final int totalLectures;
+  final int theoreticalHours, practicalHours;
+  final double creditHours;
   final List<SubjectLecture> lectures;
   final String? pdfUrl;
+  final String? pdfReference;
   final int version;
 
   Subject({
@@ -46,8 +49,12 @@ class Subject {
     this.doctorName = '',
     this.color = '#2196F3',
     this.totalLectures = 20,
+    this.theoreticalHours = 0,
+    this.practicalHours = 0,
+    this.creditHours = 0,
     this.lectures = const [],
     this.pdfUrl,
+    this.pdfReference,
     this.version = 1,
   });
 
@@ -58,8 +65,12 @@ class Subject {
     String? doctorName,
     String? color,
     int? totalLectures,
+    int? theoreticalHours,
+    int? practicalHours,
+    double? creditHours,
     List<SubjectLecture>? lectures,
     String? pdfUrl,
+    String? pdfReference,
     int? version,
   }) => Subject(
     id: id,
@@ -69,8 +80,12 @@ class Subject {
     doctorName: doctorName ?? this.doctorName,
     color: color ?? this.color,
     totalLectures: totalLectures ?? this.totalLectures,
+    theoreticalHours: theoreticalHours ?? this.theoreticalHours,
+    practicalHours: practicalHours ?? this.practicalHours,
+    creditHours: creditHours ?? this.creditHours,
     lectures: lectures ?? this.lectures,
     pdfUrl: pdfUrl ?? this.pdfUrl,
+    pdfReference: pdfReference ?? this.pdfReference,
     version: version ?? this.version,
   );
 
@@ -82,8 +97,12 @@ class Subject {
     'doctorName': doctorName,
     'color': color,
     'totalLectures': totalLectures,
+    'theoreticalHours': theoreticalHours,
+    'practicalHours': practicalHours,
+    'creditHours': creditHours,
     'lectures': lectures.map((l) => l.toJson()).toList(),
     if (pdfUrl != null) 'pdfUrl': pdfUrl,
+    if (pdfReference != null) 'pdfReference': pdfReference,
     'version': version,
   };
 
@@ -101,8 +120,12 @@ class Subject {
       doctorName: (json['doctorName'] as String?) ?? '',
       color: (json['color'] as String?) ?? '#2196F3',
       totalLectures: total,
+      theoreticalHours: (json['theoreticalHours'] as num?)?.toInt() ?? 0,
+      practicalHours: (json['practicalHours'] as num?)?.toInt() ?? 0,
+      creditHours: (json['creditHours'] as num?)?.toDouble() ?? 0,
       lectures: lectures,
       pdfUrl: json['pdfUrl'] as String?,
+      pdfReference: json['pdfReference'] as String?,
       version: (json['version'] as num?)?.toInt() ?? 1,
     );
   }
@@ -119,6 +142,8 @@ class StudentSubject {
   final List<String> scheduleDays, scheduleTimes;
   final String hall, nextLecture;
   final int totalLectures, grade;
+  final int theoreticalHours, practicalHours;
+  final double creditHours;
   final List<int> viewedLectures;
   final bool isCustom;
   final int version;
@@ -136,6 +161,9 @@ class StudentSubject {
     this.hall = '',
     this.nextLecture = '',
     this.totalLectures = 20,
+    this.theoreticalHours = 0,
+    this.practicalHours = 0,
+    this.creditHours = 0,
     this.grade = 0,
     this.viewedLectures = const [],
     this.isCustom = false,
@@ -159,6 +187,9 @@ class StudentSubject {
     'hall': hall,
     'nextLecture': nextLecture,
     'totalLectures': totalLectures,
+    'theoreticalHours': theoreticalHours,
+    'practicalHours': practicalHours,
+    'creditHours': creditHours,
     'attendedLectures': attendedLectures,
     'grade': grade,
     'viewedLectures': viewedLectures,
@@ -182,6 +213,9 @@ class StudentSubject {
       hall: (json['hall'] as String?) ?? '',
       nextLecture: (json['nextLecture'] as String?) ?? '',
       totalLectures: (json['totalLectures'] as num?)?.toInt() ?? 20,
+      theoreticalHours: (json['theoreticalHours'] as num?)?.toInt() ?? 0,
+      practicalHours: (json['practicalHours'] as num?)?.toInt() ?? 0,
+      creditHours: (json['creditHours'] as num?)?.toDouble() ?? 0,
       grade: (json['grade'] as num?)?.round() ?? 0,
       viewedLectures: viewed,
       isCustom: (json['isCustom'] as bool?) ?? false,
@@ -192,6 +226,9 @@ class StudentSubject {
   StudentSubject copyWith({
     int? grade,
     int? totalLectures,
+    int? theoreticalHours,
+    int? practicalHours,
+    double? creditHours,
     List<String>? scheduleDays,
     List<String>? scheduleTimes,
     String? hall,
@@ -211,6 +248,9 @@ class StudentSubject {
     hall: hall ?? this.hall,
     nextLecture: nextLecture ?? this.nextLecture,
     totalLectures: totalLectures ?? this.totalLectures,
+    theoreticalHours: theoreticalHours ?? this.theoreticalHours,
+    practicalHours: practicalHours ?? this.practicalHours,
+    creditHours: creditHours ?? this.creditHours,
     grade: grade ?? this.grade,
     viewedLectures: viewedLectures ?? this.viewedLectures,
     isCustom: isCustom,

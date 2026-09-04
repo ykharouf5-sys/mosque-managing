@@ -249,7 +249,7 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
       for (final a in appointments.where((a) => a.patientId == patient.id)) {
         NotificationService.cancelAppointmentNotification(a);
       }
-      ref.read(patientListProvider.notifier).remove(patient.id);
+      await ref.read(patientListProvider.notifier).remove(patient.id);
       ref.read(appointmentListProvider.notifier).remove(patient.id);
       await ref.read(patientDirectoryProvider.notifier).loadFirstPage();
     }

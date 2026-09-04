@@ -7,6 +7,7 @@ class AuthState {
   final String? clinicId;
   final String membershipStatus;
   final int clinicalScopeVersion;
+  final bool profileCompleted;
   final bool isLoggedIn;
 
   const AuthState({
@@ -15,6 +16,7 @@ class AuthState {
     this.clinicId,
     this.membershipStatus = 'pending',
     this.clinicalScopeVersion = 0,
+    this.profileCompleted = false,
     this.isLoggedIn = false,
   });
 
@@ -24,6 +26,7 @@ class AuthState {
     clinicId: user.clinicId,
     membershipStatus: user.membershipStatus,
     clinicalScopeVersion: user.clinicalScopeVersion,
+    profileCompleted: user.profileCompleted,
     isLoggedIn: true,
   );
 
@@ -36,6 +39,7 @@ class AuthState {
     String? clinicId,
     String? membershipStatus,
     int? clinicalScopeVersion,
+    bool? profileCompleted,
     bool? isLoggedIn,
   }) {
     return AuthState(
@@ -44,6 +48,7 @@ class AuthState {
       clinicId: clinicId ?? this.clinicId,
       membershipStatus: membershipStatus ?? this.membershipStatus,
       clinicalScopeVersion: clinicalScopeVersion ?? this.clinicalScopeVersion,
+      profileCompleted: profileCompleted ?? this.profileCompleted,
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
     );
   }

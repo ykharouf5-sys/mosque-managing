@@ -27,11 +27,13 @@ class SyncStatusSnapshot {
   final int waiting;
   final int failedPermanent;
   final bool isSyncing;
+  final Map<String, int> waitingByTable;
 
   const SyncStatusSnapshot({
     this.waiting = 0,
     this.failedPermanent = 0,
     this.isSyncing = false,
+    this.waitingByTable = const {},
   });
 }
 
@@ -157,6 +159,7 @@ class SyncService {
       waiting: status.value.waiting,
       failedPermanent: status.value.failedPermanent,
       isSyncing: true,
+      waitingByTable: status.value.waitingByTable,
     );
     run = _runSync().whenComplete(() async {
       if (identical(_inFlight, run)) _inFlight = null;
@@ -241,6 +244,7 @@ class SyncService {
       waiting: summary.waiting,
       failedPermanent: summary.failedPermanent,
       isSyncing: _inFlight != null,
+      waitingByTable: summary.waitingByTable,
     );
   }
 
@@ -557,6 +561,13 @@ class SyncService {
     Object error,
     int generation,
   ) async {
+    if (kDebugMode) {
+      debugPrint(
+        '[Sync] ${item.tableName}/${item.operation} failed: '
+        '${error is ApiException ? error.statusCode : error.runtimeType} '
+        '${_errorMessage(error)}',
+      );
+    }
     final disposition = classifyFailure(error);
     if (disposition == SyncFailureDisposition.rejectSession) {
       await AuthService().invalidateRejectedSession();

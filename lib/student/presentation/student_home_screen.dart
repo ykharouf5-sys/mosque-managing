@@ -4,6 +4,7 @@ import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/presentation/patients_list_screen.dart';
+import 'package:studentry/patients/presentation/add_patient_screen.dart';
 import 'package:studentry/patients/presentation/patient_profile_screen.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/student/presentation/student_grades_screen.dart';
@@ -67,7 +68,20 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
       ),
       bottomNavigationBar: widget.embedded
           ? null
-          : const AppBottomNav(selectedIndex: 0, showAddButton: true),
+          : const AppBottomNav(selectedIndex: 0),
+      floatingActionButton: widget.embedded
+          ? null
+          : FloatingActionButton(
+              tooltip: 'إضافة مريض',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+              ),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.person_add_rounded),
+            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 

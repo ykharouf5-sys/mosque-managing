@@ -435,6 +435,14 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   void navigateAuthenticatedUser(AuthUser user, BuildContext context) {
     ref.read(authProvider.notifier).setAuthUser(user);
+    if (user.role == 'student' && !user.profileCompleted) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/student-profile',
+        (_) => false,
+      );
+      return;
+    }
     navigateByRoleSync(user.role, context);
   }
 

@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import 'database_key_service.dart';
 import 'device_service.dart';
-import 'local_database.dart';
+import 'encryption_service.dart';
 
 class AccountActivationResult {
   final bool accountChanged;
@@ -18,6 +18,32 @@ class AccountActivationResult {
   });
 
   bool get requiresClinicalPurge => accountChanged || scopeChanged;
+}
+
+class ClinicalReportSummary {
+  final int totalPatients;
+  final int completedPatients;
+  final double totalDue;
+  final double totalPaid;
+  final double totalRemaining;
+
+  const ClinicalReportSummary({
+    required this.totalPatients,
+    required this.completedPatients,
+    required this.totalDue,
+    required this.totalPaid,
+    required this.totalRemaining,
+  });
+
+  static const empty = ClinicalReportSummary(
+    totalPatients: 0,
+    completedPatients: 0,
+    totalDue: 0,
+    totalPaid: 0,
+    totalRemaining: 0,
+  );
+
+  int get activePatients => totalPatients - completedPatients;
 }
 
 class StaleAccountDataException implements Exception {
@@ -43,6 +69,53 @@ class AppDatabase {
   static String? get activeAccountId => _activeAccountId;
   static int? get activeClinicalScopeVersion => _activeClinicalScopeVersion;
   static int get dataGeneration => _dataGeneration;
+
+  static Future<Map<String, Object?>> _outboxRow({
+    required String operation,
+    required String tableName,
+    required String recordId,
+    required String payload,
+  }) async {
+    return {
+      'operation': operation,
+      'table_name': tableName,
+      'record_id': recordId,
+      'payload': await EncryptionService.encrypt(payload),
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'retry_count': 0,
+      'status': 'pending',
+      'operation_id': const Uuid().v4(),
+      'next_attempt_at': null,
+      'last_error': null,
+      'last_http_status': null,
+    };
+  }
+
+  static Future<void> _writeWithOutbox({
+    required Database db,
+    required int generation,
+    required String operation,
+    required String tableName,
+    required String recordId,
+    required String payload,
+    required Future<void> Function(Transaction txn) write,
+  }) async {
+    // Prepare the encrypted payload before opening the SQLite transaction so
+    // Secure Storage cannot hold the database write lock. The domain write and
+    // its outbox entry are then committed (or rolled back) as one unit.
+    final outbox = await _outboxRow(
+      operation: operation,
+      tableName: tableName,
+      recordId: recordId,
+      payload: payload,
+    );
+    ensureDataGeneration(generation);
+    await db.transaction((txn) async {
+      ensureDataGeneration(generation);
+      await write(txn);
+      await txn.insert('sync_queue', outbox);
+    });
+  }
 
   static int captureActiveDataGeneration() {
     if (_activeAccountId == null) {
@@ -655,7 +728,11 @@ class AppDatabase {
     return rows.first;
   }
 
-  static Future<void> insertPatient(Map<String, dynamic> patient) async {
+  static Future<void> insertPatient(
+    Map<String, dynamic> patient, {
+    double initialPayment = 0,
+    String? initialPaymentId,
+  }) async {
     final generation = captureActiveDataGeneration();
     final db = await database;
     final deviceId = await DeviceService.getDeviceId();
@@ -668,19 +745,38 @@ class AppDatabase {
     if (!patient.containsKey('id') || patient['id'] == null) {
       patient['id'] = const Uuid().v4();
     }
-    ensureDataGeneration(generation);
-    await db.insert(
-      'patients',
-      patient,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    await LocalDatabaseService.addToQueue(
+    final patientOutbox = await _outboxRow(
       operation: 'insert',
       tableName: 'patients',
       recordId: patient['id'] as String,
       payload: jsonEncode(patient),
-      expectedGeneration: generation,
     );
+    final paymentOutbox = initialPayment > 0
+        ? await _outboxRow(
+            operation: 'insert',
+            tableName: 'patient_payments',
+            recordId: initialPaymentId ?? const Uuid().v4(),
+            payload: jsonEncode({
+              'patientId': patient['id'],
+              'amount': initialPayment,
+              'method': 'cash',
+              'paidAt': now,
+            }),
+          )
+        : null;
+    ensureDataGeneration(generation);
+    await db.transaction((txn) async {
+      ensureDataGeneration(generation);
+      await txn.insert(
+        'patients',
+        patient,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await txn.insert('sync_queue', patientOutbox);
+      if (paymentOutbox != null) {
+        await txn.insert('sync_queue', paymentOutbox);
+      }
+    });
   }
 
   static Future<void> updatePatient(
@@ -702,17 +798,25 @@ class AppDatabase {
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
     data['is_synced'] = 0;
     data.remove('version');
-    ensureDataGeneration(generation);
-    await db.update('patients', data, where: 'id = ?', whereArgs: [id]);
     final payload = Map<String, dynamic>.from(data);
     payload['id'] = id;
     payload['version'] = currentVersion;
-    await LocalDatabaseService.addToQueue(
+    await _writeWithOutbox(
+      db: db,
+      generation: generation,
       operation: 'update',
       tableName: 'patients',
       recordId: id,
       payload: jsonEncode(payload),
-      expectedGeneration: generation,
+      write: (txn) async {
+        final updated = await txn.update(
+          'patients',
+          data,
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (updated != 1) throw StateError('The patient does not exist.');
+      },
     );
   }
 
@@ -720,19 +824,22 @@ class AppDatabase {
     final generation = captureActiveDataGeneration();
     final db = await database;
     final now = DateTime.now().toUtc().toIso8601String();
-    ensureDataGeneration(generation);
-    await db.update(
-      'patients',
-      {'deleted_at': now, 'updated_at': now, 'is_synced': 0},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    await LocalDatabaseService.addToQueue(
+    await _writeWithOutbox(
+      db: db,
+      generation: generation,
       operation: 'delete',
       tableName: 'patients',
       recordId: id,
       payload: jsonEncode({'id': id}),
-      expectedGeneration: generation,
+      write: (txn) async {
+        final updated = await txn.update(
+          'patients',
+          {'deleted_at': now, 'updated_at': now, 'is_synced': 0},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (updated != 1) throw StateError('The patient does not exist.');
+      },
     );
   }
 
@@ -751,13 +858,37 @@ class AppDatabase {
     );
   }
 
-  static Future<int> applyLocalPayment(String id, double amount) async {
+  static Future<int> applyLocalPayment({
+    required String patientId,
+    required String paymentId,
+    required double amount,
+    String method = 'cash',
+    DateTime? paidAt,
+  }) async {
     final generation = captureActiveDataGeneration();
     final db = await database;
-    ensureDataGeneration(generation);
-    await db.rawUpdate(
-      'UPDATE patients SET amountPaid = amountPaid + ?, todayPayment = todayPayment + ?, updated_at = ? WHERE id = ?',
-      [amount, amount, DateTime.now().toUtc().toIso8601String(), id],
+    final timestamp = (paidAt ?? DateTime.now()).toUtc().toIso8601String();
+    await _writeWithOutbox(
+      db: db,
+      generation: generation,
+      operation: 'insert',
+      tableName: 'patient_payments',
+      recordId: paymentId,
+      payload: jsonEncode({
+        'patientId': patientId,
+        'amount': amount,
+        'method': method,
+        'paidAt': timestamp,
+      }),
+      write: (txn) async {
+        final updated = await txn.rawUpdate(
+          'UPDATE patients SET amountPaid = amountPaid + ?, todayPayment = todayPayment + ?, updated_at = ?, is_synced = 0 WHERE id = ? AND deleted_at IS NULL',
+          [amount, amount, timestamp, patientId],
+        );
+        if (updated != 1) {
+          throw StateError('The patient is unavailable for payment.');
+        }
+      },
     );
     return generation;
   }
@@ -872,18 +1003,18 @@ class AppDatabase {
     if (!appointment.containsKey('id') || appointment['id'] == null) {
       appointment['id'] = const Uuid().v4();
     }
-    ensureDataGeneration(generation);
-    await db.insert(
-      'appointments',
-      appointment,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    await LocalDatabaseService.addToQueue(
+    await _writeWithOutbox(
+      db: db,
+      generation: generation,
       operation: 'insert',
       tableName: 'appointments',
       recordId: appointment['id'] as String,
       payload: jsonEncode(appointment),
-      expectedGeneration: generation,
+      write: (txn) => txn.insert(
+        'appointments',
+        appointment,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      ),
     );
   }
 
@@ -906,17 +1037,25 @@ class AppDatabase {
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
     data['is_synced'] = 0;
     data.remove('version');
-    ensureDataGeneration(generation);
-    await db.update('appointments', data, where: 'id = ?', whereArgs: [id]);
     final payload = Map<String, dynamic>.from(data);
     payload['id'] = id;
     payload['version'] = currentVersion;
-    await LocalDatabaseService.addToQueue(
+    await _writeWithOutbox(
+      db: db,
+      generation: generation,
       operation: 'update',
       tableName: 'appointments',
       recordId: id,
       payload: jsonEncode(payload),
-      expectedGeneration: generation,
+      write: (txn) async {
+        final updated = await txn.update(
+          'appointments',
+          data,
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (updated != 1) throw StateError('The appointment does not exist.');
+      },
     );
   }
 
@@ -924,19 +1063,22 @@ class AppDatabase {
     final generation = captureActiveDataGeneration();
     final db = await database;
     final now = DateTime.now().toUtc().toIso8601String();
-    ensureDataGeneration(generation);
-    await db.update(
-      'appointments',
-      {'deleted_at': now, 'updated_at': now, 'is_synced': 0},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    await LocalDatabaseService.addToQueue(
+    await _writeWithOutbox(
+      db: db,
+      generation: generation,
       operation: 'delete',
       tableName: 'appointments',
       recordId: id,
       payload: jsonEncode({'id': id}),
-      expectedGeneration: generation,
+      write: (txn) async {
+        final updated = await txn.update(
+          'appointments',
+          {'deleted_at': now, 'updated_at': now, 'is_synced': 0},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (updated != 1) throw StateError('The appointment does not exist.');
+      },
     );
   }
 
@@ -1062,9 +1204,62 @@ class AppDatabase {
 
   // ── Full export for in-memory lists ──
 
-  static Future<List<Map<String, dynamic>>> exportAllPatients() async {
+  static Future<ClinicalReportSummary> getClinicalReportSummary() async {
+    final generation = captureActiveDataGeneration();
     final db = await database;
-    return db.query('patients', where: 'deleted_at IS NULL');
+    final totals = await db.rawQuery('''
+      SELECT
+        COUNT(*) AS patient_count,
+        COALESCE(SUM(amountDue), 0) AS total_due,
+        COALESCE(SUM(amountPaid), 0) AS total_paid,
+        COALESCE(SUM(
+          CASE
+            WHEN amountDue > amountPaid THEN amountDue - amountPaid
+            ELSE 0
+          END
+        ), 0) AS total_remaining
+      FROM patients
+      WHERE deleted_at IS NULL
+    ''');
+    final plans = await db.query(
+      'patients',
+      columns: ['treatmentPlan'],
+      where: 'deleted_at IS NULL',
+    );
+    ensureDataGeneration(generation);
+
+    var completed = 0;
+    for (final row in plans) {
+      try {
+        final plan =
+            jsonDecode(row['treatmentPlan'] as String? ?? '[]') as List;
+        if (plan.isNotEmpty &&
+            plan.every(
+              (item) => item is Map && item['status']?.toString() == 'مكتمل',
+            )) {
+          completed++;
+        }
+      } catch (_) {
+        // A malformed legacy treatment plan is active rather than fatal.
+      }
+    }
+
+    final row = totals.single;
+    return ClinicalReportSummary(
+      totalPatients: (row['patient_count'] as num?)?.toInt() ?? 0,
+      completedPatients: completed,
+      totalDue: (row['total_due'] as num?)?.toDouble() ?? 0,
+      totalPaid: (row['total_paid'] as num?)?.toDouble() ?? 0,
+      totalRemaining: (row['total_remaining'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> exportAllPatients() async {
+    final generation = captureActiveDataGeneration();
+    final db = await database;
+    final rows = await db.query('patients', where: 'deleted_at IS NULL');
+    ensureDataGeneration(generation);
+    return rows;
   }
 
   static Future<List<Map<String, dynamic>>> exportAllAppointments() async {

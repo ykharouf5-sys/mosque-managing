@@ -51,11 +51,13 @@ class SyncQueueSummary {
   final int pending;
   final int retrying;
   final int failedPermanent;
+  final Map<String, int> waitingByTable;
 
   const SyncQueueSummary({
     this.pending = 0,
     this.retrying = 0,
     this.failedPermanent = 0,
+    this.waitingByTable = const {},
   });
 
   int get waiting => pending + retrying;
@@ -108,26 +110,24 @@ class LocalDatabaseService {
     required String payload,
     int? expectedGeneration,
   }) async {
-    try {
-      final generation =
-          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
-      final db = await AppDatabase.database;
-      final encryptedPayload = await EncryptionService.encrypt(payload);
-      AppDatabase.ensureDataGeneration(generation);
-      await db.insert('sync_queue', {
-        'operation': operation,
-        'table_name': tableName,
-        'record_id': recordId,
-        'payload': encryptedPayload,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'retry_count': 0,
-        'status': 'pending',
-        'operation_id': const Uuid().v4(),
-        'next_attempt_at': null,
-        'last_error': null,
-        'last_http_status': null,
-      });
-    } catch (_) {}
+    final generation =
+        expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
+    final db = await AppDatabase.database;
+    final encryptedPayload = await EncryptionService.encrypt(payload);
+    AppDatabase.ensureDataGeneration(generation);
+    await db.insert('sync_queue', {
+      'operation': operation,
+      'table_name': tableName,
+      'record_id': recordId,
+      'payload': encryptedPayload,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'retry_count': 0,
+      'status': 'pending',
+      'operation_id': const Uuid().v4(),
+      'next_attempt_at': null,
+      'last_error': null,
+      'last_http_status': null,
+    });
   }
 
   static Future<List<SyncQueueItem>> getPendingQueue({
@@ -177,13 +177,18 @@ class LocalDatabaseService {
   }
 
   static Future<void> markAsCompleted(int id, {int? expectedGeneration}) async {
-    try {
-      final generation =
-          expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
-      final db = await AppDatabase.database;
-      AppDatabase.ensureDataGeneration(generation);
-      await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
-    } catch (_) {}
+    final generation =
+        expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
+    final db = await AppDatabase.database;
+    AppDatabase.ensureDataGeneration(generation);
+    final deleted = await db.delete(
+      'sync_queue',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (deleted != 1) {
+      throw StateError('Sync queue item $id was not removed after delivery.');
+    }
   }
 
   static Future<DateTime?> scheduleRetry(
@@ -279,19 +284,30 @@ class LocalDatabaseService {
           expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
       final rows = await db.rawQuery(
-        'SELECT status, COUNT(*) AS count FROM sync_queue GROUP BY status',
+        'SELECT status, table_name, COUNT(*) AS count FROM sync_queue GROUP BY status, table_name',
       );
       AppDatabase.ensureDataGeneration(generation);
       var pending = 0;
       var retrying = 0;
       var failedPermanent = 0;
+      final waitingByTable = <String, int>{};
       for (final row in rows) {
         final count = (row['count'] as num?)?.toInt() ?? 0;
         switch (row['status']) {
           case 'pending':
             pending += count;
+            waitingByTable.update(
+              row['table_name'] as String,
+              (value) => value + count,
+              ifAbsent: () => count,
+            );
           case 'retrying':
             retrying += count;
+            waitingByTable.update(
+              row['table_name'] as String,
+              (value) => value + count,
+              ifAbsent: () => count,
+            );
           case 'failed_permanent':
             failedPermanent += count;
         }
@@ -300,6 +316,7 @@ class LocalDatabaseService {
         pending: pending,
         retrying: retrying,
         failedPermanent: failedPermanent,
+        waitingByTable: waitingByTable,
       );
     } catch (_) {
       return const SyncQueueSummary();
