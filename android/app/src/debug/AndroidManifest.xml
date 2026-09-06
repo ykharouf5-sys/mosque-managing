@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- Local-device testing only. The main/release manifest continues to
+         reject cleartext traffic. -->
     <application
         android:usesCleartextTraffic="true"
         tools:replace="android:usesCleartextTraffic" />

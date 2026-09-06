@@ -9,6 +9,10 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 
 class NotificationService {
+  static const String _configuredTimeZone = String.fromEnvironment(
+    'APP_TIMEZONE',
+    defaultValue: 'Asia/Damascus',
+  );
   static const MethodChannel _settingsChannel = MethodChannel(
     'io.studentry.app/settings',
   );
@@ -23,7 +27,12 @@ class NotificationService {
   static Future<void> init({bool requestPermissions = true}) async {
     if (!_initialized) {
       tz_data.initializeTimeZones();
-      tz.setLocalLocation(tz.getLocation('Asia/Damascus'));
+      try {
+        tz.setLocalLocation(tz.getLocation(_configuredTimeZone));
+      } catch (_) {
+        // A bad build-time value must not disable notifications entirely.
+        tz.setLocalLocation(tz.UTC);
+      }
 
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
@@ -405,13 +414,8 @@ class NotificationService {
 
   static Future<void> showCartReminder() async {
     final id = 'cart_reminder'.hashCode;
-    await showNow(
-      id: id,
-      title: 'لديك منتجات في السلة',
-      body: 'لم تقم بإتمام الطلب بعد. اضغط هنا للمتابعة',
-    );
-    // Re-schedule with payload by cancelling and re-showing with schedule
     try {
+      await init();
       await _plugin.show(
         id: id,
         title: 'لديك منتجات في السلة',

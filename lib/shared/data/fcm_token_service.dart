@@ -94,6 +94,10 @@ class FcmTokenService {
       );
       FirebaseMessaging.onMessage.listen((message) async {
         final notification = message.notification;
+        // Android suppresses notification messages in foreground, so it
+        // needs a local presentation. On iOS the presentation options above
+        // are FlutterFire's willPresent configuration; showing locally there
+        // would duplicate the same notification.
         if (notification != null && !kIsWeb && Platform.isAndroid) {
           await NotificationService.init();
           await NotificationService.showCampaignNotification(
@@ -174,7 +178,6 @@ class FcmTokenService {
         headers: {'X-Device-Id': deviceId},
       );
     } catch (_) {}
-    _authenticated = false;
     _registeredToken = null;
     _registeringToken = null;
     await FirebaseMessaging.instance.deleteToken();
