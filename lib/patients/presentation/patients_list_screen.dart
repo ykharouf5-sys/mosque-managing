@@ -8,6 +8,7 @@ import 'package:studentry/patients/presentation/patient_profile_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/patients/presentation/widgets/patient_avatar.dart';
 
 class PatientsListScreen extends ConsumerStatefulWidget {
   const PatientsListScreen({super.key});
@@ -173,9 +174,9 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                       color: AppColors.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(AppRadius.full),
                     ),
-                    child: CircleAvatar(
+                    child: PatientAvatar(
                       radius: 26.r,
-                      backgroundImage: NetworkImage(patient.photoUrl),
+                      photoUrl: patient.photoUrl,
                     ),
                   ),
                   SizedBox(width: 14.w),

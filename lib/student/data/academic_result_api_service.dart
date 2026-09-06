@@ -1,4 +1,7 @@
 import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/data/app_database.dart';
+import 'package:studentry/shared/data/auth_service.dart';
+import 'dart:convert';
 import 'package:studentry/student/data/result_models.dart';
 
 class AcademicResultApiService {
@@ -36,6 +39,7 @@ class AcademicResultApiService {
   ) async {
     final response = await _api.post(
       '/academic/result-uploads',
+      headers: {'Idempotency-Key': upload.id},
       body: {
         'id': upload.id,
         'file_name': upload.fileName,
@@ -44,6 +48,7 @@ class AcademicResultApiService {
         'warnings': upload.warnings,
         'exam_session': upload.examSession,
         'academic_year': upload.academicYear,
+        'university': upload.university,
         'failed_records': upload.failedRecords,
         'records': records
             .map(
@@ -51,8 +56,11 @@ class AcademicResultApiService {
                 'id': record.id,
                 'exam_number': record.examNumber,
                 'student_name': record.studentName,
+                'father_name': record.fatherName,
                 'subject_name': record.subjectName,
                 'subject_code': record.subjectCode,
+                'theoretical_mark': record.theoreticalMark,
+                'practical_mark': record.practicalMark,
                 'mark': record.mark,
                 'total': record.total,
                 'status': record.status,
@@ -72,7 +80,12 @@ class AcademicResultApiService {
     await _api.delete('/academic/result-uploads/$uploadId');
   }
 
+  Future<void> rematch(String uploadId) async {
+    await _api.post('/academic/result-uploads/$uploadId/rematch');
+  }
+
   Future<List<ResultRecord>> results({String? examNumber}) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final response = await _api.get(
       '/academic/results',
       query: {
@@ -80,7 +93,28 @@ class AcademicResultApiService {
           'exam_number': examNumber,
       },
     );
-    return _maps(response.data['data']).map(ResultRecord.fromJson).toList();
+    AppDatabase.ensureDataGeneration(generation);
+    final results = _maps(
+      response.data['data'],
+    ).map(ResultRecord.fromJson).toList();
+    await AppDatabase.setMetadata(
+      _resultCacheKey(examNumber),
+      jsonEncode(results.map((r) => r.toJson()).toList()),
+      expectedGeneration: generation,
+    );
+    return results;
+  }
+
+  String _resultCacheKey(String? number) =>
+      'academic:grades:${AuthService().hasPermission('grades.read_all') ? number ?? '' : AuthService().examNumber ?? ''}';
+
+  Future<List<ResultRecord>> cachedResults({String? examNumber}) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
+    final raw = await AppDatabase.getMetadata(_resultCacheKey(examNumber));
+    AppDatabase.ensureDataGeneration(generation);
+    return raw == null
+        ? []
+        : _maps(jsonDecode(raw)).map(ResultRecord.fromJson).toList();
   }
 
   static Map<String, dynamic> _map(dynamic value) =>

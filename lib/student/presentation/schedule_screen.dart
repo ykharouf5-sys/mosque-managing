@@ -6,6 +6,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'academic_sync_action.dart';
 
 final List<String> _days = [
   'الأحد',
@@ -31,7 +32,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     super.initState();
     _loadAcademicYear();
     _academic.addListener(_onAcademicChanged);
-    _academic.load();
+    _academic.load(force: true);
   }
 
   @override
@@ -56,6 +57,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
       backgroundColor: AppColors.background,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        actions: const [AcademicSyncAction()],
         backgroundColor: AppColors.surface,
         elevation: 0,
         title: const Text(

@@ -17,22 +17,22 @@ class StoreImageService {
     String filePath, {
     String kind = 'product',
   }) async {
-    try {
-      final source = XFile(filePath);
-      final bytes = await source.readAsBytes();
-      if (bytes.length > _maxUploadBytes) {
-        throw Exception('Compressed image exceeds 2MB');
-      }
-      final r = await ApiClient.instance.upload(
-        '/store/images',
-        bytes,
-        source.name,
-        fields: {'kind': kind},
-      );
-      return r.data['data']['url']?.toString();
-    } catch (_) {
-      return null;
+    final source = XFile(filePath);
+    final bytes = await source.readAsBytes();
+    if (bytes.length > _maxUploadBytes) {
+      throw Exception('حجم الصورة بعد الضغط يتجاوز 2 ميغابايت');
     }
+    final r = await ApiClient.instance.upload(
+      '/store/images',
+      bytes,
+      source.name,
+      fields: {'kind': kind},
+    );
+    final url = r.data['data']['url']?.toString();
+    if (url == null || url.isEmpty) {
+      throw Exception('لم يعُد الخادم برابط الصورة');
+    }
+    return url;
   }
 
   static Future<List<String>> pickAndUploadMultiple({

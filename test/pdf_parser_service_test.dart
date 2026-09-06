@@ -2,6 +2,17 @@ import 'package:studentry/student/data/pdf_parser_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('table PDF preserves father name and separate component marks', () {
+    final parsed = PdfParserService.parseGrades(
+      'الاسم\tاسم الأب\tالرقم الامتحاني\tالنظري\tالعملي\nأحمد محمد\tمحمد\t١٢٣٤٥\t٤٠\t٣٠',
+    );
+    expect(parsed.issues, isEmpty);
+    expect(parsed.records.single.examNumber, '12345');
+    expect(parsed.records.single.fatherName, 'محمد');
+    expect(parsed.records.single.theoreticalMark, 40);
+    expect(parsed.records.single.practicalMark, 30);
+    expect(parsed.records.single.mark, 70);
+  });
   group('local PDF grade parsing', () {
     test('extracts exam number, student name, mark and status locally', () {
       final parsed = PdfParserService.parseGrades('''

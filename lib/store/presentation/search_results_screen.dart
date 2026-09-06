@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/shared/widgets/pagination_controls.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/store/data/store_models.dart';
@@ -26,13 +27,12 @@ class SearchResultsScreen extends ConsumerStatefulWidget {
 
 class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   late TextEditingController _searchController;
-  final ScrollController _scrollController = ScrollController();
   final SearchDebouncer _searchDebouncer = SearchDebouncer();
   List<Product> _results = const [];
   String? _studentAcademicYear;
   bool _isLoading = false;
-  bool _hasMore = true;
-  int _page = 0;
+  int _page = 1;
+  int _lastPage = 1;
   int _searchGeneration = 0;
   static const int _pageSize = 25;
 
@@ -40,7 +40,6 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.query);
-    _scrollController.addListener(_onScroll);
     _loadAcademicYear();
   }
 
@@ -52,21 +51,13 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     await _search(widget.query);
   }
 
-  void _onScroll() {
-    if (_scrollController.position.extentAfter < 400) {
-      _loadMore();
-    }
-  }
-
   Future<void> _search(String query) async {
     final generation = ++_searchGeneration;
-    _page = 0;
     setState(() {
       _isLoading = true;
-      _hasMore = true;
       _results = const [];
     });
-    await _loadPage(query.trim(), generation, reset: true);
+    await _loadPage(query.trim(), generation, page: 1);
   }
 
   void _scheduleSearch(String query) {
@@ -77,26 +68,16 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     _searchDebouncer.runNow(() => _search(query));
   }
 
-  Future<void> _loadMore() async {
-    if (_isLoading || !_hasMore) return;
-    await _loadPage(
-      _searchController.text.trim(),
-      _searchGeneration,
-      reset: false,
-    );
-  }
-
   Future<void> _loadPage(
     String query,
     int generation, {
-    required bool reset,
+    required int page,
   }) async {
-    if (!reset && (_isLoading || !_hasMore)) return;
-    if (!reset) setState(() => _isLoading = true);
+    if (_isLoading && page != 1) return;
+    if (mounted) setState(() => _isLoading = true);
     try {
-      final requestedPage = reset ? 0 : _page + 1;
-      final rows = await StoreApiService.fetchProductsPage(
-        requestedPage,
+      final result = await StoreApiService.fetchProductPage(
+        page,
         _pageSize,
         search: query,
         academicYear: _studentAcademicYear,
@@ -106,7 +87,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
         for (final category in ref.read(catalogProvider).categories)
           category.id: category.label,
       };
-      final products = rows
+      final products = result.rows
           .map((row) {
             final item = StoreApiService.rowToProductMap(row);
             return Product(
@@ -130,9 +111,9 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
           })
           .toList(growable: false);
       setState(() {
-        _page = requestedPage;
-        _results = reset ? products : [..._results, ...products];
-        _hasMore = rows.length == _pageSize;
+        _page = result.currentPage;
+        _lastPage = result.lastPage;
+        _results = products;
         _isLoading = false;
       });
     } catch (_) {
@@ -146,7 +127,6 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   void dispose() {
     _searchGeneration++;
     _searchDebouncer.dispose();
-    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -165,8 +145,10 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
               const Expanded(child: Center(child: CircularProgressIndicator()))
             else if (_results.isEmpty)
               Expanded(child: _buildEmptyState())
-            else
+            else ...[
               Expanded(child: _buildProductGrid()),
+              _buildPaginationControls(),
+            ],
           ],
         ),
       ),
@@ -253,7 +235,6 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     return Padding(
       padding: EdgeInsets.all(16.r),
       child: GridView.builder(
-        controller: _scrollController,
         itemCount: _results.length,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
@@ -262,6 +243,34 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
           childAspectRatio: 0.7,
         ),
         itemBuilder: (_, i) => _buildProductCard(_results[i]),
+      ),
+    );
+  }
+
+  Widget _buildPaginationControls() {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 12.h),
+        child: PaginationControls(
+          currentPage: _page,
+          lastPage: _lastPage,
+          loading: _isLoading,
+          onPrevious: _page > 1
+              ? () => _loadPage(
+                  _searchController.text.trim(),
+                  _searchGeneration,
+                  page: _page - 1,
+                )
+              : null,
+          onNext: _page < _lastPage
+              ? () => _loadPage(
+                  _searchController.text.trim(),
+                  _searchGeneration,
+                  page: _page + 1,
+                )
+              : null,
+        ),
       ),
     );
   }

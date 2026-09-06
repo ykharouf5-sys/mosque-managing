@@ -6,6 +6,7 @@ import 'package:studentry/patients/data/patient_data.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/shared/widgets/pagination_controls.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 const List<String> _weekDays = [
@@ -31,6 +32,11 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
   int _selectedDay = DateTime.now().day;
   late int _currentMonth;
   late int _currentYear;
+  List<Appointment> _dateAppointments = const [];
+  int _page = 1;
+  int _lastPage = 1;
+  int _requestGeneration = 0;
+  bool _loadingDate = false;
 
   @override
   void initState() {
@@ -38,6 +44,31 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
     final now = DateTime.now();
     _currentMonth = now.month;
     _currentYear = now.year;
+    Future.microtask(_loadSelectedDate);
+  }
+
+  DateTime get _selectedDate =>
+      DateTime(_currentYear, _currentMonth, _selectedDay);
+
+  Future<void> _loadSelectedDate({int page = 1}) async {
+    final generation = ++_requestGeneration;
+    if (mounted) setState(() => _loadingDate = true);
+    try {
+      final result = await ref
+          .read(appointmentListProvider.notifier)
+          .loadDatePage(_selectedDate, page: page);
+      if (!mounted || generation != _requestGeneration) return;
+      setState(() {
+        _dateAppointments = result.appointments;
+        _page = result.currentPage;
+        _lastPage = result.lastPage;
+        _loadingDate = false;
+      });
+    } catch (_) {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loadingDate = false);
+      }
+    }
   }
 
   int _daysInMonth(int month, int year) => DateTime(year, month + 1, 0).day;
@@ -56,6 +87,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
           .clamp(1, _daysInMonth(_currentMonth, _currentYear))
           .toInt();
     });
+    _loadSelectedDate();
   }
 
   void _nextMonth() {
@@ -70,16 +102,12 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
           .clamp(1, _daysInMonth(_currentMonth, _currentYear))
           .toInt();
     });
+    _loadSelectedDate();
   }
 
   @override
   Widget build(BuildContext context) {
     final appointments = ref.watch(appointmentListProvider);
-    final selectedDate = DateTime(_currentYear, _currentMonth, _selectedDay);
-    final selectedAppts = appointments.where((a) {
-      final aptDate = DateTime(a.date.year, a.date.month, a.date.day);
-      return aptDate == selectedDate;
-    }).toList();
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -128,7 +156,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
         children: [
           _buildCalendarSection(appointments),
           SizedBox(height: 16.h),
-          Expanded(child: _buildAppointmentsList(selectedAppts)),
+          Expanded(child: _buildAppointmentsSection()),
         ],
       ),
       bottomNavigationBar: widget.embedded
@@ -284,7 +312,10 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
       label: '$_currentYear-$_currentMonth-$day',
       child: InkWell(
         key: ValueKey('calendar-day-$day'),
-        onTap: () => setState(() => _selectedDay = day),
+        onTap: () {
+          setState(() => _selectedDay = day);
+          _loadSelectedDate();
+        },
         borderRadius: BorderRadius.circular(20),
         child: Center(
           child: SizedBox.square(
@@ -374,8 +405,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
       );
     }
     return RefreshIndicator(
-      onRefresh: () async =>
-          ref.read(appointmentListProvider.notifier).refresh(),
+      onRefresh: () => _loadSelectedDate(page: _page),
       color: AppColors.primary,
       child: ListView.separated(
         padding: EdgeInsets.symmetric(horizontal: 16.w),
@@ -384,6 +414,35 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
         itemBuilder: (context, index) =>
             _buildAppointmentCard(appointments[index]),
       ),
+    );
+  }
+
+  Widget _buildAppointmentsSection() {
+    if (_loadingDate && _dateAppointments.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Column(
+      children: [
+        Expanded(child: _buildAppointmentsList(_dateAppointments)),
+        if (_lastPage > 1 || _loadingDate)
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 10.h),
+                child: PaginationControls(
+                  currentPage: _page,
+                  lastPage: _lastPage,
+                  loading: _loadingDate,
+                  onPrevious: _page > 1
+                      ? () => _loadSelectedDate(page: _page - 1)
+                      : null,
+                  onNext: _page < _lastPage
+                      ? () => _loadSelectedDate(page: _page + 1)
+                      : null,
+                ),
+            ),
+          ),
+      ],
     );
   }
 

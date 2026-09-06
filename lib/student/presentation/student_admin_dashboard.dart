@@ -6,6 +6,7 @@ import 'package:studentry/student/presentation/result_upload_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/shared/presentation/notification_campaign_screen.dart';
 import 'package:file_picker/file_picker.dart';
+import 'academic_sync_action.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -36,7 +37,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
   void initState() {
     super.initState();
     _academic.addListener(_onAcademicChanged);
-    _academic.load();
+    _academic.load(force: true);
   }
 
   @override
@@ -70,6 +71,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
           backgroundColor: AppColors.surface,
           elevation: 0,
           actions: [
+            const AcademicSyncAction(),
             IconButton(
               icon: const Icon(
                 Icons.settings_outlined,

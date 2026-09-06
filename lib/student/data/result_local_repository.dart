@@ -12,11 +12,14 @@ class ResultLocalRepository {
   static const AcademicResultApiService _api = AcademicResultApiService();
 
   Future<List<ResultUpload>> uploads() async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     try {
       final remote = await _api.uploads();
+      AppDatabase.ensureDataGeneration(generation);
       await _replaceLocalUploads(remote);
       return remote;
     } catch (_) {
+      AppDatabase.ensureDataGeneration(generation);
       return _localUploads();
     }
   }
@@ -36,11 +39,14 @@ class ResultLocalRepository {
   }
 
   Future<List<ResultRecord>> records(String uploadId) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     try {
       final remote = await _api.uploadRecords(uploadId);
+      AppDatabase.ensureDataGeneration(generation);
       await _replaceLocalRecords(uploadId, remote);
       return remote;
     } catch (_) {
+      AppDatabase.ensureDataGeneration(generation);
       return _localRecords(uploadId);
     }
   }
@@ -64,9 +70,24 @@ class ResultLocalRepository {
         .toList();
   }
 
-  Future<void> save(ResultUpload upload, List<ResultRecord> records) async {
+  Future<ResultUpload> save(
+    ResultUpload upload,
+    List<ResultRecord> records,
+  ) async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final saved = await _api.save(upload, records);
-    await _saveLocal(saved, records);
+    AppDatabase.ensureDataGeneration(generation);
+    // The upload is already committed. A failed follow-up read must not invite
+    // the manager to create a duplicate upload.
+    await _saveLocal(saved, const []);
+    try {
+      final matchedRecords = await _api.uploadRecords(saved.id);
+      AppDatabase.ensureDataGeneration(generation);
+      await _replaceLocalRecords(saved.id, matchedRecords);
+    } catch (_) {
+      AppDatabase.ensureDataGeneration(generation);
+    }
+    return saved;
   }
 
   Future<void> _saveLocal(
@@ -89,8 +110,11 @@ class ResultLocalRepository {
           id: record.id,
           examNumber: record.examNumber,
           studentName: record.studentName,
+          fatherName: record.fatherName,
           subjectName: record.subjectName,
           subjectCode: record.subjectCode,
+          theoreticalMark: record.theoreticalMark,
+          practicalMark: record.practicalMark,
           mark: record.mark,
           total: record.total,
           status: record.status,
@@ -99,6 +123,7 @@ class ResultLocalRepository {
           uploadDate: record.uploadDate,
           sourcePdfId: upload.id,
           notes: record.notes,
+          matched: record.matched,
         );
         batch.insert('result_records', {
           'id': '${upload.id}:${record.id}',
@@ -114,8 +139,9 @@ class ResultLocalRepository {
   }
 
   Future<void> delete(String uploadId) async {
-    await _api.delete(uploadId);
     final generation = AppDatabase.captureActiveDataGeneration();
+    await _api.delete(uploadId);
+    AppDatabase.ensureDataGeneration(generation);
     final db = await AppDatabase.database;
     AppDatabase.ensureDataGeneration(generation);
     await db.delete('result_uploads', where: 'id = ?', whereArgs: [uploadId]);

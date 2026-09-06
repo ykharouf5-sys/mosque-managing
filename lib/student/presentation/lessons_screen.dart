@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'academic_sync_action.dart';
 
 class LessonsScreen extends ConsumerStatefulWidget {
   const LessonsScreen({super.key});
@@ -22,7 +23,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
   void initState() {
     super.initState();
     _academic.addListener(_onAcademicChanged);
-    _academic.load();
+    _academic.load(force: true);
   }
 
   @override
@@ -52,6 +53,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
         ),
         centerTitle: true,
         actions: [
+          const AcademicSyncAction(),
           Container(
             margin: EdgeInsets.only(left: 8.w),
             child: IconButton(

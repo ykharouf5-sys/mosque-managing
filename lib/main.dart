@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:studentry/auth/data/biometric_service.dart';
 import 'package:studentry/management/presentation/sales_dashboard_screen.dart';
 import 'package:studentry/management/presentation/settings_screen.dart';
@@ -46,35 +48,145 @@ String? currentUserId;
 String? currentUserRole;
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Holds a fatal configuration error (e.g. release built without
+/// `--dart-define=API_BASE_URL=...`) so the app can still boot to an
+/// explanatory screen instead of dying on the native splash with zero
+/// feedback. Never throws before [runApp].
+String? _configError;
+
+const _prefsTimeout = Duration(seconds: 5);
+const _serviceInitTimeout = Duration(seconds: 15);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  ApiConfig.validateForRelease(isRelease: kReleaseMode);
+  try {
+    ApiConfig.validateForRelease(isRelease: kReleaseMode);
+  } catch (e) {
+    // Brick-wall guard: a misbuilt release must show WHAT is wrong instead
+    // of hanging forever on the static splash logo.
+    _configError = e.toString();
+    debugPrint('[boot] config error: $e');
+  }
   currentUserId = null;
 
-  final saved = await SharedPreferences.getInstance();
-  final langCode = saved.getString('app_language');
-  if (langCode != null) {
-    AppLocale.localeNotifier.value = Locale(langCode);
-  } else {
-    final deviceLocale = WidgetsBinding.instance.platformDispatcher.locale;
-    if (deviceLocale.languageCode == 'ar' ||
-        deviceLocale.languageCode == 'en') {
-      AppLocale.localeNotifier.value = Locale(deviceLocale.languageCode);
+  try {
+    final saved = await SharedPreferences.getInstance().timeout(
+      _prefsTimeout,
+      onTimeout: () {
+        debugPrint('[boot] SharedPreferences.getInstance timed out');
+        throw TimeoutException('SharedPreferences timed out');
+      },
+    );
+    final langCode = saved.getString('app_language');
+    if (langCode != null) {
+      AppLocale.localeNotifier.value = Locale(langCode);
+    } else {
+      final deviceLocale = WidgetsBinding.instance.platformDispatcher.locale;
+      if (deviceLocale.languageCode == 'ar' ||
+          deviceLocale.languageCode == 'en') {
+        AppLocale.localeNotifier.value = Locale(deviceLocale.languageCode);
+      }
     }
+  } catch (e) {
+    debugPrint('[boot] language prefs skipped: $e');
   }
 
   // The encrypted account database is opened only after authentication.
-  await CacheManager.instance.init();
-  ConnectivityService.init();
-  await AuthService().init();
   try {
-    await FcmTokenService.init(authenticated: AuthService().isLoggedIn);
+    await CacheManager.instance.init().timeout(
+      _prefsTimeout,
+      onTimeout: () => debugPrint('[boot] CacheManager.init timed out'),
+    );
+  } catch (e) {
+    debugPrint('[boot] CacheManager.init skipped: $e');
+  }
+  try {
+    ConnectivityService.init();
+  } catch (e) {
+    debugPrint('[boot] ConnectivityService.init skipped: $e');
+  }
+  try {
+    await AuthService().init().timeout(
+      _serviceInitTimeout,
+      onTimeout: () {
+        debugPrint('[boot] AuthService.init timed out');
+        throw TimeoutException('AuthService.init timed out');
+      },
+    );
+  } catch (e) {
+    debugPrint('[boot] AuthService.init skipped: $e');
+  }
+  try {
+    await FcmTokenService.init(
+      authenticated: AuthService().isLoggedIn,
+    ).timeout(_serviceInitTimeout);
   } catch (_) {}
-  SyncService.init();
-  await PendingOrderService.init();
-  await StorePollingService.init();
+  try {
+    SyncService.init();
+  } catch (e) {
+    debugPrint('[boot] SyncService.init skipped: $e');
+  }
+  try {
+    await PendingOrderService.init().timeout(_serviceInitTimeout);
+  } catch (e) {
+    debugPrint('[boot] PendingOrderService.init skipped: $e');
+  }
+  try {
+    await StorePollingService.init().timeout(_serviceInitTimeout);
+  } catch (e) {
+    debugPrint('[boot] StorePollingService.init skipped: $e');
+  }
 
+  debugPrint('[boot] runApp');
   runApp(const ProviderScope(child: MyApp()));
+}
+
+/// Shown when the app was built without a valid release configuration
+/// (missing/invalid `API_BASE_URL`). Explains the problem instead of a dead
+/// splash screen.
+class ConfigErrorScreen extends StatelessWidget {
+  const ConfigErrorScreen({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.settings_applications_outlined,
+                    size: 56,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'تعذر تشغيل التطبيق',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(message, textAlign: TextAlign.center),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'أعد بناء نسخة الـ release مع الرابط الصحيح.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AppLockGate extends ConsumerStatefulWidget {
@@ -418,7 +530,9 @@ class _MyAppState extends ConsumerState<MyApp> {
             GlobalCupertinoLocalizations.delegate,
           ],
           theme: _buildTheme(),
-          home: const _AuthGate(),
+          home: _configError != null
+              ? ConfigErrorScreen(message: _configError!)
+              : const _AuthGate(),
           routes: {
             '/onboarding': (context) => const OnboardingScreen(),
             '/welcome': (context) => const WelcomeScreen(),
@@ -498,10 +612,12 @@ class _MyAppState extends ConsumerState<MyApp> {
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.textLight,
           elevation: 0,
+          minimumSize: const Size(64, 48),
+          tapTargetSize: MaterialTapTargetSize.padded,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          padding: EdgeInsets.symmetric(vertical: 16.h),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
           textStyle: TextStyle(
             fontFamily: font,
             fontSize: 16.sp,
@@ -512,11 +628,13 @@ class _MyAppState extends ConsumerState<MyApp> {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primary,
+          minimumSize: const Size(64, 48),
+          tapTargetSize: MaterialTapTargetSize.padded,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           side: const BorderSide(color: AppColors.primary),
-          padding: EdgeInsets.symmetric(vertical: 16.h),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
           textStyle: TextStyle(
             fontFamily: font,
             fontSize: 16.sp,
@@ -526,8 +644,23 @@ class _MyAppState extends ConsumerState<MyApp> {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
+          minimumSize: const Size(48, 44),
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+          tapTargetSize: MaterialTapTargetSize.padded,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(64, 48),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+          tapTargetSize: MaterialTapTargetSize.padded,
+          textStyle: TextStyle(
+            fontFamily: font,
+            fontSize: 16.sp,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),

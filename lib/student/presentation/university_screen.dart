@@ -1,6 +1,7 @@
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/student/presentation/lessons_screen.dart';
 import 'package:studentry/student/presentation/schedule_screen.dart';
+import 'package:studentry/student/presentation/student_grades_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -65,6 +66,17 @@ class UniversityScreen extends StatelessWidget {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const LessonsScreen()),
+              ),
+            ),
+            SizedBox(height: 12.h),
+            _universityCard(
+              context,
+              icon: Icons.workspace_premium_rounded,
+              title: 'علاماتي',
+              subtitle: 'عرض علامات النظري والعملي ونتائج المواد',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const StudentGradesScreen()),
               ),
             ),
           ],

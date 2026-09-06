@@ -4,6 +4,18 @@ import 'package:studentry/shared/data/api_request_queue.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:uuid/uuid.dart';
 
+class StoreProductPage {
+  final List<Map<String, dynamic>> rows;
+  final int currentPage;
+  final int lastPage;
+
+  const StoreProductPage({
+    required this.rows,
+    required this.currentPage,
+    required this.lastPage,
+  });
+}
+
 class StoreApiService {
   static final _api = ApiClient.instance;
   static Map<String, dynamic>? _catalog;
@@ -54,10 +66,27 @@ class StoreApiService {
     String? categoryId,
     String? academicYear,
   }) async {
+    final result = await fetchProductPage(
+      page + 1,
+      pageSize,
+      search: search,
+      categoryId: categoryId,
+      academicYear: academicYear,
+    );
+    return result.rows;
+  }
+
+  static Future<StoreProductPage> fetchProductPage(
+    int page,
+    int pageSize, {
+    String? search,
+    String? categoryId,
+    String? academicYear,
+  }) async {
     final r = await _api.get(
       '/store/products',
       query: {
-        'page': '${page + 1}',
+        'page': '$page',
         'per_page': '$pageSize',
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         if (categoryId != null && categoryId.isNotEmpty)
@@ -66,7 +95,12 @@ class StoreApiService {
           'academic_year': academicYear,
       },
     );
-    return _maps(r.data['data']['data']);
+    final payload = Map<String, dynamic>.from(r.data['data'] as Map);
+    return StoreProductPage(
+      rows: _maps(payload['data']),
+      currentPage: (payload['current_page'] as num?)?.toInt() ?? page,
+      lastPage: (payload['last_page'] as num?)?.toInt() ?? 1,
+    );
   }
 
   static Future<void> insertCategory(Map<String, dynamic> c) async {

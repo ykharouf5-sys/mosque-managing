@@ -1,7 +1,10 @@
 import 'dart:io';
 
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
+import 'package:studentry/shared/widgets/pagination_controls.dart';
 import 'package:studentry/store/data/store_models.dart';
+import 'package:studentry/store/data/store_api_service.dart';
 import 'package:studentry/store/presentation/product_detail_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
-import 'package:studentry/shared/providers/auth_provider.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 
@@ -24,44 +26,71 @@ class CategoryProductsScreen extends ConsumerStatefulWidget {
 
 class _CategoryProductsScreenState
     extends ConsumerState<CategoryProductsScreen> {
-  final ScrollController _scrollController = ScrollController();
+  List<Product> _products = const [];
   String? _studentAcademicYear;
+  int _page = 1;
+  int _lastPage = 1;
+  int _requestGeneration = 0;
+  bool _loading = true;
+  static const int _pageSize = 25;
 
   @override
   void initState() {
     super.initState();
     _loadAcademicYear();
-    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
+    _requestGeneration++;
     super.dispose();
   }
 
-  void _onScroll() {
-    final catalog = ref.read(catalogProvider);
-    if (!catalog.isLoadingProducts &&
-        catalog.hasMoreProducts &&
-        _scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 300) {
-      ref.read(catalogProvider.notifier).loadNextProductsPage();
+  Future<void> _loadAcademicYear() async {
+    final auth = AuthService();
+    if (auth.role == 'student') {
+      _studentAcademicYear = auth.academicYear;
     }
+    await _loadPage(1);
   }
 
-  Future<void> _loadAcademicYear() async {
-    if (ref.read(authProvider).role == 'student') {
-      _studentAcademicYear = null;
+  Future<void> _loadPage(int page) async {
+    if (page < 1 || (_lastPage > 0 && page > _lastPage)) return;
+    final generation = ++_requestGeneration;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final result = await StoreApiService.fetchProductPage(
+        page,
+        _pageSize,
+        categoryId: widget.categoryId,
+        academicYear: _studentAcademicYear,
+      );
+      if (!mounted || generation != _requestGeneration) return;
+      final categoryNames = {
+        for (final category in ref.read(catalogProvider).categories)
+          category.id: category.label,
+      };
+      final products = result.rows.map((row) {
+        final item = StoreApiService.rowToProductMap(row);
+        item['categoryName'] = categoryNames[item['categoryId']] ?? '';
+        return Product.fromJson(item);
+      }).toList(growable: false);
+      setState(() {
+        _products = products;
+        _page = result.currentPage;
+        _lastPage = result.lastPage;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loading = false);
+      }
     }
-    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final catalog = ref.watch(catalogProvider);
-    final role = ref.watch(authProvider).role;
     final cat = catalog.categories
         .where((c) => c.id == widget.categoryId)
         .firstOrNull;
@@ -89,22 +118,6 @@ class _CategoryProductsScreenState
       );
     }
 
-    final catProducts = ref
-        .read(catalogProvider.notifier)
-        .getProductsByCategory(widget.categoryId);
-    List<Product> products;
-    if (role == 'student' && _studentAcademicYear != null) {
-      products = catProducts
-          .where(
-            (p) =>
-                p.academicYear == _studentAcademicYear ||
-                p.academicYear == null,
-          )
-          .toList();
-    } else {
-      products = catProducts;
-    }
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -117,9 +130,16 @@ class _CategoryProductsScreenState
             onPressed: () => Navigator.pop(context),
           ),
         ),
-        body: products.isEmpty
+        body: _loading && _products.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : _products.isEmpty
             ? _buildEmptyState(cat.label)
-            : _buildProductGrid(context, products, catalog),
+            : Column(
+                children: [
+                  Expanded(child: _buildProductGrid(context, _products)),
+                  _buildPaginationControls(),
+                ],
+              ),
       ),
     );
   }
@@ -143,25 +163,34 @@ class _CategoryProductsScreenState
   Widget _buildProductGrid(
     BuildContext context,
     List<Product> products,
-    CatalogState catalog,
   ) {
     return Padding(
       padding: EdgeInsets.all(16.r),
       child: GridView.builder(
-        controller: _scrollController,
-        itemCount: products.length + (catalog.isLoadingProducts ? 1 : 0),
+        itemCount: products.length,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
           childAspectRatio: 0.7,
         ),
-        itemBuilder: (_, i) {
-          if (i >= products.length) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return _buildProductCard(context, products[i]);
-        },
+        itemBuilder: (_, i) => _buildProductCard(context, products[i]),
+      ),
+    );
+  }
+
+  Widget _buildPaginationControls() {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 12.h),
+        child: PaginationControls(
+          currentPage: _page,
+          lastPage: _lastPage,
+          loading: _loading,
+          onPrevious: _page > 1 ? () => _loadPage(_page - 1) : null,
+          onNext: _page < _lastPage ? () => _loadPage(_page + 1) : null,
+        ),
       ),
     );
   }

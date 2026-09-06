@@ -159,6 +159,7 @@ class NotificationService {
     required String body,
   }) async {
     try {
+      await init();
       await _plugin.show(
         id: id,
         title: title,
@@ -178,6 +179,7 @@ class NotificationService {
     String? payload,
   }) async {
     try {
+      await init();
       await _plugin.show(
         id: id,
         title: title,
@@ -200,6 +202,10 @@ class NotificationService {
     bool appointmentReminder = true,
   }) async {
     try {
+      // Appointment reminders must work even when Firebase cannot start (for
+      // example while the device is offline). Local scheduling owns its own
+      // notification permission instead of depending on the FCM bootstrap.
+      await init();
       final location = tz.local;
       final scheduledDate = tz.TZDateTime.from(dateTime, location);
       final exactEnabled = await exactAlarmsEnabled();
@@ -320,7 +326,7 @@ class NotificationService {
     List<Appointment> appointments,
   ) async {
     try {
-      await init(requestPermissions: false);
+      await init();
       final pending = await _plugin.pendingNotificationRequests();
       for (final notification in pending) {
         final payload = notification.payload ?? '';

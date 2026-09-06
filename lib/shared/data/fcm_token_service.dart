@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:studentry/patients/data/notification_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -8,6 +9,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import 'api_client.dart';
+import 'auth_service.dart';
+import 'connectivity_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -23,9 +26,54 @@ class FcmTokenService {
   static String? _registeredToken;
   static String? _registeringToken;
   static Future<void>? _registrationInFlight;
+  static Timer? _retryTimer;
+  static int _session = 0;
+  static String? _accountId;
+  static bool _watchingConnectivity = false;
+
+  static void _onConnectivity() {
+    if (_authenticated && ConnectivityService.isOnline.value) {
+      unawaited(_refreshRegistration(_session));
+    }
+  }
+
+  static Future<void> _refreshRegistration(int session) async {
+    if (!_authenticated || session != _session) return;
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (session == _session && token != null) await registerToken(token);
+    } catch (_) {
+      _scheduleRetry(session);
+    }
+  }
+
+  static void _scheduleRetry(int session) {
+    if (!_authenticated || session != _session) return;
+    _retryTimer?.cancel();
+    _retryTimer = Timer(const Duration(seconds: 30), () {
+      if (ConnectivityService.isOnline.value) {
+        unawaited(_refreshRegistration(session));
+      } else {
+        _scheduleRetry(session);
+      }
+    });
+  }
 
   static Future<void> init({required bool authenticated}) async {
+    final accountId = authenticated ? AuthService().currentUser?.id : null;
+    if (_accountId != accountId || _authenticated != authenticated) {
+      _session++;
+      _accountId = accountId;
+      _registeredToken = null;
+      _registeringToken = null;
+      _registrationInFlight = null;
+      _retryTimer?.cancel();
+    }
     _authenticated = authenticated;
+    if (!_watchingConnectivity) {
+      ConnectivityService.isOnline.addListener(_onConnectivity);
+      _watchingConnectivity = true;
+    }
     if (!_initialized) {
       await NotificationService.init();
       await Firebase.initializeApp();
@@ -61,8 +109,7 @@ class FcmTokenService {
       _initialized = true;
     }
     if (authenticated) {
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) await registerToken(token);
+      await _refreshRegistration(_session);
     } else {
       // Invalidate any token left by an expired/offline session so a signed-out
       // device cannot keep receiving account-scoped notifications.
@@ -89,8 +136,10 @@ class FcmTokenService {
   }
 
   static Future<void> _registerToken(String token) async {
-    final deviceId = await _deviceId();
+    final session = _session;
     try {
+      final deviceId = await _deviceId();
+      if (!_authenticated || session != _session) return;
       await ApiClient.instance.post(
         '/devices/fcm-token',
         body: {
@@ -100,11 +149,23 @@ class FcmTokenService {
         },
         maxRetries: 1,
       );
-      _registeredToken = token;
-    } catch (_) {}
+      if (_authenticated && session == _session) {
+        _registeredToken = token;
+        _retryTimer?.cancel();
+      }
+    } catch (_) {
+      _scheduleRetry(session);
+    }
   }
 
   static Future<void> unregisterCurrentDevice() async {
+    _session++;
+    _authenticated = false;
+    _accountId = null;
+    _registeredToken = null;
+    _registeringToken = null;
+    _registrationInFlight = null;
+    _retryTimer?.cancel();
     if (!_initialized) return;
     final deviceId = await _deviceId();
     try {

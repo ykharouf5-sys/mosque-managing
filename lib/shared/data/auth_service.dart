@@ -521,15 +521,26 @@ class AuthService {
   /// Re-opens this session's encrypted local store if an Android process
   /// recreation closed it while the authenticated session remained valid.
   Future<void> ensureLocalAccountActive() async {
-    final user = _user;
+    var user = _user;
+    // A provider can be resumed before the normal startup listener has
+    // restored the cached session. Rehydrate only from the encrypted local
+    // session; this never performs a network request, so offline writes still
+    // go into the per-account SQLite outbox.
+    if ((user == null || !isLoggedIn) &&
+        _token != null &&
+        await _hasUnexpiredStoredToken()) {
+      await _restoreCachedUser();
+      user = _user;
+    }
     if (user == null || !isLoggedIn) {
       throw StateError('No authenticated account is active.');
     }
+    final activeUser = user;
     await _runSessionMutation(() async {
-      if (_user?.id != user.id || !isLoggedIn) {
+      if (_user?.id != activeUser.id || !isLoggedIn) {
         throw const StaleSessionException();
       }
-      await _activateUser(user);
+      await _activateUser(activeUser);
     });
   }
 

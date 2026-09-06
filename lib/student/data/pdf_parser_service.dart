@@ -1,5 +1,7 @@
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'result_models.dart';
+import 'dart:convert';
+import 'json_parser_service.dart';
 
 class PdfParserService {
   static String extractTextFromBytes(List<int> bytes) {
@@ -26,6 +28,57 @@ class PdfParserService {
         .map((l) => l.trim())
         .where((l) => l.isNotEmpty)
         .toList();
+
+    final headerIndex = lines.indexWhere(
+      (line) =>
+          (line.contains('الرقم الامتحاني') || line.contains('exam_number')) &&
+          (line.contains('النظري') || line.contains('theoretical_mark')),
+    );
+    if (headerIndex >= 0) {
+      final separator = RegExp(r'\t+| {2,}|\s*\|\s*');
+      final headers = lines[headerIndex]
+          .split(separator)
+          .map((s) => s.trim())
+          .toList();
+      if (headers.length >= 3) {
+        final rows = <Map<String, dynamic>>[];
+        final issues = <ImportValidationIssue>[];
+        for (final line in lines.skip(headerIndex + 1)) {
+          if (line == lines[headerIndex]) continue;
+          final cells = line.split(separator).map((s) => s.trim()).toList();
+          if (cells.length == headers.length) {
+            rows.add({
+              for (var i = 0; i < headers.length; i++) headers[i]: cells[i],
+            });
+          } else {
+            issues.add(
+              ImportValidationIssue(
+                type: 'invalid_table_row',
+                message: 'تعذّرت قراءة صف من جدول PDF: $line',
+              ),
+            );
+          }
+        }
+        final parsed = JsonParserService.parseJson(
+          jsonEncode(rows),
+          examSession: examSession,
+        );
+        return ParsedResult(
+          records: parsed.records,
+          issues: [...issues, ...parsed.issues],
+        );
+      }
+      return ParsedResult(
+        records: [],
+        issues: [
+          ImportValidationIssue(
+            type: 'invalid_table',
+            message:
+                'تعذّر فصل أعمدة جدول PDF. ارفع الجدول بصيغة CSV لحفظ النظري والعملي بدقة.',
+          ),
+        ],
+      );
+    }
 
     final records = <ResultRecord>[];
     final issues = <ImportValidationIssue>[];

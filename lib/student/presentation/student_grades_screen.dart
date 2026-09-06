@@ -65,6 +65,9 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
     });
 
     try {
+      final cached = await const AcademicResultApiService().cachedResults(examNumber: query);
+      if (!mounted || generation != _searchGeneration) return;
+      setState(() => _results = cached);
       final results = await const AcademicResultApiService().results(
         examNumber: query,
       );
@@ -738,6 +741,32 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
                     minHeight: 6.h,
                   ),
                 ),
+                if (record.theoreticalMark != null ||
+                    record.practicalMark != null) ...[
+                  SizedBox(height: 6.h),
+                  Wrap(
+                    spacing: 12.w,
+                    runSpacing: 4.h,
+                    children: [
+                      if (record.theoreticalMark != null)
+                        Text(
+                          'النظري: ${record.theoreticalMark!.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                      if (record.practicalMark != null)
+                        Text(
+                          'العملي: ${record.practicalMark!.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

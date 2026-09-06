@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:studentry/student/data/pdf_parser_service.dart';
+import 'package:studentry/student/data/csv_grade_parser_service.dart';
+import 'package:studentry/student/data/academic_result_api_service.dart';
 import 'package:studentry/student/data/result_models.dart';
 import 'package:studentry/student/data/result_local_repository.dart';
 import 'package:studentry/shared/data/auth_service.dart';
@@ -114,12 +116,12 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
           ),
           SizedBox(height: 8.h),
           Text(
-            'اضغط على الزر أدناه لرفع ملف PDF',
+            'ارفع ملف PDF أو CSV أو JSON',
             style: TextStyle(fontSize: 13.sp, color: AppColors.textGray),
           ),
           SizedBox(height: 24.h),
           ElevatedButton.icon(
-            icon: const Icon(Icons.picture_as_pdf_outlined, size: 20),
+            icon: const Icon(Icons.upload_file_outlined, size: 20),
             label: const Text('رفع ملف نتائج'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -129,7 +131,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
               ),
               padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 14.h),
             ),
-            onPressed: _pickAndUploadPdf,
+            onPressed: _showUploadOptions,
           ),
         ],
       ),
@@ -312,6 +314,8 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
                 ),
                 onSelected: (v) => _handleMenuAction(v, upload),
                 itemBuilder: (_) => [
+                  if (upload.unmatchedRecords > 0)
+                    const PopupMenuItem(value: 'rematch', child: Text('إعادة مطابقة الطلاب')),
                   if (upload.status == 'failed')
                     const PopupMenuItem(
                       value: 'reprocess',
@@ -340,6 +344,35 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
             const LinearProgressIndicator(
               backgroundColor: AppColors.divider,
               color: AppColors.primary,
+            ),
+          ],
+          if (upload.unmatchedRecords > 0) ...[
+            SizedBox(height: 8.h),
+            Container(
+              padding: EdgeInsets.all(8.r),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.person_search_outlined,
+                    size: 16.sp,
+                    color: AppColors.danger,
+                  ),
+                  SizedBox(width: 6.w),
+                  Expanded(
+                    child: Text(
+                      '${upload.unmatchedRecords} طالب غير مطابق. افتح عرض النتائج لمعرفة الأسماء والأرقام.',
+                      style: TextStyle(
+                        fontSize: 11.sp,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
           if (upload.errorMessage != null) ...[
@@ -449,6 +482,9 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
 
   void _handleMenuAction(String action, ResultUpload upload) {
     switch (action) {
+      case 'rematch':
+        _rematchUpload(upload.id);
+        break;
       case 'reprocess':
         _reprocessUpload(upload);
         break;
@@ -465,6 +501,19 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
   }
 
   Future<void> _reprocessUpload(ResultUpload upload) async {}
+
+  Future<void> _rematchUpload(String id) async {
+    try {
+      await const AcademicResultApiService().rematch(id);
+      await _loadUploads();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذرت المطابقة. حاول عند توفر الاتصال.')),
+        );
+      }
+    }
+  }
 
   Future<void> _showRecords(String uploadId) async {
     final records = await _repository.records(uploadId);
@@ -490,7 +539,11 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
                         : record.studentName,
                   ),
                   subtitle: Text(
-                    '${record.examNumber} • ${record.subjectName} • ${record.statusLabel}',
+                    '${record.examNumber} • ${record.subjectName} • '
+                    '${record.matched ? record.statusLabel : 'غير مطابق لطالب'}',
+                    style: TextStyle(
+                      color: record.matched ? null : AppColors.danger,
+                    ),
                   ),
                   trailing: Text('${record.mark}/${record.total}'),
                 );
@@ -725,12 +778,12 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
                     Expanded(
                       child: _UploadOptionCard(
                         icon: Icons.data_object_outlined,
-                        label: 'ملف JSON',
-                        subtitle: 'إضافة علامات يدوياً',
+                        label: 'CSV / JSON',
+                        subtitle: 'رفع جدول العلامات',
                         color: AppColors.primary,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _pickAndUploadJson();
+                          _pickAndUploadDataFile();
                         },
                       ),
                     ),
@@ -744,10 +797,10 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
     );
   }
 
-  Future<void> _pickAndUploadJson() async {
+  Future<void> _pickAndUploadDataFile() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['json'],
+      allowedExtensions: ['json', 'csv'],
     );
     if (result == null || result.files.isEmpty) return;
     final file = result.files.first;
@@ -768,10 +821,16 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
       }
 
       _updateLoadingMessage('جاري معالجة البيانات...');
-      final parsed = JsonParserService.parseJson(
-        jsonStr,
-        examSession: sessionInfo['examSession'],
-      );
+      final isCsv = file.extension?.toLowerCase() == 'csv';
+      final parsed = isCsv
+          ? CsvGradeParserService.parse(
+              jsonStr,
+              examSession: sessionInfo['examSession'],
+            )
+          : JsonParserService.parseJson(
+              jsonStr,
+              examSession: sessionInfo['examSession'],
+            );
 
       if (parsed.records.isEmpty) {
         _dismissLoadingDialog();
@@ -779,7 +838,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'لم يتم العثور على سجلات صالحة. تأكد من تنسيق JSON',
+                'لم يتم العثور على سجلات صالحة. تأكد من تنسيق الملف وأسماء الأعمدة',
               ),
               backgroundColor: AppColors.danger,
             ),
@@ -796,7 +855,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'تم استيراد ${parsed.records.length} سجل بنجاح من JSON',
+              'تم استيراد ${parsed.records.length} سجل بنجاح',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -807,7 +866,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل معالجة JSON: $e'),
+            content: Text('فشل معالجة الملف: $e'),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -836,6 +895,9 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
     final sessionC = TextEditingController();
     final yearC = TextEditingController();
     final subjectC = TextEditingController();
+    final universityC = TextEditingController(
+      text: AuthService().university ?? '',
+    );
     return showDialog<Map<String, String>>(
       context: context,
       builder: (ctx) => Directionality(
@@ -868,6 +930,14 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
                   hintText: 'مثال: الثالثة',
                 ),
               ),
+              SizedBox(height: 10.h),
+              TextField(
+                controller: universityC,
+                decoration: const InputDecoration(
+                  labelText: 'الجامعة',
+                  hintText: 'مثال: جامعة دمشق',
+                ),
+              ),
             ],
           ),
           actions: [
@@ -881,6 +951,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
                   'examSession': sessionC.text.trim(),
                   'academicYear': yearC.text.trim(),
                   'subjectName': subjectC.text.trim(),
+                  'university': universityC.text.trim(),
                 });
               },
               style: ElevatedButton.styleFrom(
@@ -970,13 +1041,16 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
     final records = parsed.records
         .map(
           (record) => ResultRecord(
-            id: record.id,
+            id: const Uuid().v4(),
             examNumber: record.examNumber,
             studentName: record.studentName,
+            fatherName: record.fatherName,
             subjectName: subjectName?.isNotEmpty == true
                 ? subjectName!
                 : record.subjectName,
             subjectCode: record.subjectCode,
+            theoreticalMark: record.theoreticalMark,
+            practicalMark: record.practicalMark,
             mark: record.mark,
             total: record.total,
             status: record.status,
@@ -1007,9 +1081,10 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
       uploadedBy: AuthService().userId ?? 'local-user',
       examSession: examSession,
       academicYear: academicYear,
+      university: sessionInfo['university']?.trim(),
     );
-    await _repository.save(upload, records);
-    if (mounted) setState(() => _uploads.insert(0, upload));
+    final savedUpload = await _repository.save(upload, records);
+    if (mounted) setState(() => _uploads.insert(0, savedUpload));
   }
 
   void _showNoResultsDialog(

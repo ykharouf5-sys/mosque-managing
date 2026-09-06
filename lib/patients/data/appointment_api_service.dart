@@ -1,9 +1,54 @@
 import 'package:studentry/shared/data/api_client.dart';
 
+class AppointmentPage {
+  final List<Map<String, dynamic>> rows;
+  final int currentPage;
+  final int lastPage;
+
+  const AppointmentPage({
+    required this.rows,
+    required this.currentPage,
+    required this.lastPage,
+  });
+
+  bool get hasPrevious => currentPage > 1;
+  bool get hasNext => currentPage < lastPage;
+}
+
 class AppointmentApiService {
   AppointmentApiService._();
 
   static final ApiClient _api = ApiClient.instance;
+
+  static Future<AppointmentPage> fetchDatePage(
+    DateTime date, {
+    int page = 1,
+    int pageSize = 25,
+  }) async {
+    final day = _dateOnly(date);
+    final response = await _api.get(
+      '/appointments',
+      query: {
+        'from': day,
+        'to': day,
+        'page': '$page',
+        'per_page': '$pageSize',
+      },
+    );
+    final payload = Map<String, dynamic>.from(response.data['data'] as Map);
+    return AppointmentPage(
+      rows: (payload['data'] as List? ?? const [])
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false),
+      currentPage: (payload['current_page'] as num?)?.toInt() ?? page,
+      lastPage: (payload['last_page'] as num?)?.toInt() ?? page,
+    );
+  }
+
+  static String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 
   static Future<Map<String, dynamic>> create(
     Map<String, dynamic> row, {

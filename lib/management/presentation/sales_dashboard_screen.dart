@@ -116,7 +116,8 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
               onDataChanged: () => ref.read(catalogProvider.notifier).refresh(),
             ),
             _OrdersTab(
-              onDataChanged: () => ref.read(ordersProvider.notifier).refresh(),
+              onDataChanged: () =>
+                  ref.read(ordersProvider.notifier).loadInitialOrders(),
             ),
           ],
         ),
@@ -770,11 +771,22 @@ class _ProductsTab extends StatelessWidget {
                   children: [
                     GestureDetector(
                       onTap: () async {
-                        final uploaded = await StoreImageService.pickAndUpload(
-                          kind: 'product',
-                        );
-                        if (uploaded != null) {
-                          setDialogState(() => imagePath = uploaded);
+                        try {
+                          final uploaded =
+                              await StoreImageService.pickAndUpload(
+                                kind: 'product',
+                              );
+                          if (uploaded != null) {
+                            setDialogState(() => imagePath = uploaded);
+                          }
+                        } catch (error) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('تعذر رفع الصورة: $error'),
+                              ),
+                            );
+                          }
                         }
                       },
                       child: Container(
@@ -1277,11 +1289,22 @@ class _BannersTab extends StatelessWidget {
                   children: [
                     GestureDetector(
                       onTap: () async {
-                        final uploaded = await StoreImageService.pickAndUpload(
-                          kind: 'banner',
-                        );
-                        if (uploaded != null) {
-                          setDialogState(() => imagePath = uploaded);
+                        try {
+                          final uploaded =
+                              await StoreImageService.pickAndUpload(
+                                kind: 'banner',
+                              );
+                          if (uploaded != null) {
+                            setDialogState(() => imagePath = uploaded);
+                          }
+                        } catch (error) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('تعذر رفع الصورة: $error'),
+                              ),
+                            );
+                          }
                         }
                       },
                       child: Container(
@@ -1959,18 +1982,18 @@ class _CouponsTab extends StatelessWidget {
 
 // ──────────────── ORDERS TAB ────────────────
 
-class _OrdersTab extends StatefulWidget {
+class _OrdersTab extends ConsumerStatefulWidget {
   final VoidCallback onDataChanged;
   const _OrdersTab({required this.onDataChanged});
 
   @override
-  State<_OrdersTab> createState() => _OrdersTabState();
+  ConsumerState<_OrdersTab> createState() => _OrdersTabState();
 }
 
-class _OrdersTabState extends State<_OrdersTab> {
+class _OrdersTabState extends ConsumerState<_OrdersTab> {
   @override
   Widget build(BuildContext context) {
-    final allOrders = <Order>[];
+    final allOrders = ref.watch(ordersProvider).orders;
     if (allOrders.isEmpty) {
       return Center(
         child: Column(

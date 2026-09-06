@@ -370,7 +370,10 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
       address: _addressCtrl.text,
       registrationDate: DateFormat('yyyy-MM-dd').format(now),
       notes: _notesCtrl.text,
-      photoUrl: 'https://i.pravatar.cc/150?u=$id',
+      // A patient is created entirely locally first. Do not attach a random
+      // internet avatar: it breaks offline creation and is inappropriate for
+      // clinical data.
+      photoUrl: '',
       amountDue: amountDue,
       amountPaid: initialPayment,
       todayPayment: initialPayment,

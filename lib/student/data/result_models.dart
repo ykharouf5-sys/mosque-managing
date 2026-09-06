@@ -7,6 +7,8 @@ class ResultUpload {
   final int totalRecords;
   final int importedRecords;
   final int failedRecords;
+  final int matchedRecords;
+  final int unmatchedRecords;
   final List<String> warnings;
   final String? errorMessage;
   final DateTime uploadDate;
@@ -14,6 +16,7 @@ class ResultUpload {
   final String uploadedBy;
   final String? examSession;
   final String? academicYear;
+  final String? university;
 
   ResultUpload({
     required this.id,
@@ -24,6 +27,8 @@ class ResultUpload {
     this.totalRecords = 0,
     this.importedRecords = 0,
     this.failedRecords = 0,
+    this.matchedRecords = 0,
+    this.unmatchedRecords = 0,
     this.warnings = const [],
     this.errorMessage,
     required this.uploadDate,
@@ -31,6 +36,7 @@ class ResultUpload {
     required this.uploadedBy,
     this.examSession,
     this.academicYear,
+    this.university,
   });
 
   ResultUpload copyWith({
@@ -38,11 +44,14 @@ class ResultUpload {
     int? totalRecords,
     int? importedRecords,
     int? failedRecords,
+    int? matchedRecords,
+    int? unmatchedRecords,
     List<String>? warnings,
     String? errorMessage,
     DateTime? processedDate,
     String? downloadUrl,
     String? storagePath,
+    String? university,
   }) => ResultUpload(
     id: id,
     fileName: fileName,
@@ -52,6 +61,8 @@ class ResultUpload {
     totalRecords: totalRecords ?? this.totalRecords,
     importedRecords: importedRecords ?? this.importedRecords,
     failedRecords: failedRecords ?? this.failedRecords,
+    matchedRecords: matchedRecords ?? this.matchedRecords,
+    unmatchedRecords: unmatchedRecords ?? this.unmatchedRecords,
     warnings: warnings ?? this.warnings,
     errorMessage: errorMessage ?? this.errorMessage,
     uploadDate: uploadDate,
@@ -59,6 +70,7 @@ class ResultUpload {
     uploadedBy: uploadedBy,
     examSession: examSession,
     academicYear: academicYear,
+    university: university ?? this.university,
   );
 
   Map<String, dynamic> toJson() => {
@@ -70,6 +82,8 @@ class ResultUpload {
     'totalRecords': totalRecords,
     'importedRecords': importedRecords,
     'failedRecords': failedRecords,
+    'matchedRecords': matchedRecords,
+    'unmatchedRecords': unmatchedRecords,
     'warnings': warnings,
     'errorMessage': errorMessage,
     'uploadDate': uploadDate.toIso8601String(),
@@ -77,6 +91,7 @@ class ResultUpload {
     'uploadedBy': uploadedBy,
     'examSession': examSession,
     'academicYear': academicYear,
+    'university': university,
   };
 
   factory ResultUpload.fromJson(Map<String, dynamic> json) => ResultUpload(
@@ -88,6 +103,8 @@ class ResultUpload {
     totalRecords: (json['totalRecords'] as num?)?.toInt() ?? 0,
     importedRecords: (json['importedRecords'] as num?)?.toInt() ?? 0,
     failedRecords: (json['failedRecords'] as num?)?.toInt() ?? 0,
+    matchedRecords: (json['matchedRecords'] as num?)?.toInt() ?? 0,
+    unmatchedRecords: (json['unmatchedRecords'] as num?)?.toInt() ?? 0,
     warnings: (json['warnings'] as List?)?.cast<String>() ?? [],
     errorMessage: json['errorMessage'] as String?,
     uploadDate: DateTime.parse(json['uploadDate'] as String),
@@ -97,6 +114,7 @@ class ResultUpload {
     uploadedBy: json['uploadedBy'] as String,
     examSession: json['examSession'] as String?,
     academicYear: json['academicYear'] as String?,
+    university: json['university'] as String?,
   );
 }
 
@@ -104,8 +122,11 @@ class ResultRecord {
   final String id;
   final String examNumber;
   final String studentName;
+  final String? fatherName;
   final String subjectName;
   final String? subjectCode;
+  final double? theoreticalMark;
+  final double? practicalMark;
   final double mark;
   final double total;
   final String? status; // 'ناجح', 'راسب', 'حجب', or null
@@ -114,13 +135,17 @@ class ResultRecord {
   final DateTime uploadDate;
   final String sourcePdfId;
   final String? notes;
+  final bool matched;
 
   ResultRecord({
     required this.id,
     required this.examNumber,
     this.studentName = '',
+    this.fatherName,
     required this.subjectName,
     this.subjectCode,
+    this.theoreticalMark,
+    this.practicalMark,
     required this.mark,
     this.total = 100,
     this.status,
@@ -129,14 +154,18 @@ class ResultRecord {
     required this.uploadDate,
     required this.sourcePdfId,
     this.notes,
+    this.matched = true,
   });
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'examNumber': examNumber,
     'studentName': studentName,
+    'fatherName': fatherName,
     'subjectName': subjectName,
     'subjectCode': subjectCode,
+    'theoreticalMark': theoreticalMark,
+    'practicalMark': practicalMark,
     'mark': mark,
     'total': total,
     'status': status,
@@ -145,14 +174,18 @@ class ResultRecord {
     'uploadDate': uploadDate.toIso8601String(),
     'sourcePdfId': sourcePdfId,
     'notes': notes,
+    'matched': matched,
   };
 
   factory ResultRecord.fromJson(Map<String, dynamic> json) => ResultRecord(
     id: json['id'] as String,
     examNumber: json['examNumber'] as String,
     studentName: (json['studentName'] as String?) ?? '',
+    fatherName: json['fatherName'] as String?,
     subjectName: json['subjectName'] as String,
     subjectCode: json['subjectCode'] as String?,
+    theoreticalMark: (json['theoreticalMark'] as num?)?.toDouble(),
+    practicalMark: (json['practicalMark'] as num?)?.toDouble(),
     mark: (json['mark'] as num).toDouble(),
     total: (json['total'] as num?)?.toDouble() ?? 100,
     status: json['status'] as String?,
@@ -161,6 +194,7 @@ class ResultRecord {
     uploadDate: DateTime.parse(json['uploadDate'] as String),
     sourcePdfId: json['sourcePdfId'] as String,
     notes: json['notes'] as String?,
+    matched: json['matched'] as bool? ?? true,
   );
 
   String get percentage {

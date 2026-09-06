@@ -21,7 +21,7 @@ class JsonParserService {
 
     final records = <ResultRecord>[];
     final issues = <ImportValidationIssue>[];
-    final seenExamNumbers = <String>{};
+    final seenRecords = <String>{};
 
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
@@ -42,6 +42,7 @@ class JsonParserService {
       final examNumber = _pickString(map, [
         'examNumber',
         'exam_number',
+        'الرقم الامتحاني',
         'رقم امتحاني',
         'رقم',
         'exam_no',
@@ -53,6 +54,24 @@ class JsonParserService {
         'اسم',
         'name',
         'الاسم',
+      ]);
+      final fatherName = _pickString(map, [
+        'fatherName',
+        'father_name',
+        'اسم الأب',
+        'اسم الاب',
+      ]);
+      final theoreticalRaw = _pickString(map, [
+        'theoreticalMark',
+        'theoretical_mark',
+        'النظري',
+        'علامة النظري',
+      ]);
+      final practicalRaw = _pickString(map, [
+        'practicalMark',
+        'practical_mark',
+        'العملي',
+        'علامة العملي',
       ]);
       final markRaw = _pickString(map, [
         'mark',
@@ -88,7 +107,34 @@ class JsonParserService {
         continue;
       }
 
-      if (markRaw == null || markRaw.isEmpty) {
+      final theoreticalMark = double.tryParse(theoreticalRaw ?? '');
+      final practicalMark = double.tryParse(practicalRaw ?? '');
+      final invalidComponent =
+          (theoreticalRaw != null &&
+              (theoreticalMark == null ||
+                  !theoreticalMark.isFinite ||
+                  theoreticalMark < 0 ||
+                  theoreticalMark > 100)) ||
+          (practicalRaw != null &&
+              (practicalMark == null ||
+                  !practicalMark.isFinite ||
+                  practicalMark < 0 ||
+                  practicalMark > 100));
+      if (invalidComponent) {
+        issues.add(
+          ImportValidationIssue(
+            type: 'invalid_mark',
+            examNumber: examNumber,
+            rowIndex: i,
+            message: 'الصف ${i + 1}: علامة النظري أو العملي غير صالحة',
+          ),
+        );
+        continue;
+      }
+      final componentTotal = theoreticalMark != null && practicalMark != null
+          ? theoreticalMark + practicalMark
+          : null;
+      if ((markRaw == null || markRaw.isEmpty) && componentTotal == null) {
         issues.add(
           ImportValidationIssue(
             type: 'missing_mark',
@@ -100,8 +146,8 @@ class JsonParserService {
         continue;
       }
 
-      final mark = double.tryParse(markRaw);
-      if (mark == null || mark < 0 || mark > 100) {
+      final mark = markRaw == null ? componentTotal : double.tryParse(markRaw);
+      if (mark == null || !mark.isFinite || mark < 0 || mark > 100) {
         issues.add(
           ImportValidationIssue(
             type: 'invalid_mark',
@@ -114,7 +160,11 @@ class JsonParserService {
         continue;
       }
 
-      if (seenExamNumbers.contains(examNumber)) {
+      final subject = (subjectName != null && subjectName.isNotEmpty)
+          ? subjectName
+          : 'عام';
+      final identity = '$examNumber|$subject';
+      if (seenRecords.contains(identity)) {
         issues.add(
           ImportValidationIssue(
             type: 'duplicate_exam',
@@ -125,19 +175,18 @@ class JsonParserService {
         );
         continue;
       }
-      seenExamNumbers.add(examNumber);
+      seenRecords.add(identity);
 
       final status = _normalizeStatus(statusRaw ?? '');
-      final subject = (subjectName != null && subjectName.isNotEmpty)
-          ? subjectName
-          : 'عام';
-
       records.add(
         ResultRecord(
           id: '${examNumber}_${_simpleHash(examNumber)}',
           examNumber: examNumber,
           studentName: studentName ?? '',
+          fatherName: fatherName,
           subjectName: subject,
+          theoreticalMark: theoreticalMark,
+          practicalMark: practicalMark,
           mark: mark,
           total: 100,
           status: status,

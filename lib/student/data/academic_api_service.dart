@@ -1,5 +1,7 @@
 import 'package:studentry/shared/data/api_client.dart';
 import 'package:studentry/student/data/subject_models.dart';
+import 'academic_local_store.dart';
+import 'package:uuid/uuid.dart';
 
 class AcademicApiService {
   const AcademicApiService();
@@ -12,23 +14,39 @@ class AcademicApiService {
   }
 
   Future<Subject> createSubject(Subject subject) async {
-    final response = await _api.post(
+    await AcademicLocalStore.enqueue(
+      'subjects',
+      subject.id,
+      'POST',
       '/academic/subjects',
-      body: _subjectPayload(subject, includeId: true, includeVersion: false),
+      _subjectPayload(subject, includeId: true, includeVersion: false),
+      subject.toJson(),
     );
-    return Subject.fromJson(_map(response.data['data']));
+    return subject;
   }
 
   Future<Subject> updateSubject(Subject subject) async {
-    final response = await _api.put(
+    final updated = {...subject.toJson(), 'version': subject.version + 1};
+    await AcademicLocalStore.enqueue(
+      'subjects',
+      subject.id,
+      'PUT',
       '/academic/subjects/${subject.id}',
-      body: _subjectPayload(subject, includeId: false, includeVersion: true),
+      _subjectPayload(subject, includeId: false, includeVersion: true),
+      updated,
     );
-    return Subject.fromJson(_map(response.data['data']));
+    return Subject.fromJson(updated);
   }
 
   Future<void> deleteSubject(String id) async {
-    await _api.delete('/academic/subjects/$id');
+    await AcademicLocalStore.enqueue(
+      'subjects',
+      id,
+      'DELETE',
+      '/academic/subjects/$id',
+      {},
+      null,
+    );
   }
 
   Future<List<StudentSubject>> enrollments() async {
@@ -37,42 +55,68 @@ class AcademicApiService {
   }
 
   Future<StudentSubject> createEnrollment(StudentSubject enrollment) async {
-    final response = await _api.post(
+    final id = const Uuid().v4();
+    final created = {...enrollment.toJson(), 'enrollmentId': id, 'version': 1};
+    await AcademicLocalStore.enqueue(
+      'enrollments',
+      id,
+      'POST',
       '/academic/enrollments',
-      body: _enrollmentPayload(
-        enrollment,
-        includeId: true,
-        includeVersion: false,
-      ),
+      {
+        ..._enrollmentPayload(
+          enrollment,
+          includeId: true,
+          includeVersion: false,
+        ),
+        'id': id,
+      },
+      created,
     );
-    return StudentSubject.fromJson(_map(response.data['data']));
+    return StudentSubject.fromJson(created);
   }
 
   Future<StudentSubject> updateEnrollment(StudentSubject enrollment) async {
-    final response = await _api.put(
+    final updated = {...enrollment.toJson(), 'version': enrollment.version + 1};
+    await AcademicLocalStore.enqueue(
+      'enrollments',
+      enrollment.enrollmentId,
+      'PUT',
       '/academic/enrollments/${enrollment.enrollmentId}',
-      body: _enrollmentPayload(
-        enrollment,
-        includeId: false,
-        includeVersion: true,
-      ),
+      _enrollmentPayload(enrollment, includeId: false, includeVersion: true),
+      updated,
     );
-    return StudentSubject.fromJson(_map(response.data['data']));
+    return StudentSubject.fromJson(updated);
   }
 
   Future<StudentSubject> markLectureViewed(
     StudentSubject enrollment,
     int lectureNumber,
   ) async {
-    final response = await _api.patch(
+    final updated = {
+      ...enrollment.toJson(),
+      'version': enrollment.version + 1,
+      'viewedLectures': {...enrollment.viewedLectures, lectureNumber}.toList(),
+    };
+    await AcademicLocalStore.enqueue(
+      'enrollments',
+      enrollment.enrollmentId,
+      'PATCH',
       '/academic/enrollments/${enrollment.enrollmentId}/viewed',
-      body: {'lecture_number': lectureNumber, 'version': enrollment.version},
+      {'lecture_number': lectureNumber, 'version': enrollment.version},
+      updated,
     );
-    return StudentSubject.fromJson(_map(response.data['data']));
+    return StudentSubject.fromJson(updated);
   }
 
   Future<void> deleteEnrollment(String enrollmentId) async {
-    await _api.delete('/academic/enrollments/$enrollmentId');
+    await AcademicLocalStore.enqueue(
+      'enrollments',
+      enrollmentId,
+      'DELETE',
+      '/academic/enrollments/$enrollmentId',
+      {},
+      null,
+    );
   }
 
   static Map<String, dynamic> _subjectPayload(

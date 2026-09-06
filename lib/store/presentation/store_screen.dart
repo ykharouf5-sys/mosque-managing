@@ -19,6 +19,7 @@ import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/shared/utils/search_debouncer.dart';
+import 'package:studentry/shared/widgets/pagination_controls.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 const Color kFieldBg = Color(0xFFF4F9FA);
@@ -231,6 +232,31 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                           displayProducts,
                           (a, b) => b.reviewsCount.compareTo(a.reviewsCount),
                         ).take(6).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.w),
+                        child: PaginationControls(
+                          currentPage: catalog.currentProductPage,
+                          lastPage: catalog.lastProductPage,
+                          loading: catalog.isLoadingProducts,
+                          onPrevious: catalog.currentProductPage > 1
+                              ? () => ref
+                                    .read(catalogProvider.notifier)
+                                    .loadProductsPage(
+                                      catalog.currentProductPage - 1,
+                                    )
+                              : null,
+                          onNext:
+                              catalog.currentProductPage <
+                                  catalog.lastProductPage
+                              ? () => ref
+                                    .read(catalogProvider.notifier)
+                                    .loadProductsPage(
+                                      catalog.currentProductPage + 1,
+                                    )
+                              : null,
+                        ),
                       ),
                       const SizedBox(height: 20),
                     ],

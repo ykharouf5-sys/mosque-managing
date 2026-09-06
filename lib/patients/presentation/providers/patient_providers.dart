@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/data/notification_service.dart';
+import 'package:studentry/patients/data/appointment_api_service.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/auth_service.dart';
@@ -99,8 +100,9 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
       initialPayment: initialPayment,
       initialPaymentId: initialPaymentId,
     );
-    _patients.add(patient);
-    _loadedCount = _loadedCount.clamp(0, _patients.length);
+    _patients.insert(0, patient);
+    _loadedCount = (_loadedCount + 1).clamp(1, _patients.length);
+    ref.invalidate(patientDirectoryProvider);
     CacheManager.instance.invalidate(CacheTags.patients);
     state = _display();
     ref.invalidate(localClinicalReportProvider);
@@ -108,7 +110,9 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   }
 
   Future<void> remove(String id) async {
+    await AuthService().ensureLocalAccountActive();
     await AppDatabase.softDeletePatient(id);
+    ref.invalidate(patientDirectoryProvider);
     _patients.removeWhere((p) => p.id == id);
     _loadedCount = _loadedCount.clamp(0, _patients.length);
     CacheManager.instance.invalidate(CacheTags.patients);
@@ -118,15 +122,17 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   }
 
   Future<void> update(String id, PatientProfile updated) async {
+    await AuthService().ensureLocalAccountActive();
+    await AppDatabase.updatePatient(id, profileToPatientRow(updated));
+    ref.invalidate(patientDirectoryProvider);
     final idx = _patients.indexWhere((p) => p.id == id);
     if (idx >= 0) {
-      await AppDatabase.updatePatient(id, profileToPatientRow(updated));
       _patients[idx] = updated;
       CacheManager.instance.invalidate(CacheTags.patients);
       if (idx < _loadedCount) state = _display();
-      ref.invalidate(localClinicalReportProvider);
-      unawaited(SyncService.syncNowWithJitter());
     }
+    ref.invalidate(localClinicalReportProvider);
+    unawaited(SyncService.syncNowWithJitter());
   }
 
   void setList(List<PatientProfile> patients) {
@@ -211,6 +217,18 @@ final appointmentListProvider =
       AppointmentListNotifier.new,
     );
 
+class AppointmentDatePage {
+  final List<Appointment> appointments;
+  final int currentPage;
+  final int lastPage;
+
+  const AppointmentDatePage({
+    required this.appointments,
+    required this.currentPage,
+    required this.lastPage,
+  });
+}
+
 class AppointmentListNotifier extends Notifier<List<Appointment>> {
   static const int pageSize = 25;
   final List<Appointment> _appointments = [];
@@ -244,6 +262,69 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
     await NotificationService.scheduleAllAppointments(_appointments);
   }
 
+  Future<AppointmentDatePage> loadDatePage(
+    DateTime date, {
+    int page = 1,
+  }) async {
+    await AuthService().ensureLocalAccountActive();
+    try {
+      final remote = await AppointmentApiService.fetchDatePage(
+        date,
+        page: page,
+        pageSize: pageSize,
+      );
+      final generation = AppDatabase.captureActiveDataGeneration();
+      final pageAppointments = <String, Appointment>{};
+      for (final row in remote.rows) {
+        final localRow = AppointmentApiService.toLocalRow(row);
+        await AppDatabase.upsertAppointmentFromSync(
+          localRow,
+          expectedGeneration: generation,
+        );
+        final appointment = appointmentRowToAppointment(localRow);
+        final appointmentId = appointment?.id;
+        if (appointment != null && appointmentId != null) {
+          pageAppointments[appointmentId] = appointment;
+        }
+      }
+      // Pending local edits win over the server snapshot until their outbox
+      // operations are accepted. This keeps offline additions visible.
+      final pendingRows = await AppDatabase.getAppointmentsForDate(
+        date,
+        unsyncedOnly: true,
+      );
+      for (final row in pendingRows) {
+        final appointment = appointmentRowToAppointment(row);
+        final appointmentId = appointment?.id;
+        if (appointment != null && appointmentId != null) {
+          pageAppointments[appointmentId] = appointment;
+        }
+      }
+      await loadFromDb();
+      return AppointmentDatePage(
+        appointments: pageAppointments.values.toList(growable: false)
+          ..sort((a, b) => a.time.compareTo(b.time)),
+        currentPage: remote.currentPage,
+        lastPage: remote.lastPage,
+      );
+    } catch (_) {
+      final rows = await AppDatabase.getAppointmentsForDate(date);
+      final start = (page - 1) * pageSize;
+      final end = (start + pageSize).clamp(0, rows.length);
+      final localPage = start >= rows.length
+          ? const <Map<String, dynamic>>[]
+          : rows.sublist(start, end);
+      return AppointmentDatePage(
+        appointments: localPage
+            .map(appointmentRowToAppointment)
+            .whereType<Appointment>()
+            .toList(growable: false),
+        currentPage: page,
+        lastPage: rows.isEmpty ? 1 : ((rows.length + pageSize - 1) ~/ pageSize),
+      );
+    }
+  }
+
   void _cacheAppointments() {
     if (_appointments.isNotEmpty) {
       CacheManager.instance.set(
@@ -273,9 +354,10 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   }
 
   Future<void> add(Appointment appointment) async {
+    await AuthService().ensureLocalAccountActive();
     await AppDatabase.insertAppointment(appointmentToRow(appointment));
-    _appointments.add(appointment);
-    _loadedCount = _loadedCount.clamp(0, _appointments.length);
+    _appointments.insert(0, appointment);
+    _loadedCount = (_loadedCount + 1).clamp(1, _appointments.length);
     CacheManager.instance.invalidate(CacheTags.appointments);
     state = _display();
     await NotificationService.scheduleAllAppointments(_appointments);
@@ -301,15 +383,16 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   }
 
   Future<void> update(String id, Appointment updated) async {
+    await AuthService().ensureLocalAccountActive();
+    await AppDatabase.updateAppointment(id, appointmentToRow(updated));
     final idx = _appointments.indexWhere((a) => a.id == id);
     if (idx >= 0) {
-      await AppDatabase.updateAppointment(id, appointmentToRow(updated));
       _appointments[idx] = updated;
       CacheManager.instance.invalidate(CacheTags.appointments);
       if (idx < _loadedCount) state = _display();
-      await NotificationService.scheduleAllAppointments(_appointments);
-      unawaited(SyncService.syncNowWithJitter());
     }
+    await NotificationService.onAppointmentAdded(updated);
+    unawaited(SyncService.syncNowWithJitter());
   }
 
   void setList(List<Appointment> appointments) {

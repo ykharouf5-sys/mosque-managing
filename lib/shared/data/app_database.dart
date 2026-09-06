@@ -955,6 +955,24 @@ class AppDatabase {
     );
   }
 
+  static Future<List<Map<String, dynamic>>> getAppointmentsForDate(
+    DateTime date, {
+    bool unsyncedOnly = false,
+  }) async {
+    final db = await database;
+    final prefix =
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}%';
+    return db.query(
+      'appointments',
+      where:
+          'deleted_at IS NULL AND date LIKE ?${unsyncedOnly ? ' AND is_synced = 0' : ''}',
+      whereArgs: [prefix],
+      orderBy: 'time, id',
+    );
+  }
+
   static Future<List<Map<String, dynamic>>> getAppointmentsPage(
     int offset,
     int limit,

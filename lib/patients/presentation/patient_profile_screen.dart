@@ -14,6 +14,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:table_calendar/table_calendar.dart';
 import 'package:uuid/uuid.dart';
 import 'package:studentry/patients/presentation/widgets/appointment_datetime_picker.dart';
+import 'package:studentry/patients/presentation/widgets/patient_avatar.dart';
 
 class PatientProfileScreen extends ConsumerStatefulWidget {
   final PatientProfile patient;
@@ -185,14 +186,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
               shape: BoxShape.circle,
               boxShadow: AppShadows.soft,
             ),
-            child: CircleAvatar(
-              radius: 50.r,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.08),
-              child: CircleAvatar(
-                radius: 48.r,
-                backgroundImage: NetworkImage(p.photoUrl),
-              ),
-            ),
+            child: PatientAvatar(radius: 50.r, photoUrl: p.photoUrl),
           ),
           SizedBox(width: 16.w),
           Column(
@@ -1052,6 +1046,11 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                           ),
                                         ),
                                         const SizedBox(width: 10),
+                                        IconButton(
+                                          tooltip: 'تعديل الخطوة',
+                                          onPressed: () => _editTreatmentStep(item),
+                                          icon: const Icon(Icons.edit_outlined, size: 18),
+                                        ),
                                         Expanded(
                                           child: Text(
                                             item.procedureName,
@@ -1096,7 +1095,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                       children: [
                                         Expanded(
                                           child: SizedBox(
-                                            height: 36,
+                                            height: 44,
                                             child: ElevatedButton.icon(
                                               onPressed: isCompleted
                                                   ? null
@@ -1147,7 +1146,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: SizedBox(
-                                            height: 36,
+                                            height: 44,
                                             child: ElevatedButton.icon(
                                               onPressed: !isCompleted
                                                   ? null
@@ -1197,7 +1196,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                         ),
                                         const SizedBox(width: 8),
                                         SizedBox(
-                                          height: 36,
+                                          height: 44,
                                           child: IconButton(
                                             onPressed: () async {
                                               setState(
@@ -1320,6 +1319,30 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         ),
       ],
     );
+  }
+
+  Future<void> _editTreatmentStep(TreatmentItem item) async {
+    final controller = TextEditingController(text: item.procedureName);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تعديل خطوة العلاج'),
+        content: TextField(controller: controller, autofocus: true, maxLines: 3,
+          decoration: const InputDecoration(labelText: 'الخطوة')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(onPressed: () {
+            if (controller.text.trim().isNotEmpty) Navigator.pop(ctx, controller.text.trim());
+          }, child: const Text('حفظ')),
+        ],
+      ),
+    );
+    if (!mounted || name == null) return;
+    final previous = item.procedureName;
+    setState(() => item.procedureName = name);
+    if (!await _persistPatientLocally() && mounted) {
+      setState(() => item.procedureName = previous);
+    }
   }
 
   Widget _buildPhotosTab() {

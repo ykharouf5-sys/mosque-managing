@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'sync_payload.dart';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'api_client.dart';
@@ -279,7 +280,7 @@ class SyncService {
                     'id': item.recordId,
                     'table': item.tableName,
                     'operation': item.operation,
-                    'payload': jsonDecode(item.payload),
+                    'payload': decodeSyncPayload(item.payload),
                   },
                 )
                 .toList(growable: false),
@@ -329,9 +330,7 @@ class SyncService {
         continue;
       }
       try {
-        final payload = Map<String, dynamic>.from(
-          jsonDecode(item.payload) as Map,
-        );
+        final payload = decodeSyncPayload(item.payload);
         if (item.tableName == 'patient_payments') {
           final response = await ApiClient.instance.post(
             '/patients/${payload['patientId']}/payments',
@@ -490,7 +489,7 @@ class SyncService {
                     'id': i.recordId,
                     'table': i.tableName,
                     'operation': i.operation,
-                    'payload': jsonDecode(i.payload),
+                    'payload': decodeSyncPayload(i.payload),
                   },
                 )
                 .toList(),
@@ -575,9 +574,7 @@ class SyncService {
     }
     if (item.tableName == 'patient_payments' && error is ApiException) {
       if (error.statusCode == 403 || error.statusCode == 404) {
-        final payload = Map<String, dynamic>.from(
-          jsonDecode(item.payload) as Map,
-        );
+        final payload = decodeSyncPayload(item.payload);
         await LocalDatabaseService.markAsCompleted(
           item.id,
           expectedGeneration: generation,
@@ -820,7 +817,20 @@ class SyncService {
     if (scopeVersion < 1) {
       throw StateError('Cannot sync without an active clinical scope.');
     }
+    final today = DateTime.now();
+    final windowDay = '${today.year}-${today.month}-${today.day}';
+    final previousWindowDay = await AppDatabase.getMetadata('appointments:window_day');
+    AppDatabase.ensureDataGeneration(generation);
     do {
+      final appointmentUntil = DateTime(
+        today.year,
+        today.month + 3,
+        today.day,
+      );
+      String dateOnly(DateTime date) =>
+          '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}';
       final r = await ApiClient.instance.get(
         '/sync/pull',
         maxRetries: 0,
@@ -828,6 +838,11 @@ class SyncService {
           'since': since,
           'limit': '25',
           'scope_version': '$scopeVersion',
+          // Background sync keeps a bounded reminder window. The appointments
+          // screen requests its selected date separately with REST pagination.
+            'appointment_from': dateOnly(today.subtract(const Duration(days: 7))),
+            'appointment_since': previousWindowDay == windowDay ? since : '1970-01-01T00:00:00Z',
+          'appointment_to': dateOnly(appointmentUntil),
           'cursor': ?cursor,
         },
       );
@@ -867,6 +882,7 @@ class SyncService {
       serverTime = data['server_time']?.toString();
     } while (cursor != null);
     if (serverTime != null) {
+      await AppDatabase.setMetadata('appointments:window_day', windowDay, expectedGeneration: generation);
       await LocalDatabaseService.setLastSyncTime(
         serverTime,
         expectedGeneration: generation,

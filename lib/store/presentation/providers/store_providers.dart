@@ -22,6 +22,8 @@ class CatalogState {
   final List<Coupon> coupons;
   final bool isLoadingProducts;
   final bool hasMoreProducts;
+  final int currentProductPage;
+  final int lastProductPage;
 
   const CatalogState({
     this.banners = const [],
@@ -30,6 +32,8 @@ class CatalogState {
     this.coupons = const [],
     this.isLoadingProducts = false,
     this.hasMoreProducts = true,
+    this.currentProductPage = 1,
+    this.lastProductPage = 1,
   });
 
   CatalogState copyWith({
@@ -39,6 +43,8 @@ class CatalogState {
     List<Coupon>? coupons,
     bool? isLoadingProducts,
     bool? hasMoreProducts,
+    int? currentProductPage,
+    int? lastProductPage,
   }) {
     return CatalogState(
       banners: banners ?? this.banners,
@@ -47,6 +53,8 @@ class CatalogState {
       coupons: coupons ?? this.coupons,
       isLoadingProducts: isLoadingProducts ?? this.isLoadingProducts,
       hasMoreProducts: hasMoreProducts ?? this.hasMoreProducts,
+      currentProductPage: currentProductPage ?? this.currentProductPage,
+      lastProductPage: lastProductPage ?? this.lastProductPage,
     );
   }
 }
@@ -141,7 +149,8 @@ class CatalogNotifier extends Notifier<CatalogState> {
     state = state.copyWith(isLoadingProducts: true);
     _currentProductPage = 0;
     try {
-      final rows = await StoreApiService.fetchProductsPage(0, productPageSize);
+      final page = await StoreApiService.fetchProductPage(1, productPageSize);
+      final rows = page.rows;
       final categoryNames = {
         for (final category in _categories) category.id: category.label,
       };
@@ -169,7 +178,8 @@ class CatalogNotifier extends Notifier<CatalogState> {
       _products
         ..clear()
         ..addAll(parsed);
-      final hasMore = rows.length >= productPageSize;
+      _currentProductPage = page.currentPage - 1;
+      final hasMore = page.currentPage < page.lastPage;
       _recalcProductCounts();
       _cacheProducts();
       state = state.copyWith(
@@ -177,6 +187,8 @@ class CatalogNotifier extends Notifier<CatalogState> {
         products: [..._products],
         isLoadingProducts: false,
         hasMoreProducts: hasMore,
+        currentProductPage: page.currentPage,
+        lastProductPage: page.lastPage,
       );
     } catch (_) {
       // Keep the cached snapshot visible when the server is unreachable.
@@ -184,16 +196,17 @@ class CatalogNotifier extends Notifier<CatalogState> {
     }
   }
 
-  /// Loads the next page of products from REST and appends to the list.
-  Future<void> loadNextProductsPage() async {
-    if (state.isLoadingProducts || !state.hasMoreProducts) return;
+  /// Replaces the current products with exactly one REST page.
+  Future<void> loadProductsPage(int requestedPage) async {
+    if (state.isLoadingProducts || requestedPage < 1) return;
     state = state.copyWith(isLoadingProducts: true);
-    _currentProductPage++;
+    final previousPage = _currentProductPage;
     try {
-      final rows = await StoreApiService.fetchProductsPage(
-        _currentProductPage,
+      final page = await StoreApiService.fetchProductPage(
+        requestedPage,
         productPageSize,
       );
+      final rows = page.rows;
       final parsed = rows.map((row) {
         final m = StoreApiService.rowToProductMap(row);
         return Product(
@@ -215,21 +228,29 @@ class CatalogNotifier extends Notifier<CatalogState> {
           deliveryPrice: (m['deliveryPrice'] as num?)?.toDouble() ?? 0,
         );
       }).toList();
-      _products.addAll(parsed);
+      _products
+        ..clear()
+        ..addAll(parsed);
+      _currentProductPage = page.currentPage - 1;
       _recalcProductCounts();
       _cacheProducts();
-      final hasMore = rows.length >= productPageSize;
+      final hasMore = page.currentPage < page.lastPage;
       state = state.copyWith(
         categories: [..._categories],
         products: [..._products],
         isLoadingProducts: false,
         hasMoreProducts: hasMore,
+        currentProductPage: page.currentPage,
+        lastProductPage: page.lastPage,
       );
     } catch (_) {
-      _currentProductPage--;
+      _currentProductPage = previousPage;
       state = state.copyWith(isLoadingProducts: false);
     }
   }
+
+  Future<void> loadNextProductsPage() =>
+      loadProductsPage(state.currentProductPage + 1);
 
   void _cacheProducts() {
     if (_products.isNotEmpty) {

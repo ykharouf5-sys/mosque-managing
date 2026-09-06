@@ -20,7 +20,6 @@ class StorePollingService {
   static int _generation = 0;
   static int? _pollingGeneration;
   static String? _accountId;
-  static String? _clinicId;
   static bool _isAppActive = true;
   static DateTime? _lastPollAt;
   static int? _lastPolledGeneration;
@@ -43,8 +42,8 @@ class StorePollingService {
     if (active &&
         ConnectivityService.isOnline.value &&
         _accountId != null &&
-        _clinicId != null) {
-      _pollNow(_generation, _accountId!, _clinicId!);
+        _accountId != null) {
+      _pollNow(_generation, _accountId!);
     }
   }
 
@@ -55,30 +54,24 @@ class StorePollingService {
     _onNewOrders = null;
     _pendingOrders.clear();
     _accountId = null;
-    _clinicId = null;
 
     final auth = AuthService();
     final role = auth.role;
     final accountId = auth.userId;
-    final clinicId = auth.clinicId;
+    // Store orders belong to the account and are not clinical data. A sales
+    // or warehouse manager must keep receiving order updates without a clinic.
     if ((role != 'warehouse_manager' && role != 'sales_manager') ||
-        accountId == null ||
-        clinicId == null) {
+        accountId == null) {
       return;
     }
     _accountId = accountId;
-    _clinicId = clinicId;
-    if (_isAppActive) await _pollNow(generation, accountId, clinicId);
-    if (!_isCurrent(generation, accountId, clinicId)) return;
-    _scheduleNextPoll(generation, accountId, clinicId);
+    if (_isAppActive) await _pollNow(generation, accountId);
+    if (!_isCurrent(generation, accountId)) return;
+    _scheduleNextPoll(generation, accountId);
   }
 
-  static void _scheduleNextPoll(
-    int generation,
-    String accountId,
-    String clinicId,
-  ) {
-    if (!_isCurrent(generation, accountId, clinicId)) return;
+  static void _scheduleNextPoll(int generation, String accountId) {
+    if (!_isCurrent(generation, accountId)) return;
     _timer?.cancel();
     final delay =
         _pollInterval -
@@ -88,18 +81,14 @@ class StorePollingService {
         );
     _timer = Timer(delay, () async {
       if (_isAppActive && ConnectivityService.isOnline.value) {
-        await _pollNow(generation, accountId, clinicId);
+        await _pollNow(generation, accountId);
       }
-      _scheduleNextPoll(generation, accountId, clinicId);
+      _scheduleNextPoll(generation, accountId);
     });
   }
 
-  static Future<void> _pollNow(
-    int generation,
-    String accountId,
-    String clinicId,
-  ) async {
-    if (!_isCurrent(generation, accountId, clinicId) ||
+  static Future<void> _pollNow(int generation, String accountId) async {
+    if (!_isCurrent(generation, accountId) ||
         _pollingGeneration == generation) {
       return;
     }
@@ -111,13 +100,13 @@ class StorePollingService {
     _pollingGeneration = generation;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final lastCheckKey = '$_lastCheckKeyPrefix:$accountId:$clinicId';
+      final lastCheckKey = '$_lastCheckKeyPrefix:$accountId';
       final lastCheck =
           prefs.getString(lastCheckKey) ?? '1970-01-01T00:00:00.000';
       final requestStartedAt = DateTime.now().toUtc().toIso8601String();
 
       final rows = await StoreApiService.fetchOrdersSince(lastCheck);
-      if (!_isCurrent(generation, accountId, clinicId)) return;
+      if (!_isCurrent(generation, accountId)) return;
       _lastPollAt = DateTime.now();
       _lastPolledGeneration = generation;
       await prefs.setString(lastCheckKey, requestStartedAt);
@@ -166,7 +155,7 @@ class StorePollingService {
         );
       }
 
-      if (!_isCurrent(generation, accountId, clinicId)) return;
+      if (!_isCurrent(generation, accountId)) return;
       if (_onNewOrders != null) {
         _onNewOrders!(newOrders);
       } else {
@@ -178,12 +167,11 @@ class StorePollingService {
     }
   }
 
-  static bool _isCurrent(int generation, String accountId, String clinicId) =>
+  static bool _isCurrent(int generation, String accountId) =>
       generation == _generation &&
       _accountId == accountId &&
-      _clinicId == clinicId &&
       AuthService().userId == accountId &&
-      AuthService().clinicId == clinicId;
+      AuthService().isLoggedIn;
 
   static void dispose() {
     _generation++;
@@ -192,6 +180,5 @@ class StorePollingService {
     _onNewOrders = null;
     _pendingOrders.clear();
     _accountId = null;
-    _clinicId = null;
   }
 }
