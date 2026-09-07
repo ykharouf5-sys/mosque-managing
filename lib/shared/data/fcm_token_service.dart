@@ -139,12 +139,15 @@ class FcmTokenService {
     return registration;
   }
 
-  static Future<void> _registerToken(String token) async {
+  static Future<void> _registerToken(
+    String token, {
+    bool allowRotation = true,
+  }) async {
     final session = _session;
     try {
       final deviceId = await _deviceId();
       if (!_authenticated || session != _session) return;
-      await ApiClient.instance.post(
+      final response = await ApiClient.instance.post(
         '/devices/fcm-token',
         body: {
           'token': token,
@@ -153,6 +156,25 @@ class FcmTokenService {
         },
         maxRetries: 1,
       );
+      final responseData = response.data is Map ? response.data['data'] : null;
+      final refreshRequired =
+          responseData is Map && responseData['refresh_required'] == true;
+      if (refreshRequired && allowRotation) {
+        _registeredToken = null;
+        await FirebaseMessaging.instance.deleteToken();
+        if (!_authenticated || session != _session) return;
+        final freshToken = await FirebaseMessaging.instance.getToken();
+        if (freshToken == null || freshToken == token) {
+          _scheduleRetry(session);
+          return;
+        }
+        await _registerToken(freshToken, allowRotation: false);
+        return;
+      }
+      if (refreshRequired) {
+        _scheduleRetry(session);
+        return;
+      }
       if (_authenticated && session == _session) {
         _registeredToken = token;
         _retryTimer?.cancel();
