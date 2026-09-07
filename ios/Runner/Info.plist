@@ -32,8 +32,6 @@
 		<string>يستخدم Studentry مكتبة الصور لاختيار الصور والمستندات التي تقرر مشاركتها داخل التطبيق.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
 		<string>يحفظ Studentry التقارير والملفات التي تطلب تصديرها إلى جهازك.</string>
-		<key>NSFaceIDUsageDescription</key>
-		<string>يستخدم Studentry بصمة الوجه لحماية الوصول إلى بيانات حسابك عند تفعيل القفل الحيوي.</string>
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:studentry/auth/data/biometric_service.dart';
 import 'package:studentry/management/presentation/privacy_policy_screen.dart';
 import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
@@ -23,8 +22,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _biometricEnabled = false;
-  bool _biometricAvailable = false;
   String _appLanguage = 'ar';
   bool _deletingAccount = false;
   bool _exactRemindersEnabled = false;
@@ -50,20 +47,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  Future<void> _loadBiometricStatus() async {
-    final available = await BiometricService.isAvailable();
-    final enabled = await BiometricService.isEnabled();
-    if (mounted) {
-      setState(() {
-        _biometricAvailable = available;
-        _biometricEnabled = enabled;
-      });
-    }
-  }
-
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    _loadBiometricStatus();
     _loadExactReminderStatus();
     if (mounted) {
       setState(() {
@@ -199,7 +184,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       logs.writeln('=== Studentry Logs ===');
       logs.writeln('Export Date: ${DateTime.now().toIso8601String()}');
       logs.writeln('App Language: $_appLanguage');
-      logs.writeln('Biometric Lock: $_biometricEnabled');
 
       final bytes = Uint8List.fromList(utf8.encode(logs.toString()));
       await FilePicker.saveFile(
@@ -331,26 +315,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
               ),
               onTap: _showLanguagePicker,
-            ),
-            SizedBox(height: 24.h),
-            _buildSection('الأمان'),
-            _buildSettingTile(
-              icon: Icons.fingerprint,
-              title: 'قفل التطبيق بالبصمة',
-              subtitle: _biometricAvailable
-                  ? 'قفل التطبيق عند التصغير'
-                  : 'البصمة غير متوفرة على هذا الجهاز',
-              trailing: Switch(
-                value: _biometricEnabled,
-                activeTrackColor: AppColors.primary.withValues(alpha: 0.5),
-                activeThumbColor: AppColors.primary,
-                onChanged: _biometricAvailable
-                    ? (value) async {
-                        await BiometricService.setEnabled(value);
-                        setState(() => _biometricEnabled = value);
-                      }
-                    : null,
-              ),
             ),
             SizedBox(height: 24.h),
             if (NotificationService.supportsExactAlarmPermission) ...[
