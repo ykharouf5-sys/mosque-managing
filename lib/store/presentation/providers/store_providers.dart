@@ -787,6 +787,11 @@ class FavoritesNotifier extends Notifier<FavoritesState> {
       state = FavoritesState(productIds: Set.from(_productIds));
     } on StaleSessionException {
       return;
+    } catch (_) {
+      // This load starts in a background microtask. Keep the account-scoped
+      // snapshot when the device is offline instead of surfacing an unhandled
+      // asynchronous exception.
+      return;
     }
   }
 

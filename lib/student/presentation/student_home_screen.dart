@@ -31,11 +31,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
   }
 
   Future<void> _refreshTodayData({bool force = false}) async {
-    final changed = await ref
-        .read(patientListProvider.notifier)
-        .refreshFromApi(force: force);
-    if (!changed) {
-      await ref.read(appointmentListProvider.notifier).loadFromDb();
+    final patients = ref.read(patientListProvider.notifier);
+    final appointments = ref.read(appointmentListProvider.notifier);
+    final changed = await patients.refreshFromApi(force: force);
+    if (!changed && mounted) {
+      await appointments.loadFromDb();
     }
   }
 
