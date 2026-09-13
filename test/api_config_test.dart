@@ -36,5 +36,29 @@ void main() {
         returnsNormally,
       );
     });
+
+    test('allows a private LAN endpoint only with explicit opt-in', () {
+      const localUrl = 'http://192.168.1.103:8000/api/v1';
+      expect(
+        () => ApiConfig.validateForRelease(isRelease: true, url: localUrl),
+        throwsStateError,
+      );
+      expect(
+        () => ApiConfig.validateForRelease(
+          isRelease: true,
+          url: localUrl,
+          allowInsecureLocal: true,
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => ApiConfig.validateForRelease(
+          isRelease: true,
+          url: 'http://api.studentry.example/api/v1',
+          allowInsecureLocal: true,
+        ),
+        throwsStateError,
+      );
+    });
   });
 }

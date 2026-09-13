@@ -24,6 +24,10 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Production stays HTTPS-only. A release-signed APK may opt into
+        // private-LAN HTTP for physical-device testing via the Gradle property
+        // `allowLocalLanApi=true`.
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     val keystoreProperties = Properties()
@@ -45,6 +49,11 @@ android {
 
     buildTypes {
         release {
+            val allowLocalLanApi = providers.gradleProperty("allowLocalLanApi")
+                .orNull
+                ?.toBooleanStrictOrNull()
+                ?: false
+            manifestPlaceholders["usesCleartextTraffic"] = allowLocalLanApi.toString()
             val releaseRequested = gradle.startParameter.taskNames.any {
                 it.contains("release", ignoreCase = true)
             }
