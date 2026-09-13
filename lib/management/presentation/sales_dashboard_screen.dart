@@ -2061,7 +2061,8 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
         .where(
           (o) =>
               o.createdAt.isAfter(monthStart) &&
-              o.status != OrderStatus.cancelled,
+              o.status != OrderStatus.cancelled &&
+              o.status != OrderStatus.rejected,
         )
         .toList();
 
@@ -2096,6 +2097,9 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
           .length,
       OrderStatus.delivered: orders
           .where((o) => o.status == OrderStatus.delivered)
+          .length,
+      OrderStatus.rejected: orders
+          .where((o) => o.status == OrderStatus.rejected)
           .length,
       OrderStatus.cancelled: orders
           .where((o) => o.status == OrderStatus.cancelled)
@@ -2273,6 +2277,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
       OrderStatus.preparing: const Color(0xFF9C27B0),
       OrderStatus.outForDelivery: const Color(0xFF2196F3),
       OrderStatus.delivered: AppColors.success,
+      OrderStatus.rejected: Colors.red,
       OrderStatus.cancelled: Colors.red,
     };
     final labels = {
@@ -2281,6 +2286,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
       OrderStatus.preparing: 'تحضير',
       OrderStatus.outForDelivery: 'توصيل',
       OrderStatus.delivered: 'تم',
+      OrderStatus.rejected: 'مرفوض',
       OrderStatus.cancelled: 'ملغي',
     };
 
@@ -2486,7 +2492,8 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
             (o) =>
                 o.createdAt.isAfter(dayStart) &&
                 o.createdAt.isBefore(dayEnd) &&
-                o.status != OrderStatus.cancelled,
+                o.status != OrderStatus.cancelled &&
+                o.status != OrderStatus.rejected,
           )
           .fold<double>(0, (s, o) => s + o.totalPrice);
     }).toList();
@@ -2596,6 +2603,8 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
         return const Color(0xFF2196F3);
       case OrderStatus.delivered:
         return AppColors.success;
+      case OrderStatus.rejected:
+        return Colors.red;
       case OrderStatus.cancelled:
         return Colors.red;
     }

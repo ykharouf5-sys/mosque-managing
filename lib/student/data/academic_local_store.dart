@@ -140,10 +140,12 @@ class AcademicLocalStore {
     await _schema(db);
     AppDatabase.ensureDataGeneration(generation);
     final operations = await db.query('academic_outbox', orderBy: 'sequence');
+    String? firstPermanentError;
     for (final operation in operations) {
       AppDatabase.ensureDataGeneration(generation);
       if (operation['error'] != null) {
-        throw StateError('عملية دراسية تحتاج مراجعة: ${operation['error']}');
+        firstPermanentError ??= operation['error'].toString();
+        continue;
       }
       final headers = {'Idempotency-Key': operation['operation_id'] as String};
       final path = operation['path'] as String;
@@ -171,15 +173,21 @@ class AcademicLocalStore {
       } on ApiException catch (error) {
         AppDatabase.ensureDataGeneration(generation);
         if ([403, 404, 409, 422].contains(error.statusCode)) {
+          final message = '${error.statusCode}: ${error.message}';
           await db.update(
             'academic_outbox',
-            {'error': '${error.statusCode}: ${error.message}'},
+            {'error': message},
             where: 'sequence = ?',
             whereArgs: [operation['sequence']],
           );
+          firstPermanentError ??= message;
+          continue;
         }
         rethrow;
       }
+    }
+    if (firstPermanentError != null) {
+      throw StateError('عملية دراسية تحتاج مراجعة: $firstPermanentError');
     }
   }
 }

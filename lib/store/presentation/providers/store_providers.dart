@@ -997,25 +997,14 @@ class OrdersNotifier extends Notifier<OrdersState> {
         id: m['id'] as String,
         userId: m['userId'] as String? ?? '',
         items:
-            (m['items'] as List?)?.map((i) {
-              final item = i as Map<String, dynamic>;
-              return CartItem(
-                product: Product(
-                  id: item['productId']?.toString() ?? '',
-                  name: item['productName']?.toString() ?? '',
-                  description: '',
-                  price: (item['price'] as num?)?.toDouble() ?? 0,
-                  imageUrl: '',
-                  categoryId: '',
-                  categoryName: '',
-                  stock: 0,
-                  createdAt: DateTime.now(),
-                ),
-                quantity: (item['quantity'] as num?)?.toInt() ?? 1,
-              );
-            }).toList() ??
+            (m['items'] as List?)
+                ?.whereType<Map>()
+                .map(
+                  (item) => CartItem.fromJson(Map<String, dynamic>.from(item)),
+                )
+                .toList() ??
             [],
-        status: _parseStatus(m['status']?.toString()),
+        status: orderStatusFromWire(m['status']?.toString()),
         totalPrice: (m['totalPrice'] as num?)?.toDouble() ?? 0,
         paymentMethod: m['paymentMethod']?.toString() ?? 'cod',
         createdAt:
@@ -1030,30 +1019,6 @@ class OrdersNotifier extends Notifier<OrdersState> {
         region: m['region']?.toString(),
       );
     }).toList();
-  }
-
-  OrderStatus _parseStatus(String? s) {
-    switch (s?.toLowerCase()) {
-      case 'pending':
-        return OrderStatus.pending;
-      case 'accepted':
-      case 'approved':
-        return OrderStatus.accepted;
-      case 'preparing':
-      case 'processing':
-        return OrderStatus.preparing;
-      case 'out_for_delivery':
-      case 'outfordelivery':
-      case 'shipped':
-        return OrderStatus.outForDelivery;
-      case 'delivered':
-        return OrderStatus.delivered;
-      case 'cancelled':
-      case 'rejected':
-        return OrderStatus.cancelled;
-      default:
-        return OrderStatus.pending;
-    }
   }
 }
 

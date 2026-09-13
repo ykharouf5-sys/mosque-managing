@@ -127,10 +127,7 @@ class StorePollingService {
             id: map['id'] as String,
             items: items,
             totalPrice: (map['totalPrice'] as num?)?.toDouble() ?? 0,
-            status: OrderStatus.values.firstWhere(
-              (s) => s.name == statusStr,
-              orElse: () => OrderStatus.pending,
-            ),
+            status: orderStatusFromWire(statusStr),
             createdAt: DateTime.parse(map['createdAt'] as String),
             updatedAt: DateTime.parse(map['updatedAt'] as String),
             userId: map['userId'] as String? ?? '',

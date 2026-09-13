@@ -372,14 +372,66 @@ class StoreApiService {
     final d = Map<String, dynamic>.from(r['details'] as Map? ?? {});
     return {
       'id': r['id'],
-      'items': r['items'] ?? [],
-      'totalPrice': (r['total'] as num?)?.toDouble() ?? 0,
+      'items': _normalizeOrderItems(r['items']),
+      'totalPrice': _toDouble(r['total'] ?? r['totalPrice']),
       'status': r['status'] ?? 'pending',
       'createdAt': r['created_at'],
       'updatedAt': r['updated_at'] ?? r['created_at'],
       'userId': r['user_id'] ?? '',
       ...d,
     };
+  }
+
+  static List<Map<String, dynamic>> _normalizeOrderItems(dynamic value) {
+    final decoded = value is String ? jsonDecode(value) : value;
+    if (decoded is! List) return const [];
+
+    return decoded.whereType<Map>().map((raw) {
+      final item = Map<String, dynamic>.from(raw);
+      final nested = item['product'];
+      final product = nested is Map
+          ? Map<String, dynamic>.from(nested)
+          : const <String, dynamic>{};
+      final quantity = _toInt(item['quantity']);
+      return <String, dynamic>{
+        'product': <String, dynamic>{
+          'id':
+              product['id']?.toString() ??
+              item['product_id']?.toString() ??
+              item['productId']?.toString() ??
+              '',
+          'name':
+              product['name']?.toString() ??
+              item['product_name']?.toString() ??
+              item['productName']?.toString() ??
+              '',
+          'brand': product['brand']?.toString() ?? '',
+          'description': product['description']?.toString() ?? '',
+          'imageUrl':
+              product['imageUrl']?.toString() ??
+              product['image_url']?.toString() ??
+              '',
+          'categoryId':
+              product['categoryId']?.toString() ??
+              product['category_id']?.toString() ??
+              '',
+          'categoryName': product['categoryName']?.toString() ?? '',
+          'price': _toDouble(
+            product['price'] ?? item['unit_price'] ?? item['price'],
+          ),
+          'rating': _toDouble(product['rating']),
+          'reviewsCount': _toInt(product['reviewsCount']),
+          'stock': _toInt(product['stock']),
+          'createdAt':
+              product['createdAt']?.toString() ??
+              DateTime.fromMillisecondsSinceEpoch(0).toIso8601String(),
+          if (product['academicYear'] != null)
+            'academicYear': product['academicYear'],
+          'deliveryPrice': _toDouble(product['deliveryPrice']),
+        },
+        'quantity': quantity > 0 ? quantity : 1,
+      };
+    }).toList();
   }
 
   static Map<String, dynamic> orderToRow(Map<String, dynamic> o) => {

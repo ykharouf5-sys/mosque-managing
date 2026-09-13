@@ -187,7 +187,31 @@ enum OrderStatus {
   preparing,
   outForDelivery,
   delivered,
+  rejected,
   cancelled,
+}
+
+OrderStatus orderStatusFromWire(String? value) {
+  switch (value?.toLowerCase()) {
+    case 'accepted':
+    case 'approved':
+      return OrderStatus.accepted;
+    case 'preparing':
+    case 'processing':
+      return OrderStatus.preparing;
+    case 'out_for_delivery':
+    case 'outfordelivery':
+    case 'shipped':
+      return OrderStatus.outForDelivery;
+    case 'delivered':
+      return OrderStatus.delivered;
+    case 'rejected':
+      return OrderStatus.rejected;
+    case 'cancelled':
+      return OrderStatus.cancelled;
+    default:
+      return OrderStatus.pending;
+  }
 }
 
 String orderStatusLabel(OrderStatus status) {
@@ -202,6 +226,8 @@ String orderStatusLabel(OrderStatus status) {
       return 'خرج للتوصيل';
     case OrderStatus.delivered:
       return 'تم التسليم';
+    case OrderStatus.rejected:
+      return 'مرفوض';
     case OrderStatus.cancelled:
       return 'ملغي';
   }
@@ -287,10 +313,7 @@ class Order {
         .map((i) => CartItem.fromJson(i as Map<String, dynamic>))
         .toList(),
     totalPrice: (json['totalPrice'] as num).toDouble(),
-    status: OrderStatus.values.firstWhere(
-      (s) => s.name == json['status'],
-      orElse: () => OrderStatus.pending,
-    ),
+    status: orderStatusFromWire(json['status']?.toString()),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
     userId: json['userId'] as String,

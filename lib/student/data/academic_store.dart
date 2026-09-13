@@ -117,7 +117,15 @@ class AcademicStore extends ChangeNotifier {
       await _syncLectureReminders();
       notifyListeners();
       if (!ConnectivityService.isOnline.value) return;
-      await AcademicLocalStore.flush();
+      Object? pushError;
+      try {
+        await AcademicLocalStore.flush();
+      } catch (error) {
+        // A rejected local mutation must remain visible for manual review, but
+        // it must not block downloading subjects/enrollments changed by other
+        // accounts.
+        pushError = error;
+      }
       final values = await Future.wait([_api.subjects(), _api.enrollments()]);
       _ensureGeneration(generation);
       await AcademicLocalStore.replace(
@@ -143,8 +151,14 @@ class AcademicStore extends ChangeNotifier {
         ..addAll(current[1].map(StudentSubject.fromJson));
       await _syncLectureReminders();
       _loaded = true;
-      _failures = 0;
-      _retryAfter = null;
+      if (pushError == null) {
+        _failures = 0;
+        _retryAfter = null;
+      } else {
+        _error = pushError.toString();
+        _failures = (_failures + 1).clamp(1, 6);
+        _retryAfter = DateTime.now().add(const Duration(seconds: 30));
+      }
     } on StaleSessionException {
       return;
     } catch (error) {

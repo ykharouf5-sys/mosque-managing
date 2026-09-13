@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -15,12 +17,15 @@ class MyOrdersScreen extends ConsumerStatefulWidget {
   ConsumerState<MyOrdersScreen> createState() => _MyOrdersScreenState();
 }
 
-class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
+class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     Future.microtask(() async {
       try {
@@ -29,13 +34,33 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
         // Keep locally queued/cached orders visible while offline.
       }
     });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) unawaited(_refreshSilently());
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshSilently());
+    }
+  }
+
+  Future<void> _refreshSilently() async {
+    try {
+      await ref.read(ordersProvider.notifier).loadInitialOrders();
+    } catch (_) {
+      // Keep the last account-scoped snapshot visible while temporarily offline.
+    }
   }
 
   void _onScroll() {
@@ -51,20 +76,35 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
 
   Color _statusColor(OrderStatus status) {
     if (status == OrderStatus.delivered) return AppColors.success;
-    if (status == OrderStatus.cancelled) return Colors.red;
+    if (status == OrderStatus.cancelled || status == OrderStatus.rejected) {
+      return Colors.red;
+    }
     return AppColors.primary;
   }
 
   IconData _statusIcon(OrderStatus status) {
     if (status == OrderStatus.delivered) return Icons.verified;
-    if (status == OrderStatus.cancelled) return Icons.cancel_outlined;
+    if (status == OrderStatus.cancelled || status == OrderStatus.rejected) {
+      return Icons.cancel_outlined;
+    }
     return Icons.check_circle_outline;
   }
 
   String _customerStatusLabel(OrderStatus status) {
-    if (status == OrderStatus.delivered) return 'تم التوصيل';
-    if (status == OrderStatus.cancelled) return 'لم يتم التوصيل';
-    return 'تم الطلب';
+    switch (status) {
+      case OrderStatus.pending:
+        return 'تم إرسال الطلب';
+      case OrderStatus.accepted:
+      case OrderStatus.preparing:
+      case OrderStatus.outForDelivery:
+        return 'تم قبول الطلب';
+      case OrderStatus.delivered:
+        return 'تم التوصيل';
+      case OrderStatus.rejected:
+        return 'تم رفض الطلب';
+      case OrderStatus.cancelled:
+        return 'تم إلغاء الطلب';
+    }
   }
 
   @override
@@ -86,25 +126,29 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
         ),
         body: myOrders.isEmpty && !ordersState.isLoadingMore
             ? _buildEmpty()
-            : ListView.builder(
-                controller: _scrollController,
-                padding: EdgeInsets.all(16.r),
-                itemCount:
-                    myOrders.length + (ordersState.isLoadingMore ? 1 : 0),
-                itemBuilder: (_, i) {
-                  if (i >= myOrders.length) {
-                    return Padding(
-                      padding: EdgeInsets.all(16.r),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
+            : RefreshIndicator(
+                onRefresh: () =>
+                    ref.read(ordersProvider.notifier).loadInitialOrders(),
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: EdgeInsets.all(16.r),
+                  itemCount:
+                      myOrders.length + (ordersState.isLoadingMore ? 1 : 0),
+                  itemBuilder: (_, i) {
+                    if (i >= myOrders.length) {
+                      return Padding(
+                        padding: EdgeInsets.all(16.r),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
                         ),
-                      ),
-                    );
-                  }
-                  return _buildOrderCard(myOrders[i]);
-                },
+                      );
+                    }
+                    return _buildOrderCard(myOrders[i]);
+                  },
+                ),
               ),
       ),
     );
