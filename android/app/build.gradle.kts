@@ -75,6 +75,37 @@ flutter {
     source = "../.."
 }
 
+// Flutter 3.44 can leave Android's generated registrant from a previous
+// debug/integration-test run while correctly excluding dev plugins from the
+// release Gradle dependencies. Remove only that stale dev-plugin block before
+// release Java compilation; normal plugins and integration-test builds remain
+// unchanged.
+val filterDevPluginsFromReleaseRegistrant by tasks.registering {
+    outputs.upToDateWhen { false }
+    doLast {
+        val registrant = file(
+            "src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
+        )
+        if (!registrant.exists()) return@doLast
+
+        var source = registrant.readText()
+        val marker = "dev.flutter.plugins.integration_test.IntegrationTestPlugin"
+        val markerIndex = source.indexOf(marker)
+        if (markerIndex < 0) return@doLast
+
+        val blockStart = source.lastIndexOf("    try {", markerIndex)
+        val nextBlock = source.indexOf("    try {", markerIndex + marker.length)
+        if (blockStart >= 0 && nextBlock > blockStart) {
+            source = source.removeRange(blockStart, nextBlock)
+            registrant.writeText(source)
+        }
+    }
+}
+
+tasks.matching { it.name == "compileReleaseJavaWithJavac" }.configureEach {
+    dependsOn(filterDevPluginsFromReleaseRegistrant)
+}
+
 dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.14.1"))
     implementation("com.google.firebase:firebase-messaging")

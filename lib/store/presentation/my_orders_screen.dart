@@ -22,9 +22,11 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    Future.microtask(() {
-      if (ref.read(ordersProvider).orders.isEmpty) {
-        ref.read(ordersProvider.notifier).loadInitialOrders();
+    Future.microtask(() async {
+      try {
+        await ref.read(ordersProvider.notifier).loadInitialOrders();
+      } catch (_) {
+        // Keep locally queued/cached orders visible while offline.
       }
     });
   }
@@ -48,62 +50,22 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
   }
 
   Color _statusColor(OrderStatus status) {
-    switch (status) {
-      case OrderStatus.pending:
-        return AppColors.pending;
-      case OrderStatus.accepted:
-        return AppColors.primary;
-      case OrderStatus.preparing:
-        return const Color(0xFF9C27B0);
-      case OrderStatus.outForDelivery:
-        return const Color(0xFF2196F3);
-      case OrderStatus.delivered:
-        return AppColors.success;
-      case OrderStatus.cancelled:
-        return Colors.red;
-    }
+    if (status == OrderStatus.delivered) return AppColors.success;
+    if (status == OrderStatus.cancelled) return Colors.red;
+    return AppColors.primary;
   }
 
   IconData _statusIcon(OrderStatus status) {
-    switch (status) {
-      case OrderStatus.pending:
-        return Icons.schedule;
-      case OrderStatus.accepted:
-        return Icons.check_circle_outline;
-      case OrderStatus.preparing:
-        return Icons.inventory_2;
-      case OrderStatus.outForDelivery:
-        return Icons.local_shipping;
-      case OrderStatus.delivered:
-        return Icons.verified;
-      case OrderStatus.cancelled:
-        return Icons.cancel_outlined;
-    }
+    if (status == OrderStatus.delivered) return Icons.verified;
+    if (status == OrderStatus.cancelled) return Icons.cancel_outlined;
+    return Icons.check_circle_outline;
   }
 
-  static const List<OrderStatus> _timelineSteps = [
-    OrderStatus.pending,
-    OrderStatus.accepted,
-    OrderStatus.preparing,
-    OrderStatus.outForDelivery,
-    OrderStatus.delivered,
-  ];
-
-  static const Map<OrderStatus, String> _timelineLabels = {
-    OrderStatus.pending: 'قيد الانتظار',
-    OrderStatus.accepted: 'تم القبول',
-    OrderStatus.preparing: 'قيد التحضير',
-    OrderStatus.outForDelivery: 'خرج للتوصيل',
-    OrderStatus.delivered: 'تم التسليم',
-  };
-
-  static const Map<OrderStatus, IconData> _timelineIcons = {
-    OrderStatus.pending: Icons.schedule,
-    OrderStatus.accepted: Icons.check_circle_outline,
-    OrderStatus.preparing: Icons.inventory_2,
-    OrderStatus.outForDelivery: Icons.local_shipping,
-    OrderStatus.delivered: Icons.verified,
-  };
+  String _customerStatusLabel(OrderStatus status) {
+    if (status == OrderStatus.delivered) return 'تم التوصيل';
+    if (status == OrderStatus.cancelled) return 'لم يتم التوصيل';
+    return 'تم الطلب';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,9 +150,6 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
 
   Widget _buildOrderCard(Order order) {
     final statusColor = _statusColor(order.status);
-    final isCancelled = order.status == OrderStatus.cancelled;
-    final currentStepIdx = _timelineSteps.indexOf(order.status);
-
     return Container(
       margin: EdgeInsets.only(bottom: 12.h),
       decoration: BoxDecoration(
@@ -234,7 +193,7 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                orderStatusLabel(order.status),
+                _customerStatusLabel(order.status),
                 style: TextStyle(
                   color: statusColor,
                   fontSize: 11.sp,
@@ -304,8 +263,6 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
             ),
           ),
           SizedBox(height: 8.h),
-          _buildTimeline(order, currentStepIdx, isCancelled),
-          SizedBox(height: 8.h),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -325,134 +282,6 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildTimeline(Order order, int currentStepIdx, bool isCancelled) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'تتبع الطلب',
-          style: TextStyle(
-            color: AppColors.textDark,
-            fontSize: 13.sp,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        SizedBox(height: 12.h),
-        ...List.generate(_timelineSteps.length, (i) {
-          final step = _timelineSteps[i];
-          final isCompleted = i <= currentStepIdx && !isCancelled;
-          final isCurrent = i == currentStepIdx && !isCancelled;
-          final isLast = i == _timelineSteps.length - 1;
-          final icon = _timelineIcons[step]!;
-          final label = _timelineLabels[step]!;
-
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 28.w,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: isCurrent ? 22.w : 18.w,
-                        height: isCurrent ? 22.h : 18.h,
-                        decoration: BoxDecoration(
-                          color: isCancelled
-                              ? (i == 0
-                                    ? Colors.red
-                                    : _kGrey.withValues(alpha: 0.3))
-                              : (isCompleted
-                                    ? _statusColor(step)
-                                    : _kGrey.withValues(alpha: 0.3)),
-                          shape: BoxShape.circle,
-                        ),
-                        child: isCompleted && !isCancelled
-                            ? Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: 10.sp,
-                              )
-                            : Icon(icon, color: Colors.white, size: 10.sp),
-                      ),
-                      if (!isLast)
-                        Expanded(
-                          child: Container(
-                            width: 2.w,
-                            color: isCancelled
-                                ? (i == 0
-                                      ? Colors.red.withValues(alpha: 0.4)
-                                      : _kGrey.withValues(alpha: 0.2))
-                                : (isCompleted
-                                      ? _statusColor(
-                                          step,
-                                        ).withValues(alpha: 0.4)
-                                      : _kGrey.withValues(alpha: 0.2)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                SizedBox(width: 12.w),
-                Padding(
-                  padding: EdgeInsets.only(bottom: isLast ? 0 : 24.h),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          color: isCancelled
-                              ? (i == 0 ? Colors.red : _kGrey)
-                              : (isCompleted ? AppColors.textDark : _kGrey),
-                          fontSize: isCurrent ? 13.sp : 12.sp,
-                          fontWeight: isCurrent
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                        ),
-                      ),
-                      if (isCurrent && !isCancelled)
-                        Padding(
-                          padding: EdgeInsets.only(top: 2.h),
-                          child: Text(
-                            order.status == OrderStatus.pending
-                                ? 'بانتظار المراجعة'
-                                : 'تمت هذه الخطوة',
-                            style: TextStyle(
-                              color: _statusColor(order.status),
-                              fontSize: 10.sp,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-        if (isCancelled)
-          Padding(
-            padding: EdgeInsets.only(top: 8.h),
-            child: Row(
-              children: [
-                Icon(Icons.cancel, color: Colors.red, size: 16.sp),
-                SizedBox(width: 6.w),
-                Text(
-                  'تم إلغاء الطلب',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
     );
   }
 }

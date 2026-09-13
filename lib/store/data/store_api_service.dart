@@ -21,30 +21,50 @@ class StoreApiService {
   static Map<String, dynamic>? _catalog;
   static String? _catalogEtag;
   static Future<Map<String, dynamic>>? _catalogRequest;
+  static int? _catalogRequestGeneration;
+  static int _catalogGeneration = 0;
+
   static Future<Map<String, dynamic>> _loadCatalog({bool refresh = false}) {
     if (_catalog != null && !refresh) return Future.value(_catalog!);
     final active = _catalogRequest;
-    if (active != null) return active;
+    final generation = _catalogGeneration;
+    if (active != null && _catalogRequestGeneration == generation) {
+      return active;
+    }
     late final Future<Map<String, dynamic>> request;
-    request = _requestCatalog(refresh: refresh).whenComplete(() {
-      if (identical(_catalogRequest, request)) _catalogRequest = null;
-    });
+    request = _requestCatalog(refresh: refresh, generation: generation)
+        .whenComplete(() {
+          if (identical(_catalogRequest, request)) {
+            _catalogRequest = null;
+            _catalogRequestGeneration = null;
+          }
+        });
+    _catalogRequestGeneration = generation;
     _catalogRequest = request;
     return request;
   }
 
+  static void _invalidateCatalog() {
+    _catalogGeneration++;
+    _catalog = null;
+    _catalogEtag = null;
+  }
+
   static Future<Map<String, dynamic>> _requestCatalog({
     required bool refresh,
+    required int generation,
   }) async {
+    final etag = _catalogEtag;
     final r = await _api.get(
       '/store/catalog',
       query: const {'include_products': '0'},
-      headers: {
-        if (refresh && _catalogEtag != null) 'If-None-Match': _catalogEtag!,
-      },
+      headers: {if (refresh && etag != null) 'If-None-Match': etag},
     );
+    if (generation != _catalogGeneration) {
+      throw const _StaleCatalogResponse();
+    }
     if (r.statusCode == 304 && _catalog != null) return _catalog!;
-    _catalog = Map<String, dynamic>.from(r.data['data']);
+    _catalog = Map<String, dynamic>.from(r.data['data'] as Map);
     _catalogEtag = r.headers['etag'];
     return _catalog!;
   }
@@ -112,7 +132,7 @@ class StoreApiService {
         'icon_url': c['iconUrl'] ?? c['icon_url'],
       },
     );
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> updateCategory(
@@ -124,42 +144,42 @@ class StoreApiService {
       '/store/categories/$id',
       body: {'name': name, 'icon_url': iconUrl},
     );
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> deleteCategory(String id) async {
     await _api.delete('/store/categories/$id');
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> insertProduct(Map<String, dynamic> p) async {
     await _api.post('/store/products', body: _productPayload(p));
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> updateProduct(String id, Map<String, dynamic> p) async {
     await _api.put('/store/products/$id', body: _productPayload(p));
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> deleteProduct(String id) async {
     await _api.delete('/store/products/$id');
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> insertBanner(Map<String, dynamic> b) async {
     await _api.post('/store/banners', body: _bannerPayload(b));
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> updateBanner(String id, Map<String, dynamic> b) async {
     await _api.put('/store/banners/$id', body: _bannerPayload(b));
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<void> deleteBanner(String id) async {
     await _api.delete('/store/banners/$id');
-    _catalog = null;
+    _invalidateCatalog();
   }
 
   static Future<List<Map<String, dynamic>>> fetchCoupons() async {
@@ -437,4 +457,8 @@ class StoreApiService {
 
   static int _toInt(dynamic value) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+}
+
+class _StaleCatalogResponse implements Exception {
+  const _StaleCatalogResponse();
 }

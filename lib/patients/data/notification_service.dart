@@ -209,6 +209,7 @@ class NotificationService {
     required DateTime dateTime,
     String? payload,
     bool appointmentReminder = true,
+    DateTimeComponents? matchDateTimeComponents,
   }) async {
     try {
       // Appointment reminders must work even when Firebase cannot start (for
@@ -230,6 +231,7 @@ class NotificationService {
           mode: mode,
           payload: payload,
           appointmentReminder: appointmentReminder,
+          matchDateTimeComponents: matchDateTimeComponents,
         );
       } catch (_) {
         if (mode == AndroidScheduleMode.exactAllowWhileIdle) {
@@ -241,6 +243,7 @@ class NotificationService {
             mode: AndroidScheduleMode.inexactAllowWhileIdle,
             payload: payload,
             appointmentReminder: appointmentReminder,
+            matchDateTimeComponents: matchDateTimeComponents,
           );
         }
       }
@@ -255,6 +258,7 @@ class NotificationService {
     required AndroidScheduleMode mode,
     String? payload,
     required bool appointmentReminder,
+    DateTimeComponents? matchDateTimeComponents,
   }) => _plugin.zonedSchedule(
     id: id,
     title: title,
@@ -266,6 +270,7 @@ class NotificationService {
     ),
     androidScheduleMode: mode,
     payload: payload,
+    matchDateTimeComponents: matchDateTimeComponents,
   );
 
   static int _stableId(String value) {
@@ -434,7 +439,9 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
-  // ─── Lecture reminders (10 minutes before) ───
+  // ─── Weekly lecture reminders (15 minutes before) ───
+
+  static const int lectureReminderMinutes = 15;
 
   static const Map<String, int> _arabicDays = {
     'الأحد': DateTime.sunday,
@@ -457,18 +464,18 @@ class NotificationService {
     for (final e in enrollments) {
       for (final day in e.scheduleDays) {
         for (final timeStr in e.scheduleTimes) {
-          _scheduleSingleLecture(e.name, e.subjectId, day, timeStr);
+          await _scheduleSingleLecture(e.name, e.subjectId, day, timeStr);
         }
       }
     }
   }
 
-  static void _scheduleSingleLecture(
+  static Future<void> _scheduleSingleLecture(
     String subjName,
     String subjId,
     String day,
     String timeStr,
-  ) {
+  ) async {
     final dayNum = _arabicDays[day];
     if (dayNum == null) return;
     final parts = timeStr.split(' - ');
@@ -490,33 +497,52 @@ class NotificationService {
       hour,
       minute,
     );
-    final reminderTime = lectureDt.subtract(const Duration(minutes: 10));
+    final reminderTime = lectureDt.subtract(
+      const Duration(minutes: lectureReminderMinutes),
+    );
 
     if (reminderTime.isBefore(now)) {
       // If reminder already passed for this week, try next week
       final nextWeek = lectureDt.add(const Duration(days: 7));
-      final nextReminder = nextWeek.subtract(const Duration(minutes: 10));
-      _scheduleNotification(subjName, subjId, nextReminder);
+      final nextReminder = nextWeek.subtract(
+        const Duration(minutes: lectureReminderMinutes),
+      );
+      await _scheduleLectureNotification(
+        subjName,
+        subjId,
+        day,
+        timeStr,
+        nextReminder,
+      );
     } else {
-      _scheduleNotification(subjName, subjId, reminderTime);
+      await _scheduleLectureNotification(
+        subjName,
+        subjId,
+        day,
+        timeStr,
+        reminderTime,
+      );
     }
   }
 
-  static void _scheduleNotification(
+  static Future<void> _scheduleLectureNotification(
     String subjName,
     String subjId,
+    String day,
+    String timeStr,
     DateTime dateTime,
-  ) {
-    final key = 'lecture:$subjId:${dateTime.toIso8601String()}';
+  ) async {
+    final key = 'lecture:$subjId:$day:$timeStr';
     final id = _stableId(key);
     if (dateTime.isBefore(DateTime.now())) return;
-    scheduleNotification(
+    await scheduleNotification(
       id: id,
-      title: 'محاضرة بعد 10 دقائق',
-      body: 'تبدأ محاضرة $subjName بعد 10 دقائق',
+      title: 'محاضرة بعد 15 دقيقة',
+      body: 'تبدأ محاضرة $subjName بعد 15 دقيقة',
       dateTime: dateTime,
       payload: key,
       appointmentReminder: false,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
     );
   }
 }

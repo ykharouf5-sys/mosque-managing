@@ -34,15 +34,17 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
 
   Future<void> _loadCatalog() async {
     final orders = ref.read(ordersProvider.notifier).loadInitialOrders();
+    await _reloadCatalog();
+    await orders;
+  }
+
+  Future<void> _reloadCatalog() async {
     await loadStoreFromApi(refresh: true);
     if (!mounted) return;
     ref
         .read(catalogProvider.notifier)
         .loadBannersAndCategories(storeBanners, storeCategories);
-    await Future.wait<void>([
-      ref.read(catalogProvider.notifier).loadInitialProducts(),
-      orders,
-    ]);
+    await ref.read(catalogProvider.notifier).loadInitialProducts();
     if (mounted) setState(() {});
   }
 
@@ -103,18 +105,10 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
         body: IndexedStack(
           index: _selectedIndex,
           children: [
-            _CategoriesTab(
-              onDataChanged: () => ref.read(catalogProvider.notifier).refresh(),
-            ),
-            _ProductsTab(
-              onDataChanged: () => ref.read(catalogProvider.notifier).refresh(),
-            ),
-            _BannersTab(
-              onDataChanged: () => ref.read(catalogProvider.notifier).refresh(),
-            ),
-            _CouponsTab(
-              onDataChanged: () => ref.read(catalogProvider.notifier).refresh(),
-            ),
+            _CategoriesTab(onDataChanged: _reloadCatalog),
+            _ProductsTab(onDataChanged: _reloadCatalog),
+            _BannersTab(onDataChanged: _reloadCatalog),
+            _CouponsTab(onDataChanged: _reloadCatalog),
             _OrdersTab(
               onDataChanged: () =>
                   ref.read(ordersProvider.notifier).loadInitialOrders(),
@@ -1991,6 +1985,38 @@ class _OrdersTab extends ConsumerStatefulWidget {
 }
 
 class _OrdersTabState extends ConsumerState<_OrdersTab> {
+  final Set<String> _updatingOrders = {};
+
+  Future<void> _changeOrderStatus(Order order, String status) async {
+    if (_updatingOrders.contains(order.id)) return;
+    setState(() => _updatingOrders.add(order.id));
+    try {
+      await ref
+          .read(ordersProvider.notifier)
+          .updateOrderStatus(order.id, status);
+      widget.onDataChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديث حالة الطلب'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر تحديث الطلب: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updatingOrders.remove(order.id));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final allOrders = ref.watch(ordersProvider).orders;
@@ -2823,16 +2849,16 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                 _styledDialogButton(
                   'رفض',
                   color: Colors.red,
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'rejected'),
                 ),
                 SizedBox(width: 8.w),
                 _styledConfirmButton(
                   'قبول',
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'approved'),
                 ),
               ],
             ),
@@ -2845,17 +2871,17 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                 _styledDialogButton(
                   'قيد التحضير',
                   color: const Color(0xFF9C27B0),
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'processing'),
                 ),
                 SizedBox(width: 8.w),
                 _styledDialogButton(
                   'إلغاء',
                   color: Colors.red,
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'cancelled'),
                 ),
               ],
             ),
@@ -2868,17 +2894,17 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                 _styledDialogButton(
                   'خرج للتوصيل',
                   color: const Color(0xFF2196F3),
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'shipped'),
                 ),
                 SizedBox(width: 8.w),
                 _styledDialogButton(
                   'إلغاء',
                   color: Colors.red,
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'cancelled'),
                 ),
               ],
             ),
@@ -2891,9 +2917,9 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                 _styledDialogButton(
                   'تم التسليم',
                   color: AppColors.success,
-                  onPressed: () {
-                    widget.onDataChanged();
-                  },
+                  onPressed: _updatingOrders.contains(order.id)
+                      ? null
+                      : () => _changeOrderStatus(order, 'delivered'),
                 ),
               ],
             ),

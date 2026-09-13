@@ -273,23 +273,37 @@ class CatalogNotifier extends Notifier<CatalogState> {
       'iconUrl': iconUrl,
     });
     _categories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
+    CacheManager.instance.invalidateTags([
+      CacheTags.catalog,
+      CacheTags.categories,
+    ]);
     _rebuildState();
   }
 
   Future<void> deleteCategory(String id) async {
     await StoreApiService.deleteCategory(id);
     _categories.removeWhere((c) => c.id == id);
-    _products.removeWhere((p) => p.categoryId == id);
+    CacheManager.instance.invalidateTags([
+      CacheTags.catalog,
+      CacheTags.categories,
+      CacheTags.products,
+    ]);
     _rebuildState();
   }
 
   Future<void> updateCategory(String id, String name, String iconUrl) async {
+    await StoreApiService.updateCategory(id, name, iconUrl);
     final idx = _categories.indexWhere((c) => c.id == id);
     if (idx >= 0) {
-      await StoreApiService.updateCategory(id, name, iconUrl);
       _categories[idx] = ProductCategory(id: id, label: name, iconUrl: iconUrl);
-      _rebuildState();
+    } else {
+      _categories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
     }
+    CacheManager.instance.invalidateTags([
+      CacheTags.catalog,
+      CacheTags.categories,
+    ]);
+    _rebuildState();
   }
 
   // ── Product CRUD ──
@@ -334,6 +348,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
     );
     _rebuildState();
     CacheManager.instance.invalidate(CacheTags.products);
+    _cacheProducts();
   }
 
   Future<void> deleteProduct(String id) async {
@@ -341,6 +356,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
     _products.removeWhere((p) => p.id == id);
     _rebuildState();
     CacheManager.instance.invalidate(CacheTags.products);
+    _cacheProducts();
   }
 
   Future<void> updateProduct(
@@ -355,18 +371,18 @@ class CatalogNotifier extends Notifier<CatalogState> {
     int stock = 0,
     String? academicYear,
   }) async {
+    await StoreApiService.updateProduct(id, {
+      'name': name,
+      'brand': brand,
+      'description': description,
+      'imageUrl': imageUrl,
+      'categoryId': categoryId,
+      'price': price,
+      'stock': stock,
+      'academicYear': academicYear,
+    });
     final idx = _products.indexWhere((p) => p.id == id);
     if (idx >= 0) {
-      await StoreApiService.updateProduct(id, {
-        'name': name,
-        'brand': brand,
-        'description': description,
-        'imageUrl': imageUrl,
-        'categoryId': categoryId,
-        'price': price,
-        'stock': stock,
-        'academicYear': academicYear,
-      });
       _products[idx] = Product(
         id: id,
         name: name,
@@ -380,9 +396,10 @@ class CatalogNotifier extends Notifier<CatalogState> {
         academicYear: academicYear,
         createdAt: _products[idx].createdAt,
       );
-      _rebuildState();
-      CacheManager.instance.invalidate(CacheTags.products);
     }
+    _rebuildState();
+    CacheManager.instance.invalidate(CacheTags.products);
+    _cacheProducts();
   }
 
   // ── Banner CRUD ──
@@ -422,12 +439,20 @@ class CatalogNotifier extends Notifier<CatalogState> {
         categoryId: categoryId,
       ),
     );
+    CacheManager.instance.invalidateTags([
+      CacheTags.catalog,
+      CacheTags.banners,
+    ]);
     _rebuildState();
   }
 
   Future<void> deleteBanner(String id) async {
     await StoreApiService.deleteBanner(id);
     _banners.removeWhere((b) => b.id == id);
+    CacheManager.instance.invalidateTags([
+      CacheTags.catalog,
+      CacheTags.banners,
+    ]);
     _rebuildState();
   }
 
@@ -442,18 +467,18 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String? productId,
     String? categoryId,
   }) async {
+    await StoreApiService.updateBanner(id, {
+      'title': title,
+      'subtitle': subtitle,
+      'discountText': discountText,
+      'imageUrl': imageUrl,
+      'ctaText': ctaText,
+      'actionRoute': actionRoute,
+      'productId': productId,
+      'categoryId': categoryId,
+    });
     final idx = _banners.indexWhere((b) => b.id == id);
     if (idx >= 0) {
-      await StoreApiService.updateBanner(id, {
-        'title': title,
-        'subtitle': subtitle,
-        'discountText': discountText,
-        'imageUrl': imageUrl,
-        'ctaText': ctaText,
-        'actionRoute': actionRoute,
-        'productId': productId,
-        'categoryId': categoryId,
-      });
       _banners[idx] = PromoBanner(
         id: id,
         title: title,
@@ -465,8 +490,26 @@ class CatalogNotifier extends Notifier<CatalogState> {
         productId: productId,
         categoryId: categoryId,
       );
-      _rebuildState();
+    } else {
+      _banners.add(
+        PromoBanner(
+          id: id,
+          title: title,
+          subtitle: subtitle,
+          discountText: discountText,
+          imageUrl: imageUrl,
+          ctaText: ctaText,
+          actionRoute: actionRoute,
+          productId: productId,
+          categoryId: categoryId,
+        ),
+      );
     }
+    CacheManager.instance.invalidateTags([
+      CacheTags.catalog,
+      CacheTags.banners,
+    ]);
+    _rebuildState();
   }
 
   // ── Coupon CRUD ──
@@ -932,6 +975,11 @@ class OrdersNotifier extends Notifier<OrdersState> {
     state = state.copyWith(orders: [..._orders]);
   }
 
+  Future<void> updateOrderStatus(String orderId, String status) async {
+    await StoreApiService.updateOrderStatus(orderId, status);
+    await loadInitialOrders();
+  }
+
   void _cacheOrders() {
     if (_orders.isNotEmpty) {
       CacheManager.instance.set(
@@ -989,15 +1037,19 @@ class OrdersNotifier extends Notifier<OrdersState> {
       case 'pending':
         return OrderStatus.pending;
       case 'accepted':
+      case 'approved':
         return OrderStatus.accepted;
       case 'preparing':
+      case 'processing':
         return OrderStatus.preparing;
       case 'out_for_delivery':
-      case 'outForDelivery':
+      case 'outfordelivery':
+      case 'shipped':
         return OrderStatus.outForDelivery;
       case 'delivered':
         return OrderStatus.delivered;
       case 'cancelled':
+      case 'rejected':
         return OrderStatus.cancelled;
       default:
         return OrderStatus.pending;

@@ -5,6 +5,7 @@ import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
 import 'package:studentry/shared/data/api_client.dart';
 import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/student/data/academic_api_service.dart';
 import 'package:studentry/student/data/subject_models.dart';
 import 'package:uuid/uuid.dart';
@@ -26,6 +27,7 @@ class AcademicStore extends ChangeNotifier {
   String? _error;
   DateTime? _retryAfter;
   int _failures = 0;
+  String? _lectureReminderSignature;
 
   List<Subject> get subjects => List.unmodifiable(_subjects);
   List<StudentSubject> get enrollments => List.unmodifiable(_enrollments);
@@ -43,9 +45,13 @@ class AcademicStore extends ChangeNotifier {
     _writeTimer?.cancel();
     _retryAfter = null;
     _failures = 0;
+    _lectureReminderSignature = null;
     notifyListeners();
     final auth = AuthService();
-    if (!auth.isLoggedIn || !auth.hasPermission('subjects.read')) return;
+    if (!auth.isLoggedIn || !auth.hasPermission('subjects.read')) {
+      await NotificationService.scheduleLectureNotifications(const []);
+      return;
+    }
     if (!_watchingConnectivity) {
       ConnectivityService.isOnline.addListener(_onConnectivity);
       _watchingConnectivity = true;
@@ -108,6 +114,7 @@ class AcademicStore extends ChangeNotifier {
       _enrollments
         ..clear()
         ..addAll(cached[1].map(StudentSubject.fromJson));
+      await _syncLectureReminders();
       notifyListeners();
       if (!ConnectivityService.isOnline.value) return;
       await AcademicLocalStore.flush();
@@ -134,6 +141,7 @@ class AcademicStore extends ChangeNotifier {
       _enrollments
         ..clear()
         ..addAll(current[1].map(StudentSubject.fromJson));
+      await _syncLectureReminders();
       _loaded = true;
       _failures = 0;
       _retryAfter = null;
@@ -153,6 +161,25 @@ class AcademicStore extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  Future<void> _syncLectureReminders() async {
+    final signature =
+        _enrollments
+            .map(
+              (item) => [
+                item.subjectId,
+                item.name,
+                ...item.scheduleDays,
+                ...item.scheduleTimes,
+              ].join('|'),
+            )
+            .toList()
+          ..sort();
+    final nextSignature = signature.join('||');
+    if (_lectureReminderSignature == nextSignature) return;
+    await NotificationService.scheduleLectureNotifications(_enrollments);
+    _lectureReminderSignature = nextSignature;
   }
 
   Future<Subject> addSubject({
@@ -224,6 +251,7 @@ class AcademicStore extends ChangeNotifier {
       }
     }
     _sortSubjects();
+    await _syncLectureReminders();
     notifyListeners();
     return updated;
   }
@@ -237,6 +265,7 @@ class AcademicStore extends ChangeNotifier {
     _enrollments.removeWhere(
       (enrollment) => !enrollment.isCustom && enrollment.subjectId == id,
     );
+    await _syncLectureReminders();
     notifyListeners();
   }
 
@@ -246,6 +275,7 @@ class AcademicStore extends ChangeNotifier {
     _syncSoon();
     _ensureGeneration(generation);
     _enrollments.add(created);
+    await _syncLectureReminders();
     notifyListeners();
     return created;
   }
@@ -256,6 +286,7 @@ class AcademicStore extends ChangeNotifier {
     _syncSoon();
     _ensureGeneration(generation);
     _replaceEnrollment(updated);
+    await _syncLectureReminders();
     notifyListeners();
     return updated;
   }
@@ -268,6 +299,7 @@ class AcademicStore extends ChangeNotifier {
     _enrollments.removeWhere(
       (item) => item.enrollmentId == enrollment.enrollmentId,
     );
+    await _syncLectureReminders();
     notifyListeners();
   }
 
