@@ -3,7 +3,21 @@ class ApiConfig {
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000/api/v1',
+    defaultValue: 'https://api.studentry.app/api/v1',
+  );
+
+  static const String googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue:
+        '1061378234146-jlbsjqtsctgjvq8miovdjiuh1oi0rpvh.apps.googleusercontent.com',
+  );
+
+  // This is the Web-type server audience for the Android app's Firebase project.
+  // The Android OAuth client itself is registered by package + signing SHA-1.
+  static const String googleAndroidServerClientId = String.fromEnvironment(
+    'GOOGLE_ANDROID_SERVER_CLIENT_ID',
+    defaultValue:
+        '765725146594-fkvc29q7qnpcag3b31u2ie6sj16gtq6r.apps.googleusercontent.com',
   );
 
   /// Explicit opt-in used only for release-signed builds installed on a

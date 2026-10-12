@@ -1,0 +1,20 @@
+﻿{
+    "date":  "2026-10-12",
+    "package":  "io.studentry.app",
+    "versionCode":  20261014,
+    "versionName":  "1.0.0-googlefix.20261012",
+    "apk":  "C:\\Users\\ROG\\Desktop\\backups\\aqua_orginal\\build\\google-auth-fix\\2026-10-12-161431\\studentry-android-googlefix-20261014.apk",
+    "sha256":  "749cb41b15bb06f700e19b53d2b3778ff6bea53ee668a1d5fe648cf182fd4658",
+    "signingMatchesInstalledApp":  true,
+    "androidOauthClient":  "765725146594-bhsnq0ges43enafda4rl8672gvvhmsnd.apps.googleusercontent.com",
+    "androidServerClient":  "765725146594-fkvc29q7qnpcag3b31u2ie6sj16gtq6r.apps.googleusercontent.com",
+    "backendApplied":  true,
+    "backendRollbackRehearsal":  "passed",
+    "backup":  "/var/backups/studentry/google-android-20261012-1791811263186699007",
+    "googleApiObservedStatus":  200,
+    "navigationTestsPassed":  6,
+    "installedOnPhone":  true,
+    "deviceUnavailable":  false,
+    "physicalNavigationVerified":  true,
+    "userConfirmedDestination":  "student-profile"
+}

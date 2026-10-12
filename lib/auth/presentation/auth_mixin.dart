@@ -1,5 +1,7 @@
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/shared/data/google_auth_failure.dart';
+import 'package:studentry/auth/presentation/auth_navigation.dart';
 import 'package:studentry/shared/widgets/main_navigation_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
@@ -209,6 +211,7 @@ enum AuthNavigationTarget {
 
 mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   final TextEditingController passwordController = TextEditingController();
+  bool _googleSignInPending = false;
 
   Widget buildLogo() {
     return Positioned.fill(
@@ -318,7 +321,7 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           padding: EdgeInsets.zero,
           elevation: 0,
         ),
-        onPressed: onTap,
+        onPressed: _googleSignInPending ? null : onTap,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -434,16 +437,7 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   void navigateAuthenticatedUser(AuthUser user, BuildContext context) {
-    ref.read(authProvider.notifier).setAuthUser(user);
-    if (user.role == 'student' && !user.profileCompleted) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/student-profile',
-        (_) => false,
-      );
-      return;
-    }
-    navigateByRoleSync(user.role, context);
+    finishAuthentication(user, context, ref);
   }
 
   /// توجيه المستخدم بعد تسجيل الدخول بناءً على دوره
@@ -516,24 +510,23 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     }
   }
 
+  Future<AuthUser> authenticateGoogleUser() async {
+    await AuthService().signInWithGoogle();
+    final user = AuthService().currentUser;
+    if (user == null) throw StateError('Authenticated Google user is missing');
+    return user;
+  }
+
   Future<void> signInWithGoogle({String? selectedRole}) async {
+    if (_googleSignInPending || !mounted) return;
+    setState(() => _googleSignInPending = true);
     try {
-      await AuthService().signInWithGoogle();
+      final user = await authenticateGoogleUser();
+      if (!mounted) return;
+      navigateAuthenticatedUser(user, context);
     } catch (e) {
       if (!mounted) return;
-      String msg;
-      final err = e.toString();
-      if (err.contains('account-exists-with-different-credential')) {
-        msg = 'هذا البريد مسجل بكلمة مرور مسبقاً';
-      } else if (err.contains('network_error') ||
-          err.contains('network-request-failed')) {
-        msg = 'تحقق من اتصال الإنترنت وحاول مجدداً';
-      } else if (err.contains('ApiException: 10') ||
-          err.contains('DEVELOPER_ERROR')) {
-        msg = 'خطأ في إعدادات التطبيق. تأكد من إعداد Google Sign-In في Laravel';
-      } else {
-        msg = 'فشل تسجيل الدخول بـ Google';
-      }
+      final msg = googleSignInFailureMessage(e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -543,6 +536,8 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _googleSignInPending = false);
     }
   }
 }

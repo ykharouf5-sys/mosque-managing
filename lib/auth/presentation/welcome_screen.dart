@@ -1,5 +1,7 @@
 import 'package:studentry/auth/presentation/otp_verification_screen.dart';
 import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/shared/data/google_auth_failure.dart';
+import 'package:studentry/auth/presentation/auth_navigation.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +19,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   bool _isLoading = false;
+  bool _googleSignInPending = false;
   final String _selectedRole = 'student';
 
   late final AnimationController _animController;
@@ -170,16 +173,26 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   }
 
   Future<void> _handleGoogleSignIn() async {
+    if (_googleSignInPending || !mounted) return;
+    setState(() => _googleSignInPending = true);
     try {
       await AuthService().signInWithGoogle();
+      final user = AuthService().currentUser;
+      if (!mounted) return;
+      if (user == null) {
+        throw StateError('Authenticated Google user is missing');
+      }
+      finishAuthentication(user, context, ref);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('فشل تسجيل الدخول بـ Google: $e'),
+          content: Text(googleSignInFailureMessage(e)),
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      if (mounted) setState(() => _googleSignInPending = false);
     }
   }
 
@@ -430,7 +443,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           padding: EdgeInsets.zero,
           elevation: 0,
         ),
-        onPressed: _handleGoogleSignIn,
+        onPressed: _googleSignInPending ? null : _handleGoogleSignIn,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

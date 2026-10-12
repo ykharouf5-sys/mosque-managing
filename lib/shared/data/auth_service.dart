@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'account_data_lifecycle.dart';
+import 'app_database.dart';
 import 'api_client.dart';
 import 'api_request_queue.dart';
+import 'api_config.dart';
 import 'fcm_token_service.dart';
 
 class AuthUser {
@@ -169,6 +174,7 @@ class AuthService {
   static const _tokenExpiresAtKey = 'api_token_expires_at';
   static const _cachedUserKey = 'api_cached_user';
   final _events = StreamController<AuthChangeEvent>.broadcast();
+  Future<void>? _googleInitialization;
   Future<void> _sessionMutation = Future<void>.value();
   Timer? _expiryTimer;
   int _sessionGeneration = 0;
@@ -194,6 +200,8 @@ class AuthService {
   String? get examNumber => _user?.userMetadata['exam_number'] as String?;
   bool get profileCompleted => _user?.profileCompleted ?? false;
   String? get avatarUrl => _user?.userMetadata['avatar_url'] as String?;
+  Map<String, String> get authorizationHeaders =>
+      _token == null ? const {} : {'Authorization': 'Bearer $_token'};
 
   Future<String> uploadAvatar(List<int> bytes, String filename) async {
     final generation = _sessionGeneration;
@@ -270,7 +278,9 @@ class AuthService {
     try {
       response = await ApiClient.instance.get('/auth/me', maxRetries: 0);
     } catch (error) {
-      if (_isRejectedSession(error)) await _clearAndPurge();
+      if (_isRejectedSession(error)) {
+        await _clearAndPurge(expectedGeneration: generation);
+      }
       rethrow;
     }
     final updated = _parseUser(response.data);
@@ -432,7 +442,25 @@ class AuthService {
   }
 
   Future<bool> signInWithGoogle() async {
-    throw const ApiException(501, 'تسجيل Google يحتاج إعداد OAuth في Laravel.');
+    final google = GoogleSignIn.instance;
+    await (_googleInitialization ??= google.initialize(
+      serverClientId: !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? ApiConfig.googleAndroidServerClientId
+          : ApiConfig.googleWebClientId,
+    ));
+    final account = await google.authenticate();
+    final token = account.authentication.idToken;
+    if (token == null || token.isEmpty) {
+      throw const ApiException(401, 'تعذر التحقق من حساب Google.');
+    }
+    final response = await ApiClient.instance.post(
+      '/auth/google',
+      authenticated: false,
+      maxRetries: 0,
+      body: {'id_token': token, 'device_name': 'flutter'},
+    );
+    await _accept(response.data);
+    return true;
   }
 
   Future<void> signOut() => _runSessionMutation(_signOutUnlocked);
@@ -461,8 +489,12 @@ class AuthService {
   Future<void> _signOutUnlocked() async {
     _sessionGeneration++;
     try {
-      await FcmTokenService.unregisterCurrentDevice();
-      if (_token != null) await ApiClient.instance.post('/auth/logout');
+      await Future.wait([
+        FcmTokenService.unregisterCurrentDevice(),
+        if (_token != null) ApiClient.instance.post('/auth/logout'),
+      ]).timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Remote revocation is best effort; it must not prevent local logout.
     } finally {
       try {
         await AccountDataLifecycle.close();
@@ -509,8 +541,31 @@ class AuthService {
     final canRetainClinicalData =
         user.hasPermission('patients.read') &&
         user.hasPermission('appointments.read');
+    if (canRetainClinicalData &&
+        AppDatabase.activeAccountId == user.id &&
+        AppDatabase.activeClinicalScopeVersion == user.clinicalScopeVersion &&
+        AppDatabase.activeClinicalClinicId == user.clinicId) {
+      return;
+    }
+    // Migrate legacy databases using the encrypted cached profile's clinic.
+    // Without trusted prior scope information, retain pending work in the
+    // encrypted recovery snapshot rather than replay it in a new clinic.
+    String? previousClinicId;
+    final cached = await _storage.read(key: _cachedUserKey);
+    if (cached != null) {
+      try {
+        final previous = AuthUser.fromJson(
+          Map<String, dynamic>.from(jsonDecode(cached) as Map),
+        );
+        if (previous.id == user.id) previousClinicId = previous.clinicId;
+      } catch (_) {
+        // A corrupt profile must never be used as proof of clinical scope.
+      }
+    }
     await AccountDataLifecycle.activate(
       accountId: user.id,
+      clinicId: user.clinicId,
+      previousClinicId: previousClinicId,
       clinicalScopeVersion: user.clinicalScopeVersion > 0
           ? user.clinicalScopeVersion
           : 1,
@@ -536,15 +591,19 @@ class AuthService {
       throw StateError('No authenticated account is active.');
     }
     final activeUser = user;
+    final activeGeneration = _sessionGeneration;
     await _runSessionMutation(() async {
-      if (_user?.id != activeUser.id || !isLoggedIn) {
+      if (activeGeneration != _sessionGeneration ||
+          !identical(_user, activeUser) ||
+          !isLoggedIn) {
         throw const StaleSessionException();
       }
       await _activateUser(activeUser);
     });
   }
 
-  Future<void> invalidateRejectedSession() => _clearAndPurge();
+  Future<void> invalidateRejectedSession({int? expectedGeneration}) =>
+      _clearAndPurge(expectedGeneration: expectedGeneration);
 
   Future<void> _setCurrentUser(AuthUser user, {bool rebindData = false}) async {
     _user = user;
@@ -601,13 +660,21 @@ class AuthService {
           error.statusCode == 403 ||
           error.statusCode == 419);
 
-  Future<void> _clearAndPurge() => _runSessionMutation(_clearAndPurgeUnlocked);
+  Future<void> _clearAndPurge({int? expectedGeneration}) {
+    final rejectedGeneration = expectedGeneration ?? _sessionGeneration;
+    return _runSessionMutation(() async {
+      if (rejectedGeneration != _sessionGeneration) return;
+      await _clearAndPurgeUnlocked();
+    });
+  }
 
   Future<void> _clearAndPurgeUnlocked() async {
     _sessionGeneration++;
     try {
       try {
-        await FcmTokenService.unregisterCurrentDevice();
+        await FcmTokenService.unregisterCurrentDevice().timeout(
+          const Duration(seconds: 3),
+        );
       } catch (_) {}
       await AccountDataLifecycle.close();
     } finally {
