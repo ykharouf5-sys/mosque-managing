@@ -215,7 +215,7 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
                   if (changed == true) _loadSelectedDate();
                 },
                 backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.onPrimary,
                 child: const Icon(Icons.event_available_rounded),
               ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

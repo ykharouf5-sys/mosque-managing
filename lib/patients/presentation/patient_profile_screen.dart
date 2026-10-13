@@ -470,7 +470,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
               label: const Text('تحديد الوقت'),
               style: OutlinedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                foregroundColor: AppColors.primary,
+                foregroundColor: AppColors.primaryDark,
                 side: const BorderSide(color: AppColors.primary),
               ),
             ),
@@ -586,7 +586,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.textLight,
+                foregroundColor: AppColors.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppRadius.md),
@@ -1324,7 +1324,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.textLight,
+                      foregroundColor: AppColors.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(AppRadius.md),
                       ),
@@ -1570,7 +1570,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.textLight,
+          foregroundColor: AppColors.onPrimary,
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),

@@ -363,7 +363,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.textLight,
+            foregroundColor: AppColors.onPrimary,
             disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
             disabledForegroundColor: AppColors.textLight.withValues(alpha: 0.8),
             elevation: 0,

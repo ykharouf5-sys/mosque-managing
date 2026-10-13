@@ -204,7 +204,7 @@ class _MyOrdersScreenState extends ConsumerState<MyOrdersScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.textLight,
+              foregroundColor: AppColors.onPrimary,
               padding: EdgeInsets.symmetric(horizontal: 32.w, vertical: 14.h),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(30),

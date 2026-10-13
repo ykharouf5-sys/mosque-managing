@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-13",
+  "versionCode": 20261016,
+  "versionName": "1.0.0-brand.20261013",
+  "apk": "build\\brand-refresh\\2026-10-13\\Studentry-20261016.apk",
+  "bytes": 84447230,
+  "sha256": "4288ce6a728d2ed18bbf66fc067e7547c9d80a89d2d14550a2a007090405ba8d",
+  "signingSha1": "b9cd3413b7965d1f64b2439ea40f91efda3e4766",
+  "productionApiEmbedded": true,
+  "installed": true,
+  "installationMode": "adb install -r",
+  "copiedToPhone": "/sdcard/Download/Studentry-20261016.apk",
+  "androidTests": {
+    "fullPassed": 178,
+    "fullSkipped": 1,
+    "finalTargetedPassed": 14,
+    "layoutWidths": [
+      320,
+      390,
+      720
+    ],
+    "textScales": [
+      1,
+      1.5
+    ]
+  },
+  "webCommit": "38ce738972dbe21ffb84010136c9821de80a6095",
+  "webDeploymentRun": 38458327486,
+  "webDeploymentConclusion": "success",
+  "webBrowserPassed": 37,
+  "webUnitPassed": 35,
+  "previewCli": "Failed locally with JSON-RPC -32601 getFlutterWidgetPreviews; alternate widget render tests passed",
+  "palette": {
+    "primary": "#1195A7",
+    "soft": "#E8F6F7",
+    "card": "#FFFFFF",
+    "line": "#CDE3E7",
+    "buttonText": "#10202A",
+    "link": "#076F7E",
+    "ink": "#193C44",
+    "muted": "#506C75",
+    "deep": "#164F59"
+  }
+}

@@ -103,7 +103,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.textLight,
+              foregroundColor: AppColors.onPrimary,
               padding: EdgeInsets.symmetric(horizontal: 32.w, vertical: 14.h),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(30),
@@ -424,7 +424,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.textLight,
+                    foregroundColor: AppColors.onPrimary,
                     padding: EdgeInsets.symmetric(
                       horizontal: 32.w,
                       vertical: 16.h,

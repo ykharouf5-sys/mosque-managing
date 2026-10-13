@@ -344,7 +344,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.textLight,
+          foregroundColor: AppColors.onPrimary,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
@@ -391,7 +391,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
         TextButton(
           onPressed: _canResend && !_isResending ? _resendCode : null,
           style: TextButton.styleFrom(
-            foregroundColor: AppColors.primary,
+            foregroundColor: AppColors.primaryDark,
             disabledForegroundColor: AppColors.authGrey,
           ),
           child: _isResending

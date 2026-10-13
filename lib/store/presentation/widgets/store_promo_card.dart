@@ -90,7 +90,7 @@ class StorePromoCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: AppColors.onPrimary,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),

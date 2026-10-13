@@ -89,7 +89,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                   MaterialPageRoute(builder: (_) => const AddPatientScreen()),
                 ),
                 backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.onPrimary,
                 child: const Icon(Icons.person_add_rounded),
               ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -156,8 +156,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              AppColors.primary,
-              AppColors.primary.withValues(alpha: 0.85),
+              AppColors.primaryDark,
+              AppColors.brandDeep,
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -212,7 +212,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
               dateStr,
               style: TextStyle(
                 fontSize: 14.sp,
-                color: Colors.white.withValues(alpha: 0.85),
+                color: AppColors.primarySurface,
               ),
             ),
             SizedBox(height: 12.h),
@@ -416,7 +416,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                           ? '؟'
                           : patient.name.trim()[0],
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.onPrimary,
                         fontSize: 20.sp,
                         fontWeight: FontWeight.bold,
                       ),

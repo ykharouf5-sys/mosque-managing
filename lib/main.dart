@@ -18,6 +18,7 @@ import 'package:studentry/store/presentation/order_confirmation_screen.dart';
 import 'package:studentry/store/presentation/search_results_screen.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/utils/variable_colors.dart';
+import 'package:studentry/utils/app_theme.dart';
 import 'package:studentry/auth/presentation/onboarding_screen.dart';
 import 'package:studentry/auth/presentation/login_screen.dart';
 import 'package:studentry/auth/presentation/register_screen.dart';
@@ -397,119 +398,12 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     return SearchResultsScreen(query: query);
   }
 
-  ThemeData _buildTheme() {
-    final font = GoogleFonts.cairo().fontFamily;
-    return ThemeData(
-      fontFamily: font,
-      scaffoldBackgroundColor: AppColors.background,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.primary,
-        primary: AppColors.primary,
-        surface: AppColors.surface,
-        brightness: Brightness.light,
-      ),
-      appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        centerTitle: true,
-        titleTextStyle: TextStyle(
-          fontFamily: font,
-          fontSize: 18.sp,
-          fontWeight: FontWeight.bold,
-          color: AppColors.textDark,
-        ),
-        iconTheme: const IconThemeData(color: AppColors.textDark),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.textLight,
-          elevation: 0,
-          minimumSize: const Size(64, 48),
-          tapTargetSize: MaterialTapTargetSize.padded,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-          textStyle: TextStyle(
-            fontFamily: font,
-            fontSize: 16.sp,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          minimumSize: const Size(64, 48),
-          tapTargetSize: MaterialTapTargetSize.padded,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          side: const BorderSide(color: AppColors.primary),
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-          textStyle: TextStyle(
-            fontFamily: font,
-            fontSize: 16.sp,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          minimumSize: const Size(48, 44),
-          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-          tapTargetSize: MaterialTapTargetSize.padded,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-          ),
-        ),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(64, 48),
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-          tapTargetSize: MaterialTapTargetSize.padded,
-          textStyle: TextStyle(
-            fontFamily: font,
-            fontSize: 16.sp,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 16.h),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: AppColors.divider, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-        ),
-        hintStyle: TextStyle(
-          fontFamily: font,
-          color: AppColors.textLightGray,
-          fontSize: 14.sp,
-        ),
-        labelStyle: TextStyle(fontFamily: font, color: AppColors.textGrey),
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
-      ),
-      dividerTheme: const DividerThemeData(
-        color: AppColors.divider,
-        thickness: 1,
-      ),
-    );
-  }
+  ThemeData _buildTheme() => AppTheme.light(
+    fontFamily: GoogleFonts.cairo().fontFamily,
+    fontSize: 16.sp,
+    titleSize: 18.sp,
+    fieldSize: 14.sp,
+    buttonPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+    inputPadding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 16.h),
+  );
 }

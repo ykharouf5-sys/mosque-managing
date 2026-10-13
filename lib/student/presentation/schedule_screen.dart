@@ -135,7 +135,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: const Icon(Icons.add, color: AppColors.onPrimary),
         onPressed: () => _showCustomSubjectDialog(context),
       ),
     );
@@ -218,7 +218,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
               label: const Text('تصفح المواد المتاحة'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.onPrimary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30),
                 ),
@@ -491,7 +491,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                               trailing: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
+                                  foregroundColor: AppColors.onPrimary,
                                   padding: EdgeInsets.symmetric(
                                     horizontal: 14.w,
                                     vertical: 6.h,
@@ -628,7 +628,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppColors.onPrimary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
@@ -771,7 +771,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppColors.onPrimary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),

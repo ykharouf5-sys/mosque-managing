@@ -345,7 +345,7 @@ Widget _styledConfirmButton(String label, {VoidCallback? onPressed}) {
   return ElevatedButton(
     style: ElevatedButton.styleFrom(
       backgroundColor: AppColors.primary,
-      foregroundColor: AppColors.textLight,
+      foregroundColor: AppColors.onPrimary,
       elevation: 2,
       shadowColor: AppColors.primary.withValues(alpha: 0.3),
       padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
@@ -472,7 +472,7 @@ class _GenericListTab extends StatelessWidget {
             label: Text(emptyActionLabel),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.textLight,
+              foregroundColor: AppColors.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(30),
               ),
@@ -1166,7 +1166,7 @@ class _BannersTab extends StatelessWidget {
             label: Text(storeUi('إضافة عرض')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.textLight,
+              foregroundColor: AppColors.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(30),
               ),
@@ -1712,7 +1712,7 @@ class _CouponsTab extends StatelessWidget {
             label: Text(storeUi('إضافة كوبون')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.textLight,
+              foregroundColor: AppColors.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(30),
               ),
@@ -2065,7 +2065,7 @@ class _CouponsTab extends StatelessWidget {
                         Expanded(
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.primary,
+                              foregroundColor: AppColors.primaryDark,
                               side: BorderSide(color: AppColors.divider),
                               padding: EdgeInsets.symmetric(vertical: 14.h),
                               shape: RoundedRectangleBorder(

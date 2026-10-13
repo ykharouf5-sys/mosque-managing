@@ -99,7 +99,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
                     label: const Text('تسجيل مواد'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppColors.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),

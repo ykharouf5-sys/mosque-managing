@@ -377,7 +377,7 @@ class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
                                 ),
                                 label: const Text('عرض النص المستخرج'),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.primaryDark,
                                   side: BorderSide(
                                     color: AppColors.primary.withValues(
                                       alpha: 0.5,
@@ -474,7 +474,7 @@ class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
                                 label: const Text('تحليل النص'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
+                                  foregroundColor: AppColors.onPrimary,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(30),
                                   ),
@@ -587,7 +587,7 @@ class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
                       label: Text(_saving ? 'جاري الحفظ...' : 'حفظ العلامات'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppColors.onPrimary,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),

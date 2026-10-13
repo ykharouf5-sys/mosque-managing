@@ -156,7 +156,7 @@ class _NotificationCampaignScreenState
                           onPressed: _sending ? null : _send,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
+                            foregroundColor: AppColors.onPrimary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18.r),
                             ),

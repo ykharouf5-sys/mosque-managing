@@ -260,7 +260,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: AppColors.onPrimary,
                   elevation: 0,
                   padding: EdgeInsets.symmetric(horizontal: 16.w),
                   shape: RoundedRectangleBorder(

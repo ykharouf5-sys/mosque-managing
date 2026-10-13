@@ -91,7 +91,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
               ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.onPrimary,
           onPressed: _showUploadOptions,
           child: const Icon(Icons.add, size: 28),
         ),
@@ -125,7 +125,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
             label: const Text('رفع ملف نتائج'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(30),
               ),
@@ -956,7 +956,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.onPrimary,
               ),
               child: const Text('رفع الملف'),
             ),

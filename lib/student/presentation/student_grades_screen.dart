@@ -65,7 +65,9 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
     });
 
     try {
-      final cached = await const AcademicResultApiService().cachedResults(examNumber: query);
+      final cached = await const AcademicResultApiService().cachedResults(
+        examNumber: query,
+      );
       if (!mounted || generation != _searchGeneration) return;
       setState(() => _results = cached);
       final results = await const AcademicResultApiService().results(
@@ -604,7 +606,7 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
       padding: EdgeInsets.all(16.r),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [AppColors.primary, Color(0xFF1565C0)],
+          colors: [AppColors.primaryDark, AppColors.brandDeep],
         ),
         borderRadius: BorderRadius.circular(16),
       ),

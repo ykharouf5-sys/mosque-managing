@@ -191,7 +191,7 @@ Future<AppointmentDateTimeSelection?> showAppointmentDateTimePicker({
                       style: OutlinedButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 6),
-                        foregroundColor: AppColors.primary,
+                        foregroundColor: AppColors.primaryDark,
                         side: const BorderSide(color: AppColors.primary),
                       ),
                       child: FittedBox(

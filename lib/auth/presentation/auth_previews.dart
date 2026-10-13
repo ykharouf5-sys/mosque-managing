@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/utils/app_theme.dart';
 
 Widget _authPreview(Widget child) => ProviderScope(
   child: ScreenUtilInit(
     designSize: const Size(393, 852),
     builder: (context, _) => MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
       locale: const Locale('ar'),
       home: Directionality(textDirection: TextDirection.rtl, child: child),
     ),

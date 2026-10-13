@@ -239,7 +239,7 @@ class OnboardingScreen extends ConsumerWidget {
                     Text(
                       'ابدأ الآن',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.onPrimary,
                         fontSize: 16.sp,
                         fontWeight: FontWeight.w800,
                         height: 1.4,
@@ -248,7 +248,7 @@ class OnboardingScreen extends ConsumerWidget {
                     SizedBox(width: 10.w),
                     Icon(
                       Icons.arrow_back_rounded,
-                      color: Colors.white,
+                      color: AppColors.onPrimary,
                       size: 21.sp,
                     ),
                   ],
@@ -263,7 +263,7 @@ class OnboardingScreen extends ConsumerWidget {
           height: 58.h,
           child: OutlinedButton(
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
+              foregroundColor: AppColors.primaryDark,
               backgroundColor: Colors.white.withValues(alpha: 0.88),
               padding: EdgeInsets.symmetric(horizontal: 16.w),
               side: BorderSide(

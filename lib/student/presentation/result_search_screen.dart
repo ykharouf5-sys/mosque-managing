@@ -282,7 +282,7 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
       padding: EdgeInsets.all(16.r),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [AppColors.primary, Color(0xFF1565C0)],
+          colors: [AppColors.primaryDark, AppColors.brandDeep],
         ),
         borderRadius: BorderRadius.circular(16),
       ),
