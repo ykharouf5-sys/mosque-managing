@@ -7,6 +7,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/shared/presentation/notification_campaign_screen.dart';
 import 'package:file_picker/file_picker.dart';
 import 'academic_sync_action.dart';
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -37,12 +38,13 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
   void initState() {
     super.initState();
     _academic.addListener(_onAcademicChanged);
-    _academic.load(force: true);
+    _academic.load();
   }
 
   @override
   void dispose() {
     _academic.removeListener(_onAcademicChanged);
+    _academic.setViewActive(this, false);
     super.dispose();
   }
 
@@ -54,7 +56,12 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
       _academic.subjects.where((s) => s.academicYear == _selectedYear).toList();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => RefreshVisibility(
+    onChanged: (active) => _academic.setViewActive(this, active),
+    child: _buildContent(context),
+  );
+
+  Widget _buildContent(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(

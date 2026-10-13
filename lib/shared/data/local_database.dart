@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'app_database.dart';
+import 'clinical_outbox.dart';
 import 'encryption_service.dart';
 
 class SyncQueueItem {
@@ -71,6 +73,7 @@ class LocalDatabaseService {
     'id',
     'name',
     'phone',
+    'whatsappOptIn',
     'age',
     'address',
     'registrationDate',
@@ -115,63 +118,104 @@ class LocalDatabaseService {
     final db = await AppDatabase.database;
     final encryptedPayload = await EncryptionService.encrypt(payload);
     AppDatabase.ensureDataGeneration(generation);
-    await db.insert('sync_queue', {
-      'operation': operation,
-      'table_name': tableName,
-      'record_id': recordId,
-      'payload': encryptedPayload,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-      'retry_count': 0,
-      'status': 'pending',
-      'operation_id': const Uuid().v4(),
-      'next_attempt_at': null,
-      'last_error': null,
-      'last_http_status': null,
+    await db.transaction((txn) async {
+      AppDatabase.ensureDataGeneration(generation);
+      await ClinicalOutbox.enqueue(txn, {
+        'operation': operation,
+        'table_name': tableName,
+        'record_id': recordId,
+        'payload': encryptedPayload,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'retry_count': 0,
+        'attempted': 0,
+        'status': 'pending',
+        'operation_id': const Uuid().v4(),
+        'next_attempt_at': null,
+        'last_error': null,
+        'last_http_status': null,
+      });
     });
   }
 
   static Future<List<SyncQueueItem>> getPendingQueue({
     int limit = 50,
     int? expectedGeneration,
+    bool claim = false,
   }) async {
     try {
       final generation =
           expectedGeneration ?? AppDatabase.captureActiveDataGeneration();
       final db = await AppDatabase.database;
-      final now = DateTime.now().toUtc().toIso8601String();
-      final rows = await db.query(
-        'sync_queue',
-        where:
-            "status IN ('pending', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
-        whereArgs: [now],
-        orderBy: 'created_at ASC',
-        limit: limit,
-      );
-      final decrypted = <SyncQueueItem>[];
-      for (final storedRow in rows) {
-        final row = Map<String, Object?>.from(storedRow);
-        try {
-          row['payload'] = await EncryptionService.decrypt(
-            row['payload'] as String,
-          );
-          decrypted.add(SyncQueueItem.fromMap(Map<String, dynamic>.from(row)));
-        } catch (_) {
-          AppDatabase.ensureDataGeneration(generation);
-          await db.update(
-            'sync_queue',
-            {
-              'status': 'failed_permanent',
-              'retry_count': 99,
-              'last_error': 'The encrypted sync payload could not be read.',
-            },
-            where: 'id = ?',
-            whereArgs: [row['id']],
-          );
+      Future<List<SyncQueueItem>> read(DatabaseExecutor executor) async {
+        AppDatabase.ensureDataGeneration(generation);
+        final now = DateTime.now().toUtc().toIso8601String();
+        final rows = await executor.query(
+          'sync_queue',
+          where:
+              "status IN ('pending', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= ?) "
+              "AND NOT EXISTS (SELECT 1 FROM sync_queue earlier "
+              "WHERE earlier.table_name = sync_queue.table_name "
+              "AND earlier.record_id = sync_queue.record_id AND earlier.id < sync_queue.id)",
+          whereArgs: [now],
+          orderBy: 'created_at ASC, id ASC',
+          limit: limit,
+        );
+        final decrypted = <SyncQueueItem>[];
+        for (final storedRow in rows) {
+          final row = Map<String, Object?>.from(storedRow);
+          try {
+            row['payload'] = await EncryptionService.decrypt(
+              row['payload'] as String,
+            );
+            final item = SyncQueueItem.fromMap(Map<String, dynamic>.from(row));
+            if (item.tableName == 'appointments' ||
+                item.tableName == 'patient_payments') {
+              final payload = jsonDecode(item.payload) as Map;
+              final patientId = payload['patientId'];
+              if (patientId != null &&
+                  item.operation != 'delete' &&
+                  (await executor.query(
+                    'sync_queue',
+                    columns: ['id'],
+                    where:
+                        'table_name = ? AND record_id = ? '
+                        "AND (id < ? OR operation = 'insert')",
+                    whereArgs: ['patients', patientId, item.id],
+                    limit: 1,
+                  )).isNotEmpty) {
+                continue;
+              }
+            }
+            if (claim) {
+              await executor.update(
+                'sync_queue',
+                {'attempted': 1},
+                where: 'id = ?',
+                whereArgs: [item.id],
+              );
+            }
+            decrypted.add(item);
+          } catch (_) {
+            AppDatabase.ensureDataGeneration(generation);
+            await executor.update(
+              'sync_queue',
+              {
+                'status': 'failed_permanent',
+                'retry_count': 99,
+                'last_error': 'The encrypted sync payload could not be read.',
+              },
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+          }
         }
+        AppDatabase.ensureDataGeneration(generation);
+        return decrypted;
       }
-      AppDatabase.ensureDataGeneration(generation);
-      return decrypted;
+
+      return claim ? await db.transaction(read) : await read(db);
     } catch (_) {
+      if (claim) rethrow;
       return [];
     }
   }
@@ -189,6 +233,93 @@ class LocalDatabaseService {
     if (deleted != 1) {
       throw StateError('Sync queue item $id was not removed after delivery.');
     }
+  }
+
+  /// Ack and the authoritative version advance together. A newer local edit
+  /// remains visible; only operations never sent are rebased onto our own ack.
+  static Future<void> completePatientOperation(
+    SyncQueueItem item,
+    Map<String, dynamic> serverRow, {
+    required int expectedGeneration,
+  }) async {
+    await completeClinicalOperation(
+      item,
+      serverRow,
+      expectedGeneration: expectedGeneration,
+    );
+  }
+
+  static Future<void> completeClinicalOperation(
+    SyncQueueItem item,
+    Map<String, dynamic> serverRow, {
+    required int expectedGeneration,
+  }) async {
+    if (item.tableName != 'patients' && item.tableName != 'appointments') {
+      throw ArgumentError(
+        'Only clinical records have version acknowledgements.',
+      );
+    }
+    final db = await AppDatabase.database;
+    AppDatabase.ensureDataGeneration(expectedGeneration);
+    await db.transaction((txn) async {
+      AppDatabase.ensureDataGeneration(expectedGeneration);
+      final remaining = await txn.query(
+        'sync_queue',
+        where: 'table_name = ? AND record_id = ? AND id > ?',
+        whereArgs: [item.tableName, item.recordId, item.id],
+        orderBy: 'id ASC',
+      );
+      final version = (serverRow['version'] as num).toInt();
+      for (final next in remaining) {
+        if ((next['operation'] != 'update' && next['operation'] != 'delete') ||
+            next['status'] != 'pending' ||
+            next['attempted'] != 0 ||
+            (next['retry_count'] as num?) != 0) {
+          continue;
+        }
+        final payload = Map<String, dynamic>.from(
+          jsonDecode(await EncryptionService.decrypt(next['payload'] as String))
+              as Map,
+        );
+        payload['version'] = version;
+        await txn.update(
+          'sync_queue',
+          {'payload': await EncryptionService.encrypt(jsonEncode(payload))},
+          where: 'id = ?',
+          whereArgs: [next['id']],
+        );
+      }
+      final local = await txn.query(
+        item.tableName,
+        where: 'id = ?',
+        whereArgs: [item.recordId],
+        limit: 1,
+      );
+      if (remaining.isEmpty && local.isNotEmpty) {
+        await txn.update(
+          item.tableName,
+          {...serverRow, 'is_synced': 1},
+          where: 'id = ?',
+          whereArgs: [item.recordId],
+        );
+      } else {
+        await txn.update(
+          item.tableName,
+          {'version': version},
+          where: 'id = ?',
+          whereArgs: [item.recordId],
+        );
+      }
+      final deleted = await txn.delete(
+        'sync_queue',
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
+      if (deleted != 1) {
+        throw StateError('Patient delivery ack was not committed.');
+      }
+      AppDatabase.ensureDataGeneration(expectedGeneration);
+    });
   }
 
   static Future<DateTime?> scheduleRetry(
@@ -325,7 +456,11 @@ class LocalDatabaseService {
 
   static Future<String> getLastSyncTime() async {
     final value = await AppDatabase.getMetadata('last_sync_time');
-    return value ?? '1970-01-01T00:00:00.000';
+    final parsed = DateTime.tryParse(value ?? '');
+    if (parsed == null || parsed.toUtc().isAfter(DateTime.now().toUtc())) {
+      return '1970-01-01T00:00:00.000Z';
+    }
+    return value!;
   }
 
   static Future<void> setLastSyncTime(
@@ -356,6 +491,7 @@ class LocalDatabaseService {
     data['version'] = (row['version'] as num?)?.toInt() ?? 1;
     data['treatmentPlan'] = _jsonColumn(data['treatmentPlan']);
     data['photos'] = _jsonColumn(data['photos']);
+    data['whatsappOptIn'] = _sqliteBool(data['whatsappOptIn']);
     data.removeWhere((key, _) => !_patientColumns.contains(key));
     await AppDatabase.upsertPatientFromSync(
       data,

@@ -37,4 +37,34 @@ void main() {
 
     expect(find.text('تعذرت مزامنة 2 تغييرات'), findsOneWidget);
   });
+
+  testWidgets('pull failure is visible without exposing server error details', (
+    tester,
+  ) async {
+    SyncService.status.value = const SyncStatusSnapshot(
+      pullError: 'private server detail',
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SyncStatusIndicator())),
+    );
+    expect(
+      find.text('تعذر جلب التحديثات؛ البيانات المحلية محفوظة'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('private'), findsNothing);
+  });
+
+  testWidgets(
+    'quarantined work stays visible as recovery state without exposing old clinic rows',
+    (tester) async {
+      SyncService.status.value = const SyncStatusSnapshot(recoverySnapshots: 1);
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: SyncStatusIndicator())),
+      );
+      expect(
+        find.text('توجد 1 نسخ استعادة سريرية تحتاج مراجعة'),
+        findsOneWidget,
+      );
+    },
+  );
 }

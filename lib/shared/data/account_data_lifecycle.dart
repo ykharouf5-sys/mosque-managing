@@ -3,6 +3,8 @@ import '../../patients/data/notification_service.dart';
 import '../../patients/data/storage_service.dart';
 import '../cache/cache_manager.dart';
 import 'app_database.dart';
+import 'api_config.dart';
+import '../../store/data/cart_storage.dart';
 
 class AccountDataLifecycle {
   AccountDataLifecycle._();
@@ -10,11 +12,15 @@ class AccountDataLifecycle {
   static Future<AccountActivationResult> activate({
     required String accountId,
     required int clinicalScopeVersion,
+    String? clinicId,
+    String? previousClinicId,
     bool forceClinicalReset = false,
   }) async {
     final result = await AppDatabase.activateAccount(
       accountId: accountId,
       clinicalScopeVersion: clinicalScopeVersion,
+      clinicId: clinicId,
+      previousClinicId: previousClinicId,
     );
     if (forceClinicalReset && !result.requiresClinicalPurge) {
       await AppDatabase.resetClinicalDataForResync();
@@ -26,8 +32,20 @@ class AccountDataLifecycle {
   }
 
   static Future<void> clearAllUserData() async {
-    await AppDatabase.clearAllLocalData();
-    await _clearAncillaryClinicalData();
+    final accountId = AppDatabase.activeAccountId;
+    try {
+      if (accountId != null) {
+        await CartStorage.save(
+          CartStorage.key(ApiConfig.baseUrl, accountId),
+          [],
+        );
+      }
+    } finally {
+      // A cart storage failure must never prevent deletion of clinical data.
+      await AppDatabase.clearAllLocalData();
+      if (accountId != null) await PhotoService.clearAccountPhotos(accountId);
+      await _clearAncillaryClinicalData();
+    }
   }
 
   /// Ends access to the active account without deleting its encrypted file.
@@ -44,7 +62,6 @@ class AccountDataLifecycle {
       CacheTags.appointments,
       CacheTags.orders,
     ]);
-    await PhotoService.clearAllLocalPhotos();
     await StorageService.clearLegacyClinicalData();
     try {
       await NotificationService.cancelAll();

@@ -91,8 +91,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
     setState(() => _resending = true);
     try {
       final dispatch = await AuthService().resetPasswordForEmail(widget.email);
-      _startTimer(dispatch.resendAfter);
       if (!mounted) return;
+      _startTimer(dispatch.resendAfter);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تم إرسال رمز جديد'),
@@ -146,6 +146,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                   SizedBox(height: 28.h),
                   TextFormField(
                     controller: _codeController,
+                    enabled: !_loading,
+                    textDirection: TextDirection.ltr,
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     maxLength: 6,
@@ -162,6 +164,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                   SizedBox(height: 14.h),
                   TextFormField(
                     controller: _passwordController,
+                    enabled: !_loading,
+                    autofillHints: const [AutofillHints.newPassword],
                     obscureText: _obscure,
                     decoration: InputDecoration(
                       labelText: 'كلمة المرور الجديدة',
@@ -188,6 +192,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                   SizedBox(height: 14.h),
                   TextFormField(
                     controller: _confirmationController,
+                    enabled: !_loading,
+                    autofillHints: const [AutofillHints.newPassword],
                     obscureText: true,
                     decoration: const InputDecoration(
                       labelText: 'تأكيد كلمة المرور',
@@ -209,7 +215,9 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                   ),
                   SizedBox(height: 12.h),
                   TextButton(
-                    onPressed: _seconds == 0 && !_resending ? _resend : null,
+                    onPressed: _seconds == 0 && !_resending && !_loading
+                        ? _resend
+                        : null,
                     child: Text(
                       _seconds > 0
                           ? 'إعادة الإرسال بعد $_seconds ثانية'

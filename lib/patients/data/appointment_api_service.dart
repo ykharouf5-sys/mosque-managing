@@ -24,16 +24,17 @@ class AppointmentApiService {
     DateTime date, {
     int page = 1,
     int pageSize = 25,
+    bool force = false,
+    required Map<String, String> clinicalHeaders,
   }) async {
     final day = _dateOnly(date);
     final response = await _api.get(
       '/appointments',
-      query: {
-        'from': day,
-        'to': day,
-        'page': '$page',
-        'per_page': '$pageSize',
-      },
+      headers: clinicalHeaders,
+      freshness: const Duration(seconds: 20),
+      force: force,
+      maxRetries: 0,
+      query: {'from': day, 'to': day, 'page': '$page', 'per_page': '$pageSize'},
     );
     final payload = Map<String, dynamic>.from(response.data['data'] as Map);
     return AppointmentPage(
@@ -53,10 +54,11 @@ class AppointmentApiService {
   static Future<Map<String, dynamic>> create(
     Map<String, dynamic> row, {
     required String operationId,
+    Map<String, String> clinicalHeaders = const {},
   }) async {
     final response = await _api.post(
       '/appointments',
-      headers: {'Idempotency-Key': operationId},
+      headers: {...clinicalHeaders, 'Idempotency-Key': operationId},
       body: _body(row, includeId: true),
     );
     return Map<String, dynamic>.from(response.data['data'] as Map);
@@ -66,19 +68,26 @@ class AppointmentApiService {
     String id,
     Map<String, dynamic> row, {
     required String operationId,
+    Map<String, String> clinicalHeaders = const {},
   }) async {
     final response = await _api.put(
       '/appointments/$id',
-      headers: {'Idempotency-Key': operationId},
+      headers: {...clinicalHeaders, 'Idempotency-Key': operationId},
       body: _body(row, includeId: false),
     );
     return Map<String, dynamic>.from(response.data['data'] as Map);
   }
 
-  static Future<void> delete(String id, {required String operationId}) async {
+  static Future<void> delete(
+    String id, {
+    required String operationId,
+    Map<String, String> clinicalHeaders = const {},
+    int? version,
+  }) async {
     await _api.delete(
       '/appointments/$id',
-      headers: {'Idempotency-Key': operationId},
+      headers: {...clinicalHeaders, 'Idempotency-Key': operationId},
+      body: {'version': version},
     );
   }
 

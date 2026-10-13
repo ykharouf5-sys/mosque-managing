@@ -21,6 +21,7 @@ class CacheManager {
   /// Must be called once before use.
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await prune();
     _rebuildTagIndex();
     invalidate(CacheTags.patients);
     invalidate(CacheTags.appointments);
@@ -28,6 +29,11 @@ class CacheManager {
 
   void _rebuildTagIndex() {
     _tagIndex.clear();
+    for (final entry in _memory.entries) {
+      for (final tag in entry.value.tags) {
+        _tagIndex.putIfAbsent(tag, () => {}).add(entry.key);
+      }
+    }
     final keys = _prefs?.getKeys() ?? {};
     for (final key in keys) {
       if (key.startsWith(_prefPrefix)) {
@@ -97,6 +103,7 @@ class CacheManager {
 
     if (persist && _prefs != null) {
       await _prefs!.setString(_prefPrefix + key, entry.toJson());
+      await prune();
     }
 
     // Update tag index
@@ -147,6 +154,51 @@ class CacheManager {
   void remove(String key) {
     _memory.remove(key);
     _prefs?.remove(_prefPrefix + key);
+  }
+
+  int get persistedBytes => (_prefs?.getKeys() ?? <String>{})
+      .where((key) => key.startsWith(_prefPrefix))
+      .fold(
+        0,
+        (bytes, key) =>
+            bytes + utf8.encode(_prefs?.getString(key) ?? '').length,
+      );
+
+  /// Re-downloadable snapshots are bounded; favorites retain their existing
+  /// long lifetime. Clinical records and pending writes live in SQLite, never
+  /// in this eviction pool.
+  Future<void> prune({int maxBytes = 8 * 1024 * 1024}) async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final entries = <({String key, int bytes, DateTime expires})>[];
+    for (final key
+        in prefs
+            .getKeys()
+            .where((key) => key.startsWith(_prefPrefix))
+            .toList()) {
+      final raw = prefs.getString(key) ?? '';
+      final entry = CacheEntry.fromJson(raw);
+      if (entry.isExpired) {
+        await prefs.remove(key);
+        _memory.remove(key.substring(_prefPrefix.length));
+      } else {
+        entries.add((
+          key: key,
+          bytes: utf8.encode(raw).length,
+          expires: entry.expiresAt,
+        ));
+      }
+    }
+    var total = entries.fold(0, (sum, entry) => sum + entry.bytes);
+    entries.sort((a, b) => a.expires.compareTo(b.expires));
+    for (final entry in entries) {
+      if (total <= maxBytes) break;
+      if (entry.key.startsWith('${_prefPrefix}favorites:')) continue;
+      await prefs.remove(entry.key);
+      _memory.remove(entry.key.substring(_prefPrefix.length));
+      total -= entry.bytes;
+    }
+    _rebuildTagIndex();
   }
 }
 

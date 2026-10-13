@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/data/notification_service.dart';
@@ -7,6 +8,10 @@ import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/sync_service.dart';
+import 'package:studentry/shared/data/clinical_sync_policy.dart';
+import 'package:studentry/shared/data/api_request_queue.dart';
+import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/data/sync_backoff.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final patientListProvider =
@@ -45,7 +50,10 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   }
 
   Future<void> loadFromDb() async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final rows = await AppDatabase.getAllPatients();
+    if (!ref.mounted) return;
+    AppDatabase.ensureDataGeneration(generation);
     _patients.clear();
     for (final row in rows) {
       final p = patientRowToProfile(row);
@@ -56,7 +64,15 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
   }
 
   Future<bool> refreshFromApi({bool force = false}) async {
-    final changed = await SyncService.syncNow(force: force);
+    final generation = AppDatabase.dataGeneration;
+    final session = AuthService().sessionGeneration;
+    await loadFromDb();
+    if (!ref.mounted ||
+        generation != AppDatabase.dataGeneration ||
+        session != AuthService().sessionGeneration) {
+      return false;
+    }
+    final changed = await SyncService.syncNow(manual: force);
     if (!changed) await loadFromDb();
     return changed;
   }
@@ -93,19 +109,31 @@ class PatientListNotifier extends Notifier<List<PatientProfile>> {
     PatientProfile patient, {
     double initialPayment = 0,
     String? initialPaymentId,
+    Appointment? appointment,
   }) async {
     await AuthService().ensureLocalAccountActive();
-    await AppDatabase.insertPatient(
-      profileToPatientRow(patient),
-      initialPayment: initialPayment,
-      initialPaymentId: initialPaymentId,
-    );
+    try {
+      await AppDatabase.insertPatient(
+        profileToPatientRow(patient),
+        initialPayment: initialPayment,
+        initialPaymentId: initialPaymentId,
+        appointment: appointment == null ? null : appointmentToRow(appointment),
+      );
+    } on StateError catch (error) {
+      if (error.message == 'appointment_time_conflict') {
+        throw const AppointmentTimeConflictException();
+      }
+      rethrow;
+    }
     _patients.insert(0, patient);
     _loadedCount = (_loadedCount + 1).clamp(1, _patients.length);
     ref.invalidate(patientDirectoryProvider);
     CacheManager.instance.invalidate(CacheTags.patients);
     state = _display();
     ref.invalidate(localClinicalReportProvider);
+    if (appointment != null) {
+      await ref.read(appointmentListProvider.notifier).loadFromDb();
+    }
     unawaited(SyncService.syncNowWithJitter());
   }
 
@@ -175,7 +203,12 @@ class PatientDirectoryNotifier extends Notifier<List<PatientProfile>> {
     if (_loadingFirstPage) return;
     _loadingFirstPage = true;
     try {
+      await AuthService().ensureLocalAccountActive();
+      if (!ref.mounted) return;
+      final generation = AppDatabase.captureActiveDataGeneration();
       final rows = await AppDatabase.getPatientsPage(0, pageSize);
+      if (!ref.mounted) return;
+      AppDatabase.ensureDataGeneration(generation);
       final patients = rows
           .map(patientRowToProfile)
           .whereType<PatientProfile>();
@@ -192,7 +225,10 @@ class PatientDirectoryNotifier extends Notifier<List<PatientProfile>> {
     isLoadingMore = true;
     state = [...state];
     try {
+      final generation = AppDatabase.captureActiveDataGeneration();
       final rows = await AppDatabase.getPatientsPage(state.length, pageSize);
+      if (!ref.mounted) return;
+      AppDatabase.ensureDataGeneration(generation);
       final knownIds = state.map((patient) => patient.id).toSet();
       final next = rows
           .map(patientRowToProfile)
@@ -202,12 +238,20 @@ class PatientDirectoryNotifier extends Notifier<List<PatientProfile>> {
       hasMore = rows.length == pageSize;
     } finally {
       isLoadingMore = false;
-      state = [...state];
+      if (ref.mounted) state = [...state];
     }
   }
 
   Future<void> refreshFromApi({bool force = false}) async {
-    final changed = await SyncService.syncNow(force: force);
+    final generation = AppDatabase.dataGeneration;
+    final session = AuthService().sessionGeneration;
+    await loadFirstPage();
+    if (!ref.mounted ||
+        generation != AppDatabase.dataGeneration ||
+        session != AuthService().sessionGeneration) {
+      return;
+    }
+    final changed = await SyncService.syncNow(manual: force);
     if (!changed) await loadFirstPage();
   }
 }
@@ -216,6 +260,13 @@ final appointmentListProvider =
     NotifierProvider<AppointmentListNotifier, List<Appointment>>(
       AppointmentListNotifier.new,
     );
+
+class AppointmentTimeConflictException implements Exception {
+  const AppointmentTimeConflictException();
+
+  @override
+  String toString() => 'هذا الوقت محجوز لموعد آخر.';
+}
 
 class AppointmentDatePage {
   final List<Appointment> appointments;
@@ -230,6 +281,7 @@ class AppointmentDatePage {
 }
 
 class AppointmentListNotifier extends Notifier<List<Appointment>> {
+  final Map<String, ClinicalSyncPolicy> _datePolicies = {};
   static const int pageSize = 25;
   final List<Appointment> _appointments = [];
   int _loadedCount = 0;
@@ -251,7 +303,10 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   }
 
   Future<void> loadFromDb() async {
+    final generation = AppDatabase.captureActiveDataGeneration();
     final rows = await AppDatabase.getAllAppointments();
+    if (!ref.mounted) return;
+    AppDatabase.ensureDataGeneration(generation);
     _appointments.clear();
     for (final row in rows) {
       final a = appointmentRowToAppointment(row);
@@ -265,15 +320,58 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   Future<AppointmentDatePage> loadDatePage(
     DateTime date, {
     int page = 1,
+    bool remote = false,
+    bool manual = false,
   }) async {
     await AuthService().ensureLocalAccountActive();
+    final generation = AppDatabase.captureActiveDataGeneration();
+    Future<AppointmentDatePage> localPage() async {
+      final rows = await AppDatabase.getAppointmentsForDate(date);
+      AppDatabase.ensureDataGeneration(generation);
+      final start = (page - 1) * pageSize;
+      final end = (start + pageSize).clamp(0, rows.length);
+      final local = start >= rows.length
+          ? const <Map<String, dynamic>>[]
+          : rows.sublist(start, end);
+      return AppointmentDatePage(
+        appointments: local
+            .map(appointmentRowToAppointment)
+            .whereType<Appointment>()
+            .toList(growable: false),
+        currentPage: page,
+        lastPage: rows.isEmpty ? 1 : ((rows.length + pageSize - 1) ~/ pageSize),
+      );
+    }
+
+    if (!remote) return localPage();
+    final dateKey = '${date.year}-${date.month}-${date.day}:$page';
+    if (!_datePolicies.containsKey(dateKey) && _datePolicies.length >= 64) {
+      _datePolicies.remove(_datePolicies.keys.first);
+    }
+    final policy = _datePolicies.putIfAbsent(dateKey, ClinicalSyncPolicy.new);
+    final context = jsonEncode([
+      AuthService().userId,
+      AuthService().clinicId,
+      AuthService().sessionGeneration,
+      generation,
+      AppDatabase.activeClinicalScopeVersion,
+      dateKey,
+    ]);
+    if (!policy.allowPull(context, manual: manual)) return localPage();
+    final clinicalHeaders = Map<String, String>.unmodifiable({
+      'X-Clinical-Clinic': AuthService().clinicId ?? '',
+      'X-Clinical-Scope-Version':
+          '${AppDatabase.activeClinicalScopeVersion ?? AuthService().clinicalScopeVersion}',
+    });
     try {
       final remote = await AppointmentApiService.fetchDatePage(
         date,
         page: page,
         pageSize: pageSize,
+        force: manual,
+        clinicalHeaders: clinicalHeaders,
       );
-      final generation = AppDatabase.captureActiveDataGeneration();
+      AppDatabase.ensureDataGeneration(generation);
       final pageAppointments = <String, Appointment>{};
       for (final row in remote.rows) {
         final localRow = AppointmentApiService.toLocalRow(row);
@@ -281,9 +379,21 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
           localRow,
           expectedGeneration: generation,
         );
-        final appointment = appointmentRowToAppointment(localRow);
+        // Render the committed local row. A stale REST page must not display
+        // a pending deletion or an older version that the database rejected.
+        final committed = await AppDatabase.getAppointmentById(
+          localRow['id'] as String,
+        );
+        AppDatabase.ensureDataGeneration(generation);
+        final appointment = committed == null
+            ? null
+            : appointmentRowToAppointment(committed);
         final appointmentId = appointment?.id;
-        if (appointment != null && appointmentId != null) {
+        if (appointment != null &&
+            appointmentId != null &&
+            appointment.date.year == date.year &&
+            appointment.date.month == date.month &&
+            appointment.date.day == date.day) {
           pageAppointments[appointmentId] = appointment;
         }
       }
@@ -301,27 +411,46 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
         }
       }
       await loadFromDb();
+      AppDatabase.ensureDataGeneration(generation);
+      policy.succeeded(context);
       return AppointmentDatePage(
         appointments: pageAppointments.values.toList(growable: false)
           ..sort((a, b) => a.time.compareTo(b.time)),
         currentPage: remote.currentPage,
         lastPage: remote.lastPage,
       );
-    } catch (_) {
-      final rows = await AppDatabase.getAppointmentsForDate(date);
-      final start = (page - 1) * pageSize;
-      final end = (start + pageSize).clamp(0, rows.length);
-      final localPage = start >= rows.length
-          ? const <Map<String, dynamic>>[]
-          : rows.sublist(start, end);
-      return AppointmentDatePage(
-        appointments: localPage
-            .map(appointmentRowToAppointment)
-            .whereType<Appointment>()
-            .toList(growable: false),
-        currentPage: page,
-        lastPage: rows.isEmpty ? 1 : ((rows.length + pageSize - 1) ~/ pageSize),
-      );
+    } on StaleAccountDataException {
+      rethrow;
+    } catch (error) {
+      AppDatabase.ensureDataGeneration(generation);
+      if (error is ApiException &&
+          error.statusCode == 403 &&
+          error.details is Map &&
+          (error.details as Map)['code'] == 'clinical_scope_changed') {
+        try {
+          await AuthService().refreshCurrentUser();
+        } on StaleSessionException {
+          rethrow;
+        } on StaleAccountDataException {
+          rethrow;
+        } catch (_) {
+          // Keep the scoped local page when offline; never apply the rejected
+          // server page or bind old rows to a newly selected clinic.
+        }
+        AppDatabase.ensureDataGeneration(generation);
+      }
+      if (error is ApiException && error.statusCode == 429) {
+        policy.defer(
+          context,
+          DateTime.now().add(
+            SyncBackoffPolicy.delayFor(
+              retryCount: 0,
+              retryAfter: error.retryAfter,
+            ),
+          ),
+        );
+      }
+      return localPage();
     }
   }
 
@@ -355,6 +484,13 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
 
   Future<void> add(Appointment appointment) async {
     await AuthService().ensureLocalAccountActive();
+    if (_blocksTime(appointment.status) &&
+        await AppDatabase.hasAppointmentConflict(
+          appointment.date,
+          appointment.time,
+        )) {
+      throw const AppointmentTimeConflictException();
+    }
     await AppDatabase.insertAppointment(appointmentToRow(appointment));
     _appointments.insert(0, appointment);
     _loadedCount = (_loadedCount + 1).clamp(1, _appointments.length);
@@ -384,12 +520,26 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
 
   Future<void> update(String id, Appointment updated) async {
     await AuthService().ensureLocalAccountActive();
+    if (_blocksTime(updated.status) &&
+        await AppDatabase.hasAppointmentConflict(
+          updated.date,
+          updated.time,
+          excludingId: id,
+        )) {
+      throw const AppointmentTimeConflictException();
+    }
+    final oldIndex = _appointments.indexWhere((a) => a.id == id);
+    final wasCancelled =
+        oldIndex >= 0 && _isCancelled(_appointments[oldIndex].status);
     await AppDatabase.updateAppointment(id, appointmentToRow(updated));
     final idx = _appointments.indexWhere((a) => a.id == id);
     if (idx >= 0) {
       _appointments[idx] = updated;
       CacheManager.instance.invalidate(CacheTags.appointments);
       if (idx < _loadedCount) state = _display();
+    }
+    if (!wasCancelled && _isCancelled(updated.status)) {
+      await _offerNextWaitlisted(updated);
     }
     await NotificationService.onAppointmentAdded(updated);
     unawaited(SyncService.syncNowWithJitter());
@@ -406,6 +556,43 @@ class AppointmentListNotifier extends Notifier<List<Appointment>> {
   }
 
   void refresh() {
+    state = _display();
+  }
+
+  bool _isCancelled(String status) =>
+      const {'ملغي', 'cancelled', 'canceled'}.contains(status);
+
+  bool _blocksTime(String status) => !const {
+    'ملغي',
+    'cancelled',
+    'canceled',
+    'قائمة انتظار',
+    'waitlist',
+    'متاح',
+    'available',
+  }.contains(status);
+
+  Future<void> _offerNextWaitlisted(Appointment cancelled) async {
+    final row = await AppDatabase.getFirstWaitlistedAppointment(
+      cancelled.date,
+      excludingId: cancelled.id,
+    );
+    final waiting = row == null ? null : appointmentRowToAppointment(row);
+    if (waiting == null) return;
+    final offered = Appointment(
+      id: waiting.id,
+      time: cancelled.time,
+      patientName: waiting.patientName,
+      treatment: waiting.treatment,
+      status: 'متاح',
+      patientId: waiting.patientId,
+      date: cancelled.date,
+      reminderSent: waiting.reminderSent,
+      notificationSent: waiting.notificationSent,
+    );
+    await AppDatabase.updateAppointment(waiting.id, appointmentToRow(offered));
+    final index = _appointments.indexWhere((a) => a.id == waiting.id);
+    if (index >= 0) _appointments[index] = offered;
     state = _display();
   }
 }

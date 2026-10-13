@@ -35,6 +35,7 @@ class TreatmentItem {
 class PatientProfile {
   final String id, photoUrl;
   String name, phone;
+  bool whatsappOptIn;
   int age;
   String address, registrationDate, notes;
   double amountDue, amountPaid, todayPayment;
@@ -46,6 +47,7 @@ class PatientProfile {
     required this.id,
     required this.name,
     required this.phone,
+    this.whatsappOptIn = false,
     required this.age,
     required this.address,
     required this.registrationDate,
@@ -63,6 +65,7 @@ class PatientProfile {
     'id': id,
     'name': name,
     'phone': phone,
+    'whatsappOptIn': whatsappOptIn,
     'age': age,
     'address': address,
     'registrationDate': registrationDate,
@@ -80,6 +83,7 @@ class PatientProfile {
     id: j['id'] as String? ?? '',
     name: j['name'] as String? ?? '',
     phone: j['phone'] as String? ?? '',
+    whatsappOptIn: j['whatsappOptIn'] == true || j['whatsappOptIn'] == 1,
     age: (j['age'] as num?)?.toInt() ?? 0,
     address: j['address'] as String? ?? '',
     registrationDate: j['registrationDate'] as String? ?? '',
@@ -168,6 +172,7 @@ PatientProfile? patientRowToProfile(Map<String, dynamic> row) {
       id: row['id'] as String,
       name: row['name'] as String? ?? '',
       phone: row['phone'] as String? ?? '',
+      whatsappOptIn: row['whatsappOptIn'] == true || row['whatsappOptIn'] == 1,
       age: (row['age'] as int?) ?? 0,
       address: row['address'] as String? ?? '',
       registrationDate: row['registrationDate'] as String? ?? '',
@@ -220,6 +225,7 @@ Map<String, dynamic> profileToPatientRow(PatientProfile p) {
     'id': p.id,
     'name': p.name,
     'phone': p.phone,
+    'whatsappOptIn': p.whatsappOptIn ? 1 : 0,
     'age': p.age,
     'address': p.address,
     'registrationDate': p.registrationDate,
@@ -266,6 +272,7 @@ PatientProfile? _patientRowToProfile(Map<String, dynamic> row) {
       id: row['id'] as String,
       name: row['name'] as String? ?? '',
       phone: row['phone'] as String? ?? '',
+      whatsappOptIn: row['whatsappOptIn'] == true || row['whatsappOptIn'] == 1,
       age: (row['age'] as int?) ?? 0,
       address: row['address'] as String? ?? '',
       registrationDate: row['registrationDate'] as String? ?? '',
@@ -320,6 +327,7 @@ Map<String, dynamic> _profileToPatientRow(PatientProfile p) {
     'id': p.id,
     'name': p.name,
     'phone': p.phone,
+    'whatsappOptIn': p.whatsappOptIn ? 1 : 0,
     'age': p.age,
     'address': p.address,
     'registrationDate': p.registrationDate,

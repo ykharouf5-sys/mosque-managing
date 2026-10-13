@@ -30,6 +30,8 @@ class FcmTokenService {
   static int _session = 0;
   static String? _accountId;
   static bool _watchingConnectivity = false;
+  static final _orderChanges = StreamController<void>.broadcast();
+  static Stream<void> get orderChanges => _orderChanges.stream;
 
   static void _onConnectivity() {
     if (_authenticated && ConnectivityService.isOnline.value) {
@@ -93,6 +95,13 @@ class FcmTokenService {
         (token) => registerToken(token),
       );
       FirebaseMessaging.onMessage.listen((message) async {
+        if (_authenticated &&
+            {
+              'order_created',
+              'order_status_changed',
+            }.contains(message.data['system_event'])) {
+          _orderChanges.add(null);
+        }
         final notification = message.notification;
         // Android suppresses notification messages in foreground, so it
         // needs a local presentation. On iOS the presentation options above
@@ -200,9 +209,8 @@ class FcmTokenService {
         headers: {'X-Device-Id': deviceId},
       );
     } catch (_) {}
-    _registeredToken = null;
-    _registeringToken = null;
-    await FirebaseMessaging.instance.deleteToken();
+    // Do not delete the installation token after awaiting a network request:
+    // a different account may already have registered it by then.
   }
 
   static Future<String> _deviceId() async {

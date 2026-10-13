@@ -2,12 +2,14 @@ import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/student/data/subject_models.dart';
 import 'package:studentry/student/data/academic_store.dart';
+import 'package:studentry/student/data/academic_document_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'academic_sync_action.dart';
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
 
 class LessonsScreen extends ConsumerStatefulWidget {
   const LessonsScreen({super.key});
@@ -23,12 +25,13 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
   void initState() {
     super.initState();
     _academic.addListener(_onAcademicChanged);
-    _academic.load(force: true);
+    _academic.load();
   }
 
   @override
   void dispose() {
     _academic.removeListener(_onAcademicChanged);
+    _academic.setViewActive(this, false);
     super.dispose();
   }
 
@@ -37,7 +40,12 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => RefreshVisibility(
+    onChanged: (active) => _academic.setViewActive(this, active),
+    child: _buildContent(context),
+  );
+
+  Widget _buildContent(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const AppDrawer(),
@@ -263,12 +271,23 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
                 SizedBox(height: 8.h),
                 InkWell(
                   onTap: () async {
-                    final uri = Uri.tryParse(subject!.pdfUrl!);
-                    if (uri != null && await canLaunchUrl(uri)) {
+                    try {
+                      final uri = await const AcademicDocumentService()
+                          .subjectUrl(subject!);
                       await launchUrl(
                         uri,
                         mode: LaunchMode.externalApplication,
                       );
+                    } catch (_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'تعذر فتح ملف المادة. تحقق من الاتصال وحاول مجدداً.',
+                            ),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: Container(

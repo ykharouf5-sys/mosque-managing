@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 import 'api_config.dart';
+import 'package:intl/intl.dart';
 
 class ApiRequestQueue {
   ApiRequestQueue._();
@@ -40,7 +41,7 @@ class ApiRequestQueue {
       final serverDelay = error.retryAfter;
       final delay = serverDelay == null
           ? min(8000, 300 * (1 << r.attempt)) + Random().nextInt(350)
-          : min(60000, serverDelay.inMilliseconds) + Random().nextInt(350);
+          : serverDelay.inMilliseconds + Random().nextInt(350);
       r.attempt++;
       Timer(Duration(milliseconds: delay), () {
         _requests.addLast(r);
@@ -76,7 +77,20 @@ class ApiException implements Exception {
         .map((entry) => entry.value.trim())
         .firstOrNull;
     final seconds = value == null ? null : int.tryParse(value);
-    return seconds == null || seconds < 1 ? null : Duration(seconds: seconds);
+    if (seconds != null) {
+      return seconds < 1 ? null : Duration(seconds: seconds);
+    }
+    if (value == null) return null;
+    try {
+      final date = DateFormat(
+        "EEE, dd MMM yyyy HH:mm:ss 'GMT'",
+        'en_US',
+      ).parseStrict(value, true);
+      final remaining = date.difference(DateTime.now().toUtc());
+      return remaining.isNegative ? Duration.zero : remaining;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override

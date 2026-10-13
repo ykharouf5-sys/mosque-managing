@@ -13,11 +13,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
 
 class StudentHomeScreen extends ConsumerStatefulWidget {
   final bool embedded;
+  final bool active;
 
-  const StudentHomeScreen({super.key, this.embedded = false});
+  const StudentHomeScreen({
+    super.key,
+    this.embedded = false,
+    this.active = true,
+  });
 
   @override
   ConsumerState<StudentHomeScreen> createState() => _StudentHomeScreenState();
@@ -27,12 +33,12 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => _refreshTodayData());
   }
 
   Future<void> _refreshTodayData({bool force = false}) async {
     final patients = ref.read(patientListProvider.notifier);
     final appointments = ref.read(appointmentListProvider.notifier);
+    await appointments.loadFromDb();
     final changed = await patients.refreshFromApi(force: force);
     if (!changed && mounted) {
       await appointments.loadFromDb();
@@ -41,47 +47,53 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(),
-      drawer: const AppDrawer(),
-      drawerEnableOpenDragGesture: !widget.embedded,
-      body: RefreshIndicator(
-        onRefresh: () => _refreshTodayData(force: true),
-        color: AppColors.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.symmetric(horizontal: 16.w),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: 8.h),
-              _buildWelcomeSection(),
-              SizedBox(height: 20.h),
-              _buildTodaySection(),
-              SizedBox(height: 24.h),
-              _buildQuickActions(context),
-              SizedBox(height: 24.h),
-            ],
+    return RefreshVisibility(
+      active: widget.active,
+      onChanged: (visible) {
+        if (visible) _refreshTodayData();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: _buildAppBar(),
+        drawer: const AppDrawer(),
+        drawerEnableOpenDragGesture: !widget.embedded,
+        body: RefreshIndicator(
+          onRefresh: () => _refreshTodayData(force: true),
+          color: AppColors.primary,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.symmetric(horizontal: 16.w),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 8.h),
+                _buildWelcomeSection(),
+                SizedBox(height: 20.h),
+                _buildTodaySection(),
+                SizedBox(height: 24.h),
+                _buildQuickActions(context),
+                SizedBox(height: 24.h),
+              ],
+            ),
           ),
         ),
-      ),
-      bottomNavigationBar: widget.embedded
-          ? null
-          : const AppBottomNav(selectedIndex: 0),
-      floatingActionButton: widget.embedded
-          ? null
-          : FloatingActionButton(
-              tooltip: 'إضافة مريض',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+        bottomNavigationBar: widget.embedded
+            ? null
+            : const AppBottomNav(selectedIndex: 0),
+        floatingActionButton: widget.embedded
+            ? null
+            : FloatingActionButton(
+                tooltip: 'إضافة مريض',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+                ),
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                child: const Icon(Icons.person_add_rounded),
               ),
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.person_add_rounded),
-            ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      ),
     );
   }
 

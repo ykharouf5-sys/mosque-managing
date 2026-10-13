@@ -2,6 +2,7 @@ import 'package:studentry/auth/presentation/auth_mixin.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/auth/presentation/otp_verification_screen.dart';
 import 'package:studentry/auth/presentation/password_reset_screen.dart';
+import 'package:studentry/auth/presentation/forgot_password_dialog.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
@@ -139,82 +140,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         false;
   }
 
-  void _showForgotPasswordDialog(BuildContext context) {
-    final emailCtrl = TextEditingController();
-    showDialog(
+  Future<void> _showForgotPasswordDialog(BuildContext context) async {
+    final request = await showDialog<PasswordResetRequest>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'إعادة تعيين كلمة المرور',
-          style: TextStyle(fontWeight: FontWeight.bold),
+      barrierDismissible: false,
+      builder: (_) => ForgotPasswordDialog(
+        initialEmail: _emailController.text.trim(),
+        sendCode: (email) async =>
+            (await AuthService().resetPasswordForEmail(email)).resendAfter,
+      ),
+    );
+    if (!mounted || !context.mounted || request == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PasswordResetScreen(
+          email: request.email,
+          initialResendSeconds: request.resendSeconds,
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('أدخل بريدك الإلكتروني وسنرسل لك رمز إعادة التعيين'),
-            SizedBox(height: 16.h),
-            TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              textAlign: TextAlign.right,
-              decoration: InputDecoration(
-                hintText: 'البريد الإلكتروني',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: AppColors.authFieldBg,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty) return;
-              try {
-                final dispatch = await AuthService().resetPasswordForEmail(
-                  email,
-                );
-                if (!ctx.mounted) return;
-                Navigator.pop(ctx);
-                if (!mounted) return;
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PasswordResetScreen(
-                      email: email,
-                      initialResendSeconds: dispatch.resendAfter,
-                    ),
-                  ),
-                );
-              } catch (_) {
-                if (!ctx.mounted) return;
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('فشل إرسال رمز إعادة التعيين'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('إرسال'),
-          ),
-        ],
       ),
     );
   }

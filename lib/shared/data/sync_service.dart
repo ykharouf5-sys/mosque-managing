@@ -5,7 +5,9 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'api_client.dart';
 import 'api_request_queue.dart';
-import 'account_data_lifecycle.dart';
+import 'clinical_sync_policy.dart';
+import 'clinical_delta_pull.dart';
+import 'clinical_sync_coordinator.dart';
 import 'app_database.dart';
 import 'auth_service.dart';
 import 'connectivity_service.dart';
@@ -24,37 +26,65 @@ enum SyncFailureDisposition {
 
 typedef AsyncSyncListener = Future<void> Function();
 
+class _ClinicalSyncRun extends ClinicalSyncFlight {
+  _ClinicalSyncRun({
+    required super.key,
+    required this.generation,
+    required this.session,
+    required this.headers,
+    required this.windowDate,
+    required super.pullRequested,
+  });
+  final int generation;
+  final int session;
+  final Map<String, String> headers;
+  final DateTime windowDate;
+
+  void ensureCurrent() {
+    if (AuthService().sessionGeneration != session) {
+      throw const StaleSessionException();
+    }
+    AppDatabase.ensureDataGeneration(generation);
+  }
+}
+
 class SyncStatusSnapshot {
   final int waiting;
   final int failedPermanent;
   final bool isSyncing;
   final Map<String, int> waitingByTable;
+  final String? pullError;
+  final int recoverySnapshots;
 
   const SyncStatusSnapshot({
     this.waiting = 0,
     this.failedPermanent = 0,
     this.isSyncing = false,
     this.waitingByTable = const {},
+    this.pullError,
+    this.recoverySnapshots = 0,
   });
 }
 
 class SyncService {
-  static Timer? _timer;
   static Timer? _reconnectTimer;
   static Timer? _writeDebounceTimer;
   static Timer? _retryTimer;
   static DateTime? _retryDueAt;
   static Completer<void>? _writeDebounceCompleter;
-  static Future<bool>? _inFlight;
+  static final _flights = ClinicalSyncCoordinator<_ClinicalSyncRun>(
+    _pullPolicy,
+  );
+  static String? _contextKey;
+  static final _pullPolicy = ClinicalSyncPolicy();
   static bool _wasOffline = false;
   static bool _isAppActive = true;
   static bool _initialized = false;
-  static DateTime? _lastCompletedAt;
   static int _pullRetryCount = 0;
-  static bool get isSyncing => _inFlight != null;
-  static const _minimumAutomaticInterval = Duration(seconds: 15);
-  static const _periodicSyncBase = Duration(minutes: 4);
-  static const _periodicSyncJitter = Duration(minutes: 2);
+  static DateTime? _pullRetryDueAt;
+  static String? _lastPullError;
+  static bool _deferredPull = false;
+  static bool get isSyncing => _flights.active != null;
   static final Random _random = Random();
   static final Set<AsyncSyncListener> _syncCompleteListeners = {};
   static final Set<AsyncSyncListener> _dbReloadListeners = {};
@@ -76,10 +106,9 @@ class SyncService {
 
   static Future<void> init() async {
     _initialized = true;
-    _timer?.cancel();
+    _wasOffline = !ConnectivityService.isOnline.value;
     ConnectivityService.isOnline.removeListener(_onConnectivityChanged);
     ConnectivityService.isOnline.addListener(_onConnectivityChanged);
-    _scheduleNextPeriodicSync();
     await refreshStatus();
     if (ConnectivityService.isOnline.value) {
       // Resume the active account's cloud synchronization immediately after
@@ -90,28 +119,18 @@ class SyncService {
     }
   }
 
-  static void _scheduleNextPeriodicSync() {
-    _timer?.cancel();
-    if (!_initialized) return;
-    final delay =
-        _periodicSyncBase +
-        Duration(
-          milliseconds: _random.nextInt(_periodicSyncJitter.inMilliseconds + 1),
-        );
-    _timer = Timer(delay, () async {
-      if (_isAppActive && ConnectivityService.isOnline.value) {
-        await syncNow();
-      }
-      if (_initialized) _scheduleNextPeriodicSync();
-    });
-  }
-
   static void _onConnectivityChanged() {
     final online = ConnectivityService.isOnline.value;
     if (online && _wasOffline) {
       _reconnectTimer?.cancel();
+      final generation = AppDatabase.dataGeneration;
+      final session = AuthService().sessionGeneration;
       _reconnectTimer = Timer(Duration(seconds: Random().nextInt(10)), () {
-        syncNow(force: true);
+        if (generation != AppDatabase.dataGeneration ||
+            session != AuthService().sessionGeneration) {
+          return;
+        }
+        syncNow();
       });
     } else if (!online) {
       _retryTimer?.cancel();
@@ -133,84 +152,169 @@ class SyncService {
     }
     if (active && ConnectivityService.isOnline.value) {
       _reconnectTimer?.cancel();
+      final generation = AppDatabase.dataGeneration;
+      final session = AuthService().sessionGeneration;
       _reconnectTimer = Timer(
         Duration(milliseconds: _random.nextInt(3001)),
-        syncNow,
+        () {
+          if (generation == AppDatabase.dataGeneration &&
+              session == AuthService().sessionGeneration) {
+            syncNow();
+          }
+        },
       );
     }
   }
 
-  static Future<bool> syncNow({bool force = false}) {
+  static Future<bool> syncNow({
+    bool force = false,
+    bool pullChanges = true,
+    bool manual = false,
+  }) {
     if (!_isAppActive ||
         !ConnectivityService.isOnline.value ||
         !AuthService().hasPermission('sync.use')) {
       return Future.value(false);
     }
-    final active = _inFlight;
-    if (active != null) return active;
-    final lastCompleted = _lastCompletedAt;
-    if (!force &&
-        lastCompleted != null &&
-        DateTime.now().difference(lastCompleted) < _minimumAutomaticInterval) {
+    final auth = AuthService();
+    if (auth.userId == null || auth.userId != AppDatabase.activeAccountId) {
       return Future.value(false);
     }
-
-    late final Future<bool> run;
-    status.value = SyncStatusSnapshot(
-      waiting: status.value.waiting,
-      failedPermanent: status.value.failedPermanent,
-      isSyncing: true,
-      waitingByTable: status.value.waitingByTable,
+    final generation = AppDatabase.captureActiveDataGeneration();
+    final today = DateTime.now();
+    final key = jsonEncode([
+      auth.userId,
+      auth.clinicId,
+      AppDatabase.activeClinicalScopeVersion,
+      auth.sessionGeneration,
+      generation,
+      'clinical',
+      today.year,
+      today.month,
+      today.day,
+    ]);
+    if (_contextKey != key) {
+      _contextKey = key;
+      _pullPolicy.bind(key);
+      _pullRetryCount = 0;
+      _pullRetryDueAt = null;
+      _lastPullError = null;
+      _deferredPull = false;
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _retryDueAt = null;
+    }
+    return _flights.request(
+      key: key,
+      pullChanges: pullChanges,
+      force: force,
+      manual: manual,
+      create: (pull) => _ClinicalSyncRun(
+        key: key,
+        generation: generation,
+        windowDate: today,
+        session: auth.sessionGeneration,
+        headers: Map.unmodifiable({
+          'X-Clinical-Clinic': auth.clinicId ?? '',
+          'X-Clinical-Scope-Version':
+              '${AppDatabase.activeClinicalScopeVersion ?? auth.clinicalScopeVersion}',
+        }),
+        pullRequested: pull,
+      ),
+      execute: (flight) {
+        status.value = SyncStatusSnapshot(
+          waiting: status.value.waiting,
+          failedPermanent: status.value.failedPermanent,
+          isSyncing: true,
+          waitingByTable: status.value.waitingByTable,
+          pullError: _lastPullError,
+          recoverySnapshots: status.value.recoverySnapshots,
+        );
+        return _runSync(flight);
+      },
+      onFinished: (flight) async {
+        if (_contextKey == key) await refreshStatus();
+      },
     );
-    run = _runSync().whenComplete(() async {
-      if (identical(_inFlight, run)) _inFlight = null;
-      _lastCompletedAt = DateTime.now();
-      await refreshStatus();
-    });
-    _inFlight = run;
-    return run;
   }
 
-  static Future<bool> _runSync() async {
-    int? generation;
+  static Future<bool> _runSync(_ClinicalSyncRun run) async {
+    final generation = run.generation;
     var dataChanged = false;
     try {
-      generation = AppDatabase.captureActiveDataGeneration();
-      final pushResult = await _push(generation);
-      AppDatabase.ensureDataGeneration(generation);
+      run.ensureCurrent();
+      final pushResult = await _push(run);
+      run.ensureCurrent();
       dataChanged = pushResult.changed;
-      if (pushResult.serverAvailable) {
-        final pullResult = await _pull(generation);
-        generation = pullResult.generation;
-        AppDatabase.ensureDataGeneration(generation);
+      if (!pushResult.serverAvailable && run.pullRequested) {
+        _deferredPull = true;
+      }
+      if (pushResult.serverAvailable && run.pullRequested) {
+        run.pullRequested = false;
+        run.pulling = true;
+        final pullResult = await _pull(run);
+        run.ensureCurrent();
         dataChanged = dataChanged || pullResult.changed;
         _pullRetryCount = 0;
+        _pullRetryDueAt = null;
+        _pullPolicy.succeeded(run.key);
+        _lastPullError = null;
+        _deferredPull = false;
       }
       if (dataChanged) {
         await _notify(_dbReloadListeners);
         await _notify(_syncCompleteListeners);
       }
     } catch (e) {
+      if (e is StaleSessionException || e is StaleAccountDataException) {
+        return false;
+      }
+      try {
+        run.ensureCurrent();
+      } catch (_) {
+        return false;
+      }
+      _lastPullError = _errorMessage(e);
       await _handleSyncAuthorizationFailure(e);
+      try {
+        run.ensureCurrent();
+      } catch (_) {
+        return false;
+      }
       if (_isRetryableFailure(e)) _scheduleTransientRetry(e);
     }
-    if (generation != null &&
-        AuthService().isLoggedIn &&
+    try {
+      run.ensureCurrent();
+    } catch (_) {
+      return false;
+    }
+    if (AuthService().isLoggedIn &&
         (await LocalDatabaseService.getPendingQueue(
           limit: 1,
           expectedGeneration: generation,
         )).isNotEmpty) {
       Timer(Duration(seconds: 2 + _random.nextInt(4)), () {
-        syncNow(force: true);
+        try {
+          run.ensureCurrent();
+        } catch (_) {
+          return;
+        }
+        syncNow(force: true, pullChanges: false);
       });
     }
-    if (generation != null && AuthService().isLoggedIn) {
+    if (AuthService().isLoggedIn) {
       await _scheduleStoredRetry(generation);
+      if (_pullRetryDueAt != null) _scheduleRetryAt(_pullRetryDueAt!);
+      if (_deferredPull && _pullPolicy.blockedUntil != null) {
+        _scheduleRetryAt(_pullPolicy.blockedUntil!);
+      }
     }
     return dataChanged;
   }
 
   static Future<void> syncNowWithJitter() {
+    final generation = AppDatabase.captureActiveDataGeneration();
+    final session = AuthService().sessionGeneration;
     unawaited(refreshStatus());
     _writeDebounceTimer?.cancel();
     final completer = _writeDebounceCompleter ??= Completer<void>();
@@ -219,7 +323,15 @@ class SyncService {
       () async {
         _writeDebounceTimer = null;
         try {
-          await syncNow(force: true);
+          if (session != AuthService().sessionGeneration) {
+            throw const StaleSessionException();
+          }
+          AppDatabase.ensureDataGeneration(generation);
+          await syncNow(force: true, pullChanges: false);
+          if (!completer.isCompleted) completer.complete();
+        } on StaleSessionException {
+          if (!completer.isCompleted) completer.complete();
+        } on StaleAccountDataException {
           if (!completer.isCompleted) completer.complete();
         } catch (error, stack) {
           if (!completer.isCompleted) completer.completeError(error, stack);
@@ -240,37 +352,76 @@ class SyncService {
   }
 
   static Future<void> refreshStatus() async {
+    final generation = AppDatabase.dataGeneration;
+    final session = AuthService().sessionGeneration;
     final summary = await LocalDatabaseService.getQueueSummary();
+    final recoverySnapshots =
+        await AppDatabase.getClinicalRecoverySnapshotCount();
+    if (generation != AppDatabase.dataGeneration ||
+        session != AuthService().sessionGeneration) {
+      return;
+    }
     status.value = SyncStatusSnapshot(
       waiting: summary.waiting,
       failedPermanent: summary.failedPermanent,
-      isSyncing: _inFlight != null,
+      isSyncing: isSyncing,
       waitingByTable: summary.waitingByTable,
+      pullError: _lastPullError,
+      recoverySnapshots: recoverySnapshots,
     );
   }
 
   static Future<({bool changed, bool serverAvailable})> _push(
-    int generation,
+    _ClinicalSyncRun run,
   ) async {
+    final generation = run.generation;
     var items = await LocalDatabaseService.getPendingQueue(
       limit: 25,
       expectedGeneration: generation,
+      claim: true,
     );
     AppDatabase.ensureDataGeneration(generation);
     if (items.isEmpty) return (changed: false, serverAvailable: true);
+    final unsafeDeletes = items
+        .where(
+          (item) =>
+              item.operation == 'delete' &&
+              (item.tableName == 'patients' ||
+                  item.tableName == 'appointments') &&
+              decodeSyncPayload(item.payload)['version'] is! num,
+        )
+        .toList();
+    for (final item in unsafeDeletes) {
+      run.ensureCurrent();
+      await LocalDatabaseService.markAsPermanentFailure(
+        item.id,
+        error: 'Legacy delete has no base version; retained for review.',
+        expectedGeneration: generation,
+      );
+    }
+    items = items.where((item) => !unsafeDeletes.contains(item)).toList();
     var changed = false;
     var serverAvailable = true;
 
+    final canBatch = canBatchClinicalOperations(
+      items.map(
+        (item) => (tableName: item.tableName, operation: item.operation),
+      ),
+    );
     final clinicalItems = items
         .where(
           (item) =>
-              item.tableName == 'patients' || item.tableName == 'appointments',
+              canBatch &&
+              (item.tableName == 'patients' ||
+                  item.tableName == 'appointments'),
         )
         .toList(growable: false);
     if (clinicalItems.isNotEmpty) {
       try {
-        await ApiClient.instance.post(
+        run.ensureCurrent();
+        final response = await ApiClient.instance.post(
           '/sync/push',
+          headers: run.headers,
           maxRetries: 0,
           body: {
             'operations': clinicalItems
@@ -286,18 +437,44 @@ class SyncService {
                 .toList(growable: false),
           },
         );
+        final results = {
+          for (final result in response.data['data']['results'] as List)
+            result['id']: result,
+        };
+        run.ensureCurrent();
+        if (clinicalItems.any(
+          (item) => results[item.recordId]?['status'] != 'accepted',
+        )) {
+          throw StateError('Missing clinical operation acknowledgement.');
+        }
         final completedIds = clinicalItems.map((item) => item.id).toSet();
         for (final item in clinicalItems) {
-          await LocalDatabaseService.markAsCompleted(
-            item.id,
-            expectedGeneration: generation,
-          );
+          final result = results[item.recordId];
+          if (item.operation != 'delete') {
+            await LocalDatabaseService.completeClinicalOperation(item, {
+              'version': clinicalAcknowledgedVersion(
+                operation: item.operation,
+                payload: decodeSyncPayload(item.payload),
+                receipt: Map<String, dynamic>.from(result as Map),
+              ),
+              if (result['updated_at'] != null)
+                'updated_at': result['updated_at'],
+            }, expectedGeneration: generation);
+          } else {
+            // A delete receipt does not overwrite a live local record.
+            await LocalDatabaseService.markAsCompleted(
+              item.id,
+              expectedGeneration: generation,
+            );
+          }
         }
         items = items
             .where((item) => !completedIds.contains(item.id))
             .toList(growable: false);
         changed = true;
       } catch (error) {
+        run.ensureCurrent();
+        await _checkChangedClinicalScope(error, run);
         if (error is StaleSessionException ||
             error is StaleAccountDataException) {
           rethrow;
@@ -330,7 +507,16 @@ class SyncService {
         continue;
       }
       try {
+        run.ensureCurrent();
         final payload = decodeSyncPayload(item.payload);
+        if (item.operation == 'delete' && payload['version'] is! num) {
+          await LocalDatabaseService.markAsPermanentFailure(
+            item.id,
+            error: 'Legacy delete has no base version; retained for review.',
+            expectedGeneration: generation,
+          );
+          continue;
+        }
         if (item.tableName == 'patient_payments') {
           final response = await ApiClient.instance.post(
             '/patients/${payload['patientId']}/payments',
@@ -364,13 +550,17 @@ class SyncService {
             await AppointmentApiService.delete(
               item.recordId,
               operationId: item.operationId,
+              clinicalHeaders: run.headers,
+              version: (payload['version'] as num?)?.toInt(),
             );
           } else if (item.operation == 'insert') {
             final row = await AppointmentApiService.create(
               payload,
               operationId: item.operationId,
+              clinicalHeaders: run.headers,
             );
-            await AppDatabase.upsertAppointmentFromSync(
+            await LocalDatabaseService.completeClinicalOperation(
+              item,
               AppointmentApiService.toLocalRow(row),
               expectedGeneration: generation,
             );
@@ -379,16 +569,20 @@ class SyncService {
               item.recordId,
               payload,
               operationId: item.operationId,
+              clinicalHeaders: run.headers,
             );
-            await AppDatabase.upsertAppointmentFromSync(
+            await LocalDatabaseService.completeClinicalOperation(
+              item,
               AppointmentApiService.toLocalRow(row),
               expectedGeneration: generation,
             );
           }
-          await LocalDatabaseService.markAsCompleted(
-            item.id,
-            expectedGeneration: generation,
-          );
+          if (item.operation == 'delete') {
+            await LocalDatabaseService.markAsCompleted(
+              item.id,
+              expectedGeneration: generation,
+            );
+          }
           changed = true;
           continue;
         }
@@ -408,19 +602,21 @@ class SyncService {
         if (item.operation == 'delete') {
           await ApiClient.instance.delete(
             '/patients/${item.recordId}',
-            headers: {'Idempotency-Key': item.operationId},
+            headers: {...run.headers, 'Idempotency-Key': item.operationId},
+            body: {'version': payload['version']},
           );
         } else if (item.operation == 'insert') {
           final response = await ApiClient.instance.post(
             '/patients',
-            headers: {'Idempotency-Key': item.operationId},
+            headers: {...run.headers, 'Idempotency-Key': item.operationId},
             body: {
               'id': item.recordId,
               'device_id': payload['device_id'],
               'data': data,
             },
           );
-          await AppDatabase.upsertPatientFromSync(
+          await LocalDatabaseService.completePatientOperation(
+            item,
             PatientApiService.toLocalRow(
               Map<String, dynamic>.from(response.data['data'] as Map),
             ),
@@ -429,26 +625,31 @@ class SyncService {
         } else {
           final response = await ApiClient.instance.put(
             '/patients/${item.recordId}',
-            headers: {'Idempotency-Key': item.operationId},
+            headers: {...run.headers, 'Idempotency-Key': item.operationId},
             body: {
               'version': payload['version'] ?? 1,
               'device_id': payload['device_id'],
               'data': data,
             },
           );
-          await AppDatabase.upsertPatientFromSync(
+          await LocalDatabaseService.completePatientOperation(
+            item,
             PatientApiService.toLocalRow(
               Map<String, dynamic>.from(response.data['data'] as Map),
             ),
             expectedGeneration: generation,
           );
         }
-        await LocalDatabaseService.markAsCompleted(
-          item.id,
-          expectedGeneration: generation,
-        );
+        if (item.tableName != 'patients' || item.operation == 'delete') {
+          await LocalDatabaseService.markAsCompleted(
+            item.id,
+            expectedGeneration: generation,
+          );
+        }
         changed = true;
       } catch (error) {
+        run.ensureCurrent();
+        await _checkChangedClinicalScope(error, run);
         if (error is StaleSessionException ||
             error is StaleAccountDataException) {
           rethrow;
@@ -479,8 +680,10 @@ class SyncService {
     }
     if (legacy.isNotEmpty) {
       try {
+        run.ensureCurrent();
         await ApiClient.instance.post(
           '/sync/push',
+          headers: run.headers,
           body: {
             'operations': legacy
                 .map(
@@ -503,6 +706,8 @@ class SyncService {
         }
         changed = true;
       } catch (error) {
+        run.ensureCurrent();
+        await _checkChangedClinicalScope(error, run);
         if (error is StaleSessionException ||
             error is StaleAccountDataException) {
           rethrow;
@@ -533,6 +738,31 @@ class SyncService {
       }
     }
     return (changed: changed, serverAvailable: serverAvailable);
+  }
+
+  static Future<void> _checkChangedClinicalScope(
+    Object error,
+    _ClinicalSyncRun run,
+  ) async {
+    if (error is! ApiException ||
+        error.statusCode != 403 ||
+        error.details is! Map ||
+        (error.details as Map)['code'] != 'clinical_scope_changed') {
+      return;
+    }
+    run.ensureCurrent();
+    try {
+      await AuthService().refreshCurrentUser();
+    } on StaleSessionException {
+      rethrow;
+    } on StaleAccountDataException {
+      rethrow;
+    } catch (_) {
+      // The immutable operation stays queued; a failed profile refresh must
+      // never make it eligible for the server's new clinic.
+    }
+    run.ensureCurrent();
+    throw const ApiException(503, 'Clinical scope refresh is required.');
   }
 
   @visibleForTesting
@@ -572,6 +802,20 @@ class SyncService {
       await AuthService().invalidateRejectedSession();
       return true;
     }
+    if ((item.tableName == 'patients' || item.tableName == 'appointments') &&
+        error is ApiException &&
+        (error.statusCode == 403 || error.statusCode == 404)) {
+      await LocalDatabaseService.markAsPermanentFailure(
+        item.id,
+        httpStatus: error.statusCode,
+        error:
+            'Clinical record unavailable; local operation retained for review.',
+        expectedGeneration: generation,
+      );
+      AppDatabase.ensureDataGeneration(generation);
+      await AuthService().refreshCurrentUser();
+      return false;
+    }
     if (item.tableName == 'patient_payments' && error is ApiException) {
       if (error.statusCode == 403 || error.statusCode == 404) {
         final payload = decodeSyncPayload(item.payload);
@@ -606,6 +850,16 @@ class SyncService {
 
     if (disposition == SyncFailureDisposition.resolveConflict &&
         error is ApiException) {
+      if (item.tableName == 'patients' || item.tableName == 'appointments') {
+        await LocalDatabaseService.markAsPermanentFailure(
+          item.id,
+          httpStatus: error.statusCode,
+          error:
+              'Clinical record changed on another device; local operation retained for review.',
+          expectedGeneration: generation,
+        );
+        return false;
+      }
       final current = _conflictRecord(error, item.tableName);
       if (current != null) {
         if (item.tableName == 'patients') {
@@ -734,7 +988,10 @@ class SyncService {
       error: _errorMessage(error),
       expectedGeneration: generation,
     );
-    if (nextAttemptAt != null) _scheduleRetryAt(nextAttemptAt);
+    if (nextAttemptAt != null) {
+      if (_contextKey != null) _pullPolicy.defer(_contextKey!, nextAttemptAt);
+      _scheduleRetryAt(nextAttemptAt);
+    }
   }
 
   static String _errorMessage(Object error) {
@@ -761,7 +1018,10 @@ class SyncService {
       jitterMilliseconds: _random.nextInt(3001),
     );
     _pullRetryCount++;
-    _scheduleRetryAt(DateTime.now().toUtc().add(delay));
+    final dueAt = DateTime.now().toUtc().add(delay);
+    _pullRetryDueAt = dueAt;
+    if (_contextKey != null) _pullPolicy.defer(_contextKey!, dueAt);
+    _scheduleRetryAt(dueAt);
   }
 
   static void _scheduleRetryAt(DateTime nextAttemptAt) {
@@ -777,10 +1037,16 @@ class SyncService {
     _retryTimer?.cancel();
     _retryDueAt = nextAttemptAt;
     final delay = nextAttemptAt.difference(DateTime.now().toUtc());
+    final generation = AppDatabase.dataGeneration;
+    final session = AuthService().sessionGeneration;
     _retryTimer = Timer(delay.isNegative ? Duration.zero : delay, () {
+      if (generation != AppDatabase.dataGeneration ||
+          session != AuthService().sessionGeneration) {
+        return;
+      }
       _retryTimer = null;
       _retryDueAt = null;
-      syncNow(force: true);
+      syncNow(force: true, pullChanges: _pullRetryCount > 0 || _deferredPull);
     });
   }
 
@@ -802,118 +1068,89 @@ class SyncService {
   }
 
   static Future<({bool changed, int generation})> _pull(
-    int initialGeneration,
+    _ClinicalSyncRun run,
   ) async {
-    var generation = initialGeneration;
+    final generation = run.generation;
     AppDatabase.ensureDataGeneration(generation);
-    var since = await LocalDatabaseService.getLastSyncTime();
+    final since = await LocalDatabaseService.getLastSyncTime();
     AppDatabase.ensureDataGeneration(generation);
-    String? cursor;
-    var changed = false;
-    String? serverTime;
-    var scopeVersion =
+    final scopeVersion =
         AppDatabase.activeClinicalScopeVersion ??
         AuthService().clinicalScopeVersion;
     if (scopeVersion < 1) {
       throw StateError('Cannot sync without an active clinical scope.');
     }
-    final today = DateTime.now();
+    final today = run.windowDate;
     final windowDay = '${today.year}-${today.month}-${today.day}';
-    final previousWindowDay = await AppDatabase.getMetadata('appointments:window_day');
-    AppDatabase.ensureDataGeneration(generation);
-    do {
-      final appointmentUntil = DateTime(
-        today.year,
-        today.month + 3,
-        today.day,
-      );
-      String dateOnly(DateTime date) =>
-          '${date.year.toString().padLeft(4, '0')}-'
-          '${date.month.toString().padLeft(2, '0')}-'
-          '${date.day.toString().padLeft(2, '0')}';
-      final r = await ApiClient.instance.get(
-        '/sync/pull',
-        maxRetries: 0,
-        query: {
-          'since': since,
-          'limit': '25',
-          'scope_version': '$scopeVersion',
-          // Background sync keeps a bounded reminder window. The appointments
-          // screen requests its selected date separately with REST pagination.
-            'appointment_from': dateOnly(today.subtract(const Duration(days: 7))),
-            'appointment_since': previousWindowDay == windowDay ? since : '1970-01-01T00:00:00Z',
-          'appointment_to': dateOnly(appointmentUntil),
-          'cursor': ?cursor,
-        },
-      );
-      final data = Map<String, dynamic>.from(r.data['data'] as Map);
-      final returnedScope = (data['scope_version'] as num?)?.toInt() ?? 0;
-      if (returnedScope < 1) {
-        throw StateError('The server returned an invalid clinical scope.');
-      }
-      final serverRequestedReset = data['reset_required'] == true;
-      final resetRequired =
-          serverRequestedReset || returnedScope != scopeVersion;
-      if (resetRequired) {
-        await _activateServerScope(
-          returnedScope,
-          forceReset: serverRequestedReset,
-        );
-        generation = AppDatabase.captureActiveDataGeneration();
-        scopeVersion = returnedScope;
-        since = '1970-01-01T00:00:00.000Z';
-        changed = true;
-      }
-      for (final row in data['patients'] as List? ?? const []) {
-        await LocalDatabaseService.upsertPatientFromSync(
-          Map<String, dynamic>.from(row as Map),
-          expectedGeneration: generation,
-        );
-        changed = true;
-      }
-      for (final row in data['appointments'] as List? ?? const []) {
-        await LocalDatabaseService.upsertAppointmentFromSync(
-          Map<String, dynamic>.from(row as Map),
-          expectedGeneration: generation,
-        );
-        changed = true;
-      }
-      cursor = data['next_cursor']?.toString();
-      serverTime = data['server_time']?.toString();
-    } while (cursor != null);
-    if (serverTime != null) {
-      await AppDatabase.setMetadata('appointments:window_day', windowDay, expectedGeneration: generation);
-      await LocalDatabaseService.setLastSyncTime(
-        serverTime,
-        expectedGeneration: generation,
-      );
-    }
-    return (changed: changed, generation: generation);
-  }
-
-  static Future<void> _activateServerScope(
-    int scopeVersion, {
-    required bool forceReset,
-  }) async {
-    final accountId = AuthService().userId;
-    if (accountId == null || accountId.isEmpty) {
-      throw StateError('Cannot activate a clinical scope without an account.');
-    }
-    await AccountDataLifecycle.activate(
-      accountId: accountId,
-      clinicalScopeVersion: scopeVersion,
-      forceClinicalReset: forceReset,
+    final previousWindowDay = await AppDatabase.getMetadata(
+      'appointments:window_day',
     );
+    run.ensureCurrent();
+    String dateOnly(DateTime date) =>
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    final changed = await ClinicalDeltaPull.run(
+      scopeVersion: scopeVersion,
+      ensureCurrent: run.ensureCurrent,
+      requestPage: (cursor) async {
+        final response = await ApiClient.instance.get(
+          '/sync/pull',
+          headers: run.headers,
+          maxRetries: 0,
+          query: {
+            'since': since,
+            'limit': '25',
+            'scope_version': '$scopeVersion',
+            'appointment_from': dateOnly(
+              today.subtract(const Duration(days: 7)),
+            ),
+            'appointment_to': dateOnly(
+              DateTime(today.year, today.month + 3, today.day),
+            ),
+            'appointment_since': previousWindowDay == windowDay
+                ? since
+                : '1970-01-01T00:00:00Z',
+            'cursor': ?cursor,
+          },
+        );
+        return Map<String, dynamic>.from(response.data['data'] as Map);
+      },
+      applyPatient: (row) => LocalDatabaseService.upsertPatientFromSync(
+        row,
+        expectedGeneration: generation,
+      ),
+      applyAppointment: (row) => LocalDatabaseService.upsertAppointmentFromSync(
+        row,
+        expectedGeneration: generation,
+      ),
+      commitCheckpoint: (serverTime) => AppDatabase.commitClinicalCheckpoint(
+        serverTime: serverTime,
+        windowDay: windowDay,
+        expectedGeneration: generation,
+      ),
+      scopeChanged: () async {
+        run.ensureCurrent();
+        await AuthService().refreshCurrentUser();
+        throw const StaleAccountDataException();
+      },
+    );
+    return (changed: changed, generation: generation);
   }
 
   static void dispose() {
     _initialized = false;
-    _timer?.cancel();
     _reconnectTimer?.cancel();
     _writeDebounceTimer?.cancel();
     _retryTimer?.cancel();
     _retryDueAt = null;
     _pullRetryCount = 0;
+    _pullRetryDueAt = null;
+    _lastPullError = null;
+    _deferredPull = false;
+    _flights.clear();
+    _contextKey = null;
+    _pullPolicy.clear();
     final completer = _writeDebounceCompleter;
     if (completer != null && !completer.isCompleted) completer.complete();
     _writeDebounceCompleter = null;

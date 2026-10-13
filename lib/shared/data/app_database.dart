@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import 'database_key_service.dart';
 import 'device_service.dart';
 import 'encryption_service.dart';
+import 'clinical_outbox.dart';
 
 class AccountActivationResult {
   final bool accountChanged;
@@ -59,15 +60,18 @@ class AppDatabase {
   static const _legacySecureDbName = 'aqua_app_secure.db';
   static const _legacyDbName = 'aqua_app.db';
   static const _obsoleteSyncDbName = 'dentalcare_sync.db';
-  static const _dbVersion = 8;
+  static const _dbVersion = 11;
   static const _activeAccountKey = 'active_account_id';
   static const _clinicalScopeVersionKey = 'clinical_scope_version';
+  static const _clinicalClinicKey = 'clinical_clinic_id';
   static String? _activeAccountId;
   static int? _activeClinicalScopeVersion;
+  static String? _activeClinicalClinicId;
   static int _dataGeneration = 0;
 
   static String? get activeAccountId => _activeAccountId;
   static int? get activeClinicalScopeVersion => _activeClinicalScopeVersion;
+  static String? get activeClinicalClinicId => _activeClinicalClinicId;
   static int get dataGeneration => _dataGeneration;
 
   static Future<Map<String, Object?>> _outboxRow({
@@ -83,6 +87,7 @@ class AppDatabase {
       'payload': await EncryptionService.encrypt(payload),
       'created_at': DateTime.now().toUtc().toIso8601String(),
       'retry_count': 0,
+      'attempted': 0,
       'status': 'pending',
       'operation_id': const Uuid().v4(),
       'next_attempt_at': null,
@@ -112,8 +117,29 @@ class AppDatabase {
     ensureDataGeneration(generation);
     await db.transaction((txn) async {
       ensureDataGeneration(generation);
+      if ((tableName == 'patients' || tableName == 'appointments') &&
+          (operation == 'update' || operation == 'delete')) {
+        // Read the acknowledged version under the same lock as the write.
+        // A REST response may arrive while encryption prepares the outbox.
+        final current = await txn.query(
+          tableName,
+          columns: ['version'],
+          where: 'id = ?',
+          whereArgs: [recordId],
+          limit: 1,
+        );
+        if (current.isEmpty) {
+          throw StateError('The clinical record does not exist.');
+        }
+        final mutation = Map<String, dynamic>.from(jsonDecode(payload) as Map);
+        mutation['version'] = current.single['version'];
+        outbox['payload'] = await EncryptionService.encrypt(
+          jsonEncode(mutation),
+        );
+      }
       await write(txn);
-      await txn.insert('sync_queue', outbox);
+      await ClinicalOutbox.enqueue(txn, outbox);
+      ensureDataGeneration(generation);
     });
   }
 
@@ -122,6 +148,37 @@ class AppDatabase {
       throw StateError('No local account is active.');
     }
     return _dataGeneration;
+  }
+
+  /// Called only after every validated delta page has committed locally.
+  static Future<void> commitClinicalCheckpoint({
+    required String serverTime,
+    required String windowDay,
+    required int expectedGeneration,
+  }) async {
+    final db = await database;
+    ensureDataGeneration(expectedGeneration);
+    await db.transaction((txn) async {
+      ensureDataGeneration(expectedGeneration);
+      await _writeMetadata(txn, 'last_sync_time', serverTime);
+      await _writeMetadata(txn, 'appointments:window_day', windowDay);
+      ensureDataGeneration(expectedGeneration);
+    });
+  }
+
+  static Future<int> getClinicalRecoverySnapshotCount() async {
+    if (_activeAccountId == null) return 0;
+    final generation = captureActiveDataGeneration();
+    final db = await database;
+    ensureDataGeneration(generation);
+    final table = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'clinical_recovery'",
+    );
+    ensureDataGeneration(generation);
+    if (table.isEmpty) return 0;
+    final rows = await db.rawQuery('SELECT COUNT(*) FROM clinical_recovery');
+    ensureDataGeneration(generation);
+    return Sqflite.firstIntValue(rows) ?? 0;
   }
 
   static void ensureDataGeneration(int expectedGeneration) {
@@ -141,6 +198,18 @@ class AppDatabase {
     } finally {
       if (identical(_openingDb, opening)) _openingDb = null;
     }
+  }
+
+  static Future<int> compactActiveDatabase() async {
+    final generation = captureActiveDataGeneration();
+    final db = await database;
+    final before = await File(db.path).length();
+    ensureDataGeneration(generation);
+    await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+    await db.execute('VACUUM');
+    ensureDataGeneration(generation);
+    final after = await File(db.path).length();
+    return before > after ? before - after : 0;
   }
 
   static Future<Database> _init(String accountId) async {
@@ -402,6 +471,22 @@ class AppDatabase {
       );
       await _createSyncQueueIndexes(db);
     }
+    if (oldVersion < 9) {
+      await db.execute(
+        'ALTER TABLE patients ADD COLUMN whatsappOptIn INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (oldVersion < 10) {
+      await _createSyncQueueIndexes(db);
+    }
+    if (oldVersion < 11) {
+      // A legacy pending operation may already have reached the server before
+      // a crash. Never rewrite its payload or idempotency key on upgrade.
+      await db.execute(
+        'ALTER TABLE sync_queue ADD COLUMN attempted INTEGER NOT NULL DEFAULT 1',
+      );
+      await _createAcademicOutboxTables(db);
+    }
   }
 
   static Future<void> _createTables(Database db, int version) async {
@@ -410,6 +495,7 @@ class AppDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         phone TEXT NOT NULL DEFAULT '',
+        whatsappOptIn INTEGER NOT NULL DEFAULT 0,
         age INTEGER NOT NULL DEFAULT 0,
         address TEXT NOT NULL DEFAULT '',
         registrationDate TEXT NOT NULL DEFAULT '',
@@ -472,11 +558,37 @@ class AppDatabase {
           operation_id TEXT,
           next_attempt_at TEXT,
           last_error TEXT,
-          last_http_status INTEGER
+          last_http_status INTEGER,
+          attempted INTEGER NOT NULL DEFAULT 1
         )
     ''');
     await _createAcademicResultTables(db);
+    await _createAcademicOutboxTables(db);
     await _createQueryIndexes(db);
+  }
+
+  static Future<void> _createAcademicOutboxTables(DatabaseExecutor db) async {
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS academic_snapshots '
+      '(collection TEXT PRIMARY KEY, data TEXT NOT NULL)',
+    );
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS academic_outbox '
+      '(sequence INTEGER PRIMARY KEY AUTOINCREMENT, operation_id TEXT UNIQUE, '
+      'collection TEXT, record_id TEXT, method TEXT, path TEXT, body TEXT, '
+      'optimistic TEXT, error TEXT, attempted INTEGER NOT NULL DEFAULT 1)',
+    );
+    final columns = await db.rawQuery('PRAGMA table_info(academic_outbox)');
+    if (!columns.any((column) => column['name'] == 'attempted')) {
+      await db.execute(
+        'ALTER TABLE academic_outbox '
+        'ADD COLUMN attempted INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS academic_outbox_record_idx '
+      'ON academic_outbox(collection, record_id, sequence)',
+    );
   }
 
   static Future<void> _createAcademicResultTables(Database db) async {
@@ -528,6 +640,9 @@ class AppDatabase {
 
   static Future<void> _createSyncQueueIndexes(DatabaseExecutor db) async {
     await db.execute(
+      'CREATE INDEX IF NOT EXISTS sync_queue_record_order_idx ON sync_queue(table_name, record_id, id)',
+    );
+    await db.execute(
       'CREATE INDEX IF NOT EXISTS sync_queue_due_idx ON sync_queue(status, next_attempt_at, created_at)',
     );
   }
@@ -558,6 +673,8 @@ class AppDatabase {
   static Future<AccountActivationResult> activateAccount({
     required String accountId,
     required int clinicalScopeVersion,
+    String? clinicId,
+    String? previousClinicId,
   }) async {
     if (accountId.trim().isEmpty || clinicalScopeVersion < 1) {
       throw ArgumentError('A valid account and clinical scope are required.');
@@ -569,6 +686,7 @@ class AppDatabase {
       await _closeDatabase();
       _activeAccountId = accountId;
       _activeClinicalScopeVersion = null;
+      _activeClinicalClinicId = null;
     }
 
     late final Database db;
@@ -582,13 +700,16 @@ class AppDatabase {
     final storedScope = int.tryParse(
       await _readMetadata(db, _clinicalScopeVersionKey) ?? '',
     );
+    final storedClinic =
+        await _readMetadata(db, _clinicalClinicKey) ?? previousClinicId;
     final storedAccountMismatch =
         storedAccount != null && storedAccount != accountId;
     final accountChanged = switchedAccount || storedAccountMismatch;
     final scopeChanged =
         !storedAccountMismatch &&
         storedAccount == accountId &&
-        storedScope != clinicalScopeVersion;
+        (storedScope != clinicalScopeVersion ||
+            (clinicId != null && storedClinic != clinicId));
 
     if (!switchedAccount && (storedAccountMismatch || scopeChanged)) {
       _dataGeneration++;
@@ -612,10 +733,14 @@ class AppDatabase {
         _clinicalScopeVersionKey,
         clinicalScopeVersion.toString(),
       );
+      if (clinicId != null) {
+        await _writeMetadata(txn, _clinicalClinicKey, clinicId);
+      }
     });
 
     _activeAccountId = accountId;
     _activeClinicalScopeVersion = clinicalScopeVersion;
+    _activeClinicalClinicId = clinicId ?? storedClinic;
     return AccountActivationResult(
       accountChanged: accountChanged,
       scopeChanged: scopeChanged,
@@ -645,6 +770,26 @@ class AppDatabase {
   }
 
   static Future<void> _clearClinicalRows(DatabaseExecutor db) async {
+    // Quarantine unsent work before a permissions/scope reset. It must never
+    // be replayed automatically under a different clinical scope.
+    final pending = await db.query('sync_queue');
+    if (pending.isNotEmpty) {
+      await db.execute(
+        'CREATE TABLE IF NOT EXISTS clinical_recovery ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, '
+        'payload TEXT NOT NULL)',
+      );
+      await db.insert('clinical_recovery', {
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'payload': jsonEncode({
+          'scope': await _readMetadata(db, _clinicalScopeVersionKey),
+          'clinic_id': await _readMetadata(db, _clinicalClinicKey),
+          'operations': pending,
+          'patients': await db.query('patients'),
+          'appointments': await db.query('appointments'),
+        }),
+      });
+    }
     await db.delete('patients');
     await db.delete('appointments');
     await db.delete('sync_queue');
@@ -678,8 +823,12 @@ class AppDatabase {
       await _clearClinicalRows(txn);
       await txn.delete(
         'metadata',
-        where: 'key NOT IN (?, ?)',
-        whereArgs: [_activeAccountKey, _clinicalScopeVersionKey],
+        where: 'key NOT IN (?, ?, ?)',
+        whereArgs: [
+          _activeAccountKey,
+          _clinicalScopeVersionKey,
+          _clinicalClinicKey,
+        ],
       );
     });
   }
@@ -732,6 +881,7 @@ class AppDatabase {
     Map<String, dynamic> patient, {
     double initialPayment = 0,
     String? initialPaymentId,
+    Map<String, dynamic>? appointment,
   }) async {
     final generation = captureActiveDataGeneration();
     final db = await database;
@@ -764,17 +914,52 @@ class AppDatabase {
             }),
           )
         : null;
+    Map<String, dynamic>? appointmentOutbox;
+    if (appointment != null) {
+      appointment['updated_at'] = now;
+      appointment['is_synced'] = 0;
+      appointment['device_id'] = deviceId;
+      appointment['deleted_at'] = null;
+      appointment['version'] = appointment['version'] ?? 1;
+      appointmentOutbox = await _outboxRow(
+        operation: 'insert',
+        tableName: 'appointments',
+        recordId: appointment['id'] as String,
+        payload: jsonEncode(appointment),
+      );
+    }
     ensureDataGeneration(generation);
     await db.transaction((txn) async {
       ensureDataGeneration(generation);
+      if (appointment != null) {
+        final date = DateTime.parse(appointment['date'] as String);
+        final datePrefix =
+            '${date.year.toString().padLeft(4, '0')}-'
+            '${date.month.toString().padLeft(2, '0')}-'
+            '${date.day.toString().padLeft(2, '0')}%';
+        final conflict = await txn.rawQuery(
+          'SELECT id FROM appointments WHERE deleted_at IS NULL '
+          'AND date LIKE ? AND time = ? '
+          "AND status NOT IN ('ملغي', 'cancelled', 'canceled', "
+          "'قائمة انتظار', 'waitlist', 'متاح', 'available') LIMIT 1",
+          [datePrefix, appointment['time']],
+        );
+        if (conflict.isNotEmpty) {
+          throw StateError('appointment_time_conflict');
+        }
+      }
       await txn.insert(
         'patients',
         patient,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      await txn.insert('sync_queue', patientOutbox);
+      await ClinicalOutbox.enqueue(txn, patientOutbox);
       if (paymentOutbox != null) {
         await txn.insert('sync_queue', paymentOutbox);
+      }
+      if (appointment != null) {
+        await txn.insert('appointments', appointment);
+        await ClinicalOutbox.enqueue(txn, appointmentOutbox!);
       }
     });
   }
@@ -785,22 +970,11 @@ class AppDatabase {
   ) async {
     final generation = captureActiveDataGeneration();
     final db = await database;
-    final current = await db.query(
-      'patients',
-      columns: ['version'],
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    final currentVersion = current.isEmpty
-        ? 1
-        : ((current.first['version'] as num?)?.toInt() ?? 1);
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
     data['is_synced'] = 0;
     data.remove('version');
     final payload = Map<String, dynamic>.from(data);
     payload['id'] = id;
-    payload['version'] = currentVersion;
     await _writeWithOutbox(
       db: db,
       generation: generation,
@@ -924,24 +1098,39 @@ class AppDatabase {
   }) async {
     final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
-    final local = await db.query(
-      'patients',
-      where: 'id = ?',
-      whereArgs: [row['id']],
-    );
-    if (!force && local.isNotEmpty) {
-      final localUpdatedAt = local.first['updated_at'] as String? ?? '';
-      final remoteUpdatedAt = row['updated_at'] as String? ?? '';
-      if (remoteUpdatedAt.compareTo(localUpdatedAt) < 0) return;
-    }
-    ensureDataGeneration(generation);
     row['is_synced'] = 1;
     row['device_id'] = row['device_id'] ?? await DeviceService.getDeviceId();
-    await db.insert(
-      'patients',
-      row,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    ensureDataGeneration(generation);
+    await db.transaction((txn) async {
+      ensureDataGeneration(generation);
+      if (!force) {
+        final pending = await txn.query(
+          'sync_queue',
+          columns: ['id'],
+          where: 'table_name = ? AND record_id = ?',
+          whereArgs: ['patients', row['id']],
+          limit: 1,
+        );
+        if (pending.isNotEmpty) return;
+        final local = await txn.query(
+          'patients',
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+        if (local.isNotEmpty) {
+          if ((row['version'] as num? ?? 0) <=
+              (local.first['version'] as num? ?? 0)) {
+            return;
+          }
+        }
+      }
+      await txn.insert(
+        'patients',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      ensureDataGeneration(generation);
+    });
   }
 
   // ── Appointments CRUD ──
@@ -1006,6 +1195,56 @@ class AppDatabase {
     return rows.first;
   }
 
+  static Future<bool> hasAppointmentConflict(
+    DateTime date,
+    String time, {
+    String? excludingId,
+  }) async {
+    final db = await database;
+    final prefix =
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}%';
+    final excludedStatuses = [
+      'ملغي',
+      'cancelled',
+      'canceled',
+      'قائمة انتظار',
+      'waitlist',
+      'متاح',
+      'available',
+    ];
+    final placeholders = List.filled(excludedStatuses.length, '?').join(',');
+    final rows = await db.rawQuery(
+      'SELECT id FROM appointments '
+      'WHERE deleted_at IS NULL AND date LIKE ? AND time = ? '
+      'AND status NOT IN ($placeholders) '
+      '${excludingId == null ? '' : 'AND id != ? '}LIMIT 1',
+      [prefix, time, ...excludedStatuses, ?excludingId],
+    );
+    return rows.isNotEmpty;
+  }
+
+  static Future<Map<String, dynamic>?> getFirstWaitlistedAppointment(
+    DateTime date, {
+    String? excludingId,
+  }) async {
+    final db = await database;
+    final prefix =
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}%';
+    final rows = await db.query(
+      'appointments',
+      where:
+          'deleted_at IS NULL AND date LIKE ? AND status = ?${excludingId == null ? '' : ' AND id != ?'}',
+      whereArgs: [prefix, 'قائمة انتظار', ?excludingId],
+      orderBy: 'updated_at, id',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
   static Future<void> insertAppointment(
     Map<String, dynamic> appointment,
   ) async {
@@ -1042,22 +1281,11 @@ class AppDatabase {
   ) async {
     final generation = captureActiveDataGeneration();
     final db = await database;
-    final current = await db.query(
-      'appointments',
-      columns: ['version'],
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    final currentVersion = current.isEmpty
-        ? 1
-        : ((current.first['version'] as num?)?.toInt() ?? 1);
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
     data['is_synced'] = 0;
     data.remove('version');
     final payload = Map<String, dynamic>.from(data);
     payload['id'] = id;
-    payload['version'] = currentVersion;
     await _writeWithOutbox(
       db: db,
       generation: generation,
@@ -1122,24 +1350,38 @@ class AppDatabase {
   }) async {
     final generation = expectedGeneration ?? captureActiveDataGeneration();
     final db = await database;
-    final local = await db.query(
-      'appointments',
-      where: 'id = ?',
-      whereArgs: [row['id']],
-    );
-    if (!force && local.isNotEmpty) {
-      final localUpdatedAt = local.first['updated_at'] as String? ?? '';
-      final remoteUpdatedAt = row['updated_at'] as String? ?? '';
-      if (remoteUpdatedAt.compareTo(localUpdatedAt) < 0) return;
-    }
-    ensureDataGeneration(generation);
     row['is_synced'] = 1;
     row['device_id'] = row['device_id'] ?? await DeviceService.getDeviceId();
-    await db.insert(
-      'appointments',
-      row,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.transaction((txn) async {
+      ensureDataGeneration(generation);
+      if (!force) {
+        final pending = await txn.query(
+          'sync_queue',
+          columns: ['id'],
+          where: 'table_name = ? AND record_id = ?',
+          whereArgs: ['appointments', row['id']],
+          limit: 1,
+        );
+        if (pending.isNotEmpty) return;
+        final local = await txn.query(
+          'appointments',
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+        if (local.isNotEmpty) {
+          if ((row['version'] as num? ?? 0) <=
+              (local.first['version'] as num? ?? 0)) {
+            return;
+          }
+        }
+      }
+      await txn.insert(
+        'appointments',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      ensureDataGeneration(generation);
+    });
   }
 
   // ── Bulk sync helpers ──
@@ -1210,6 +1452,21 @@ class AppDatabase {
     final db = await database;
     ensureDataGeneration(generation);
     await db.delete('pending_orders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> updatePendingOrderData(
+    String id,
+    String dataJson, {
+    required int expectedGeneration,
+  }) async {
+    final db = await database;
+    ensureDataGeneration(expectedGeneration);
+    await db.update(
+      'pending_orders',
+      {'data': dataJson},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   static Future<int> getPendingOrderCount() async {
@@ -1296,6 +1553,7 @@ class AppDatabase {
     });
     _activeAccountId = null;
     _activeClinicalScopeVersion = null;
+    _activeClinicalClinicId = null;
     await _closeDatabase();
     final dbPath = await getDatabasesPath();
     await deleteDatabase(p.join(dbPath, _databaseNameFor(accountId)));
@@ -1308,6 +1566,7 @@ class AppDatabase {
     await _closeDatabase();
     _activeAccountId = null;
     _activeClinicalScopeVersion = null;
+    _activeClinicalClinicId = null;
   }
 
   static Future<void> _closeDatabase() async {

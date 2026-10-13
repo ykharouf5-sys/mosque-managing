@@ -14,6 +14,13 @@ void main() {
     expect(error.retryAfter, isNull);
   });
 
+  test('API exception accepts HTTP-date Retry-After without shortening it', () {
+    const error = ApiException(429, 'busy', null, {
+      'Retry-After': 'Wed, 21 Oct 2099 07:28:00 GMT',
+    });
+    expect(error.retryAfter, greaterThan(const Duration(days: 365)));
+  });
+
   test(
     'retry queue retries transient server failures only up to the limit',
     () async {

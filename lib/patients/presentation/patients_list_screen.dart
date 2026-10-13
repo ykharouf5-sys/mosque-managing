@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/patients/presentation/widgets/patient_avatar.dart';
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
 
 class PatientsListScreen extends ConsumerStatefulWidget {
   const PatientsListScreen({super.key});
@@ -24,9 +25,6 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    Future.microtask(
-      () => ref.read(patientDirectoryProvider.notifier).refreshFromApi(),
-    );
   }
 
   @override
@@ -50,90 +48,110 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
   Widget build(BuildContext context) {
     final patients = ref.watch(patientDirectoryProvider);
     final pagination = ref.read(patientDirectoryProvider.notifier);
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.primary),
-          onPressed: () => Navigator.pop(context),
+    return RefreshVisibility(
+      onChanged: (visible) {
+        if (visible) {
+          ref.read(patientDirectoryProvider.notifier).refreshFromApi();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const Text('جميع المرضى'),
         ),
-        title: const Text('جميع المرضى'),
-      ),
-      body: patients.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(20.r),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.primary.withValues(alpha: 0.08),
-                          AppColors.primary.withValues(alpha: 0.02),
+        body: patients.isEmpty
+            ? RefreshIndicator(
+                onRefresh: () => ref
+                    .read(patientDirectoryProvider.notifier)
+                    .refreshFromApi(force: true),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.symmetric(vertical: 40.h),
+                  children: [
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(20.r),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.primary.withValues(alpha: 0.08),
+                                  AppColors.primary.withValues(alpha: 0.02),
+                                ],
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.people_outline,
+                              size: 40.sp,
+                              color: AppColors.textGray.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          SizedBox(height: 12.h),
+                          Text(
+                            'لا يوجد مرضى بعد',
+                            style: TextStyle(
+                              fontSize: 15.sp,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                          SizedBox(height: 4.h),
+                          Text(
+                            'اضغط على + لإضافة مريض',
+                            style: TextStyle(
+                              fontSize: 13.sp,
+                              color: AppColors.textGray,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    child: Icon(
-                      Icons.people_outline,
-                      size: 40.sp,
-                      color: AppColors.textGray.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  SizedBox(height: 12.h),
-                  Text(
-                    'لا يوجد مرضى بعد',
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      color: AppColors.textGray,
-                    ),
-                  ),
-                  SizedBox(height: 4.h),
-                  Text(
-                    'اضغط على + لإضافة مريض',
-                    style: TextStyle(
-                      fontSize: 13.sp,
-                      color: AppColors.textGray,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: () async {
-                await ref
-                    .read(patientDirectoryProvider.notifier)
-                    .refreshFromApi(force: true);
-              },
-              color: AppColors.primary,
-              child: ListView.separated(
-                controller: _scrollController,
-                padding: EdgeInsets.all(16.r),
-                itemCount: patients.length + (pagination.isLoadingMore ? 1 : 0),
-                separatorBuilder: (_, _) => SizedBox(height: 12.h),
-                itemBuilder: (context, index) {
-                  if (index >= patients.length) {
-                    return Padding(
-                      padding: EdgeInsets.all(16.r),
-                      child: Center(
-                        child: SizedBox(
-                          width: 24.w,
-                          height: 24.h,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.primary,
+                  ],
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: () async {
+                  await ref
+                      .read(patientDirectoryProvider.notifier)
+                      .refreshFromApi(force: true);
+                },
+                color: AppColors.primary,
+                child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  controller: _scrollController,
+                  padding: EdgeInsets.all(16.r),
+                  itemCount:
+                      patients.length + (pagination.isLoadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => SizedBox(height: 12.h),
+                  itemBuilder: (context, index) {
+                    if (index >= patients.length) {
+                      return Padding(
+                        padding: EdgeInsets.all(16.r),
+                        child: Center(
+                          child: SizedBox(
+                            width: 24.w,
+                            height: 24.h,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  }
-                  final patient = patients[index];
-                  return _buildPatientCard(context, patient, index);
-                },
+                      );
+                    }
+                    final patient = patients[index];
+                    return _buildPatientCard(context, patient, index);
+                  },
+                ),
               ),
-            ),
-      bottomNavigationBar: const AppBottomNav(selectedIndex: -1),
+        bottomNavigationBar: const AppBottomNav(selectedIndex: -1),
+      ),
     );
   }
 
@@ -174,10 +192,7 @@ class _PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                       color: AppColors.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(AppRadius.full),
                     ),
-                    child: PatientAvatar(
-                      radius: 26.r,
-                      photoUrl: patient.photoUrl,
-                    ),
+                    child: PatientAvatar(radius: 26.r),
                   ),
                   SizedBox(width: 14.w),
                   Expanded(

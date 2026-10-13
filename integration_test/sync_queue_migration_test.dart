@@ -9,7 +9,7 @@ import 'package:studentry/shared/data/local_database.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('v7 outbox upgrades to durable v8 backoff columns', (
+  testWidgets('v7 outbox preserves uncertain receipts during v11 upgrade', (
     tester,
   ) async {
     const accountId = 'backpressure_migration_test';
@@ -25,6 +25,7 @@ void main() {
       password: key,
       version: 7,
       onCreate: (db, _) async {
+        await db.execute('CREATE TABLE patients (id TEXT PRIMARY KEY)');
         await db.execute('''
           CREATE TABLE metadata (
             key TEXT PRIMARY KEY,
@@ -65,7 +66,7 @@ void main() {
       );
       final upgraded = await AppDatabase.database;
       final version = await upgraded.rawQuery('PRAGMA user_version');
-      expect(version.first.values.first, 8);
+      expect(version.first.values.first, 11);
 
       final columns = (await upgraded.rawQuery(
         'PRAGMA table_info(sync_queue)',
@@ -73,10 +74,12 @@ void main() {
       expect(columns, contains('next_attempt_at'));
       expect(columns, contains('last_error'));
       expect(columns, contains('last_http_status'));
+      expect(columns, contains('attempted'));
 
       final migrated = await upgraded.query('sync_queue', limit: 1);
       expect(migrated.single['status'], 'pending');
       expect(migrated.single['retry_count'], 0);
+      expect(migrated.single['attempted'], 1);
 
       final nextAttempt = await LocalDatabaseService.scheduleRetry(
         migrated.single['id']! as int,

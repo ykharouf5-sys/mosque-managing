@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'academic_sync_action.dart';
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
 
 final List<String> _days = [
   'الأحد',
@@ -32,12 +33,13 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     super.initState();
     _loadAcademicYear();
     _academic.addListener(_onAcademicChanged);
-    _academic.load(force: true);
+    _academic.load();
   }
 
   @override
   void dispose() {
     _academic.removeListener(_onAcademicChanged);
+    _academic.setViewActive(this, false);
     super.dispose();
   }
 
@@ -52,7 +54,12 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
       .toList();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => RefreshVisibility(
+    onChanged: (active) => _academic.setViewActive(this, active),
+    child: _buildContent(context),
+  );
+
+  Widget _buildContent(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const AppDrawer(),

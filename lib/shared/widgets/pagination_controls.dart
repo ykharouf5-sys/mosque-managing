@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/utils/variable_colors.dart';
 
 class PaginationControls extends StatelessWidget {
   final int currentPage;
@@ -19,32 +19,62 @@ class PaginationControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: loading ? null : onPrevious,
-            icon: const Icon(Icons.chevron_right_rounded),
-            label: const Text('السابق', maxLines: 1),
-          ),
+    if (lastPage <= 1 && !loading) return const SizedBox.shrink();
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.divider),
         ),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12.w),
-          child: Text('$currentPage / $lastPage'),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 78,
+              child: TextButton.icon(
+                onPressed: loading ? null : onPrevious,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  minimumSize: const Size(70, 40),
+                ),
+                icon: const Icon(Icons.chevron_right_rounded, size: 16),
+                label: const Text('السابق', style: TextStyle(fontSize: 12)),
+              ),
+            ),
+            Container(
+              constraints: const BoxConstraints(minWidth: 70),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: loading
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      '$currentPage من $lastPage',
+                      style: const TextStyle(
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+            SizedBox(
+              width: 78,
+              child: TextButton.icon(
+                onPressed: loading ? null : onNext,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  minimumSize: const Size(70, 40),
+                ),
+                icon: const Icon(Icons.chevron_left_rounded, size: 16),
+                label: const Text('التالي', style: TextStyle(fontSize: 12)),
+              ),
+            ),
+          ],
         ),
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: loading ? null : onNext,
-            icon: loading
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.chevron_left_rounded),
-            label: const Text('التالي', maxLines: 1),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

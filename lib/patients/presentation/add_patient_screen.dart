@@ -25,8 +25,13 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
   final _paidCtrl = TextEditingController();
   final _treatmentCtrl = TextEditingController();
 
-  DateTime _selectedDate = DateTime.now();
-  TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
+  DateTime _selectedDate = DateTime.now().add(const Duration(hours: 1));
+  TimeOfDay _selectedTime = TimeOfDay.fromDateTime(
+    DateTime.now().add(const Duration(hours: 1)),
+  );
+  bool _scheduleAppointment = false;
+  final _visitReasonCtrl = TextEditingController();
+  bool _whatsappOptIn = false;
 
   final List<TreatmentItem> _treatmentPlan = [];
 
@@ -40,11 +45,15 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
     _dueCtrl.dispose();
     _paidCtrl.dispose();
     _treatmentCtrl.dispose();
+    _visitReasonCtrl.dispose();
     super.dispose();
   }
 
   DateTime _weekStart(DateTime d) => d.subtract(Duration(days: d.weekday % 7));
 
+  // Kept temporarily while older builds migrate to the dedicated appointment
+  // screen. New patient creation no longer schedules an appointment.
+  // ignore: unused_element
   void _pickDateTime() {
     DateTime tempDate = _selectedDate;
     TimeOfDay tempTime = _selectedTime;
@@ -347,6 +356,7 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
     final amountDue = double.tryParse(_dueCtrl.text) ?? 0;
     final initialPayment = double.tryParse(_paidCtrl.text) ?? 0;
     if (initialPayment > amountDue) {
+      setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -362,10 +372,25 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
 
     final id = generatePatientId();
     final now = DateTime.now();
+    final appointmentAt = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedTime.hour,
+      _selectedTime.minute,
+    );
+    if (_scheduleAppointment && !appointmentAt.isAfter(now)) {
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اختر وقتاً قادماً للموعد.')),
+      );
+      return;
+    }
     final patient = PatientProfile(
       id: id,
       name: name,
       phone: phone,
+      whatsappOptIn: _whatsappOptIn,
       age: int.tryParse(_ageCtrl.text) ?? 0,
       address: _addressCtrl.text,
       registrationDate: DateFormat('yyyy-MM-dd').format(now),
@@ -377,23 +402,20 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
       amountDue: amountDue,
       amountPaid: initialPayment,
       todayPayment: initialPayment,
-      appointmentDate: _selectedDate,
+      appointmentDate: null,
       treatmentPlan: List.from(_treatmentPlan),
     );
-
-    final treatment = _treatmentPlan.isNotEmpty
-        ? _treatmentPlan.first.procedureName
-        : 'كشف';
-
-    final appointment = Appointment(
-      time:
-          '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-      patientName: name,
-      treatment: treatment,
-      status: 'مؤكد',
-      patientId: id,
-      date: _selectedDate,
-    );
+    final appointment = _scheduleAppointment
+        ? Appointment(
+            patientId: id,
+            patientName: name,
+            treatment: _visitReasonCtrl.text.trim(),
+            status: _whatsappOptIn ? 'بانتظار التأكيد' : 'مؤكد',
+            date: _selectedDate,
+            time:
+                '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+          )
+        : null;
 
     try {
       await ref
@@ -402,9 +424,15 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
             patient,
             initialPayment: initialPayment,
             initialPaymentId: initialPayment > 0 ? const Uuid().v4() : null,
+            appointment: appointment,
           );
-      await ref.read(appointmentListProvider.notifier).add(appointment);
       if (mounted) Navigator.pop(context, true);
+    } on AppointmentTimeConflictException {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('هذا الوقت محجوز. اختر ساعة أخرى.')),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -453,63 +481,74 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
                     if (v == null || v.trim().isEmpty) {
                       return 'رقم الهاتف مطلوب';
                     }
+                    if (_whatsappOptIn &&
+                        v.replaceAll(RegExp(r'\D'), '').length < 8) {
+                      return 'أدخل رقماً صحيحاً مع رمز الدولة';
+                    }
                     return null;
                   },
                 ),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.featureBg,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(color: AppColors.divider),
+                  ),
+                  child: SwitchListTile.adaptive(
+                    value: _whatsappOptIn,
+                    activeTrackColor: AppColors.primary,
+                    title: const Text(
+                      'تذكيرات المواعيد عبر واتساب',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'فعّلها فقط بعد موافقة المريض. ستصل رسائل من Studentry قبل الموعد.',
+                      style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                    ),
+                    onChanged: (value) =>
+                        setState(() => _whatsappOptIn = value),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildField(
-                        'العمر',
-                        _ageCtrl,
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: InkWell(
-                        onTap: _pickDateTime,
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.featureBg,
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            border: Border.all(color: AppColors.divider),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.calendar_month_rounded,
-                                color: AppColors.primary,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${DateFormat('yyyy/MM/dd', 'ar').format(_selectedDate)} ${_selectedTime.format(context)}',
-                                  style: const TextStyle(
-                                    color: AppColors.textDark,
-                                    fontSize: 14,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                _buildField(
+                  'العمر',
+                  _ageCtrl,
+                  keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 12),
                 _buildField('العنوان', _addressCtrl),
                 const SizedBox(height: 12),
                 _buildField('ملاحظات', _notesCtrl, maxLines: 2),
+                const SizedBox(height: 24),
+                _sectionTitle('الموعد'),
+                const SizedBox(height: 8),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('إضافة موعد لهذا المريض'),
+                  subtitle: const Text(
+                    'اختياري؛ يمكنك إضافة موعد لاحقاً من ملف المريض.',
+                  ),
+                  value: _scheduleAppointment,
+                  activeTrackColor: AppColors.primary,
+                  onChanged: (value) =>
+                      setState(() => _scheduleAppointment = value),
+                ),
+                if (_scheduleAppointment) ...[
+                  OutlinedButton.icon(
+                    onPressed: _pickDateTime,
+                    icon: const Icon(Icons.event_rounded),
+                    label: Text(
+                      '${DateFormat('yyyy/MM/dd').format(_selectedDate)}  •  ${_selectedTime.format(context)}',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField('سبب الزيارة (اختياري)', _visitReasonCtrl),
+                ],
                 const SizedBox(height: 24),
                 _sectionTitle('خطة العلاج'),
                 const SizedBox(height: 12),

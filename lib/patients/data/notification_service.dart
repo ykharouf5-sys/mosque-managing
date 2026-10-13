@@ -1,14 +1,23 @@
+import 'dart:async';
+
 import 'package:studentry/main.dart';
 import 'package:studentry/patients/data/patient_data.dart';
+import 'package:studentry/patients/data/whatsapp_reminder_service.dart';
+import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/student/data/subject_models.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 
 class NotificationService {
+  static const String whatsappReminderActionId =
+      'appointment_remind_patient_whatsapp';
+  static const String _appointmentActionCategory =
+      'appointment_whatsapp_actions';
   static const String _configuredTimeZone = String.fromEnvironment(
     'APP_TIMEZONE',
     defaultValue: 'Asia/Damascus',
@@ -20,6 +29,8 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
   static bool _permissionsConfigured = false;
+  static bool _launchDetailsCaptured = false;
+  static NotificationResponse? _pendingLaunchResponse;
 
   static bool get supportsExactAlarmPermission =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -37,10 +48,24 @@ class NotificationService {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
-      const iosSettings = DarwinInitializationSettings(
+      final iosSettings = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
         requestSoundPermission: false,
+        notificationCategories: <DarwinNotificationCategory>[
+          DarwinNotificationCategory(
+            _appointmentActionCategory,
+            actions: <DarwinNotificationAction>[
+              DarwinNotificationAction.plain(
+                whatsappReminderActionId,
+                'ذكّر المريض عبر واتساب',
+                options: <DarwinNotificationActionOption>{
+                  DarwinNotificationActionOption.foreground,
+                },
+              ),
+            ],
+          ),
+        ],
       );
       final settings = InitializationSettings(
         android: androidSettings,
@@ -50,6 +75,13 @@ class NotificationService {
         settings: settings,
         onDidReceiveNotificationResponse: _onNotificationTap,
       );
+      if (!_launchDetailsCaptured) {
+        _launchDetailsCaptured = true;
+        final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+        if (launchDetails?.didNotificationLaunchApp == true) {
+          _pendingLaunchResponse = launchDetails?.notificationResponse;
+        }
+      }
       _initialized = true;
     }
 
@@ -131,17 +163,29 @@ class NotificationService {
     }
   }
 
-  static AndroidNotificationDetails _appointmentDetails() =>
-      AndroidNotificationDetails(
-        'appointment_channel',
-        'مواعيد العيادة',
-        channelDescription: 'إشعارات تذكير بالمواعيد',
-        importance: Importance.max,
-        priority: Priority.max,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 500]),
-        playSound: true,
-      );
+  static AndroidNotificationDetails _appointmentDetails({
+    required bool includeWhatsAppAction,
+  }) => AndroidNotificationDetails(
+    'appointment_channel',
+    'مواعيد العيادة',
+    channelDescription: 'إشعارات تذكير بالمواعيد',
+    importance: Importance.max,
+    priority: Priority.max,
+    enableVibration: true,
+    vibrationPattern: Int64List.fromList([0, 500]),
+    playSound: true,
+    actions: includeWhatsAppAction
+        ? const <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              whatsappReminderActionId,
+              'ذكّر المريض عبر واتساب',
+              showsUserInterface: true,
+              cancelNotification: true,
+              semanticAction: SemanticAction.reply,
+            ),
+          ]
+        : null,
+  );
 
   static const AndroidNotificationDetails _campaignDetails =
       AndroidNotificationDetails(
@@ -209,6 +253,7 @@ class NotificationService {
     required DateTime dateTime,
     String? payload,
     bool appointmentReminder = true,
+    bool includeWhatsAppAction = false,
     DateTimeComponents? matchDateTimeComponents,
   }) async {
     try {
@@ -231,6 +276,7 @@ class NotificationService {
           mode: mode,
           payload: payload,
           appointmentReminder: appointmentReminder,
+          includeWhatsAppAction: includeWhatsAppAction,
           matchDateTimeComponents: matchDateTimeComponents,
         );
       } catch (_) {
@@ -243,6 +289,7 @@ class NotificationService {
             mode: AndroidScheduleMode.inexactAllowWhileIdle,
             payload: payload,
             appointmentReminder: appointmentReminder,
+            includeWhatsAppAction: includeWhatsAppAction,
             matchDateTimeComponents: matchDateTimeComponents,
           );
         }
@@ -258,6 +305,7 @@ class NotificationService {
     required AndroidScheduleMode mode,
     String? payload,
     required bool appointmentReminder,
+    required bool includeWhatsAppAction,
     DateTimeComponents? matchDateTimeComponents,
   }) => _plugin.zonedSchedule(
     id: id,
@@ -265,8 +313,14 @@ class NotificationService {
     body: body,
     scheduledDate: scheduledDate,
     notificationDetails: NotificationDetails(
-      android: appointmentReminder ? _appointmentDetails() : _generalDetails,
-      iOS: const DarwinNotificationDetails(),
+      android: appointmentReminder
+          ? _appointmentDetails(includeWhatsAppAction: includeWhatsAppAction)
+          : _generalDetails,
+      iOS: DarwinNotificationDetails(
+        categoryIdentifier: includeWhatsAppAction
+            ? _appointmentActionCategory
+            : null,
+      ),
     ),
     androidScheduleMode: mode,
     payload: payload,
@@ -281,15 +335,29 @@ class NotificationService {
     return hash;
   }
 
-  static int _notificationId(Appointment appointment) =>
-      _stableId('appointment:${appointment.id}');
+  static int _notificationId(Appointment appointment, String kind) =>
+      _stableId('appointment:${appointment.id}:$kind');
 
   static String _doctorName() {
     final name = AuthService().fullName?.trim();
     return name == null || name.isEmpty ? 'الطبيب' : 'د. $name';
   }
 
-  static Future<void> _scheduleAppointment(Appointment a) async {
+  static Future<void> _scheduleAppointment(
+    Appointment a, {
+    PatientProfile? patient,
+  }) async {
+    if (const {
+      'ملغي',
+      'cancelled',
+      'canceled',
+      'قائمة انتظار',
+      'waitlist',
+      'متاح',
+      'available',
+    }.contains(a.status)) {
+      return;
+    }
     final parts = a.time.split(':');
     if (parts.length != 2) {
       return;
@@ -312,28 +380,47 @@ class NotificationService {
       return;
     }
 
-    final reminderTime = appointmentTime.subtract(const Duration(minutes: 30));
-    final id = _notificationId(a);
+    patient ??= await _loadPatient(a.patientId);
+    final canRemindOnWhatsApp =
+        patient?.whatsappOptIn == true &&
+        WhatsAppReminderService.normalizePhone(patient!.phone) != null;
 
-    if (reminderTime.isAfter(now)) {
+    final dayBefore = appointmentTime.subtract(const Duration(hours: 24));
+    if (dayBefore.isAfter(now)) {
       await scheduleNotification(
-        id: id,
+        id: _notificationId(a, '24h'),
+        title: 'موعد مريض غداً',
+        body:
+            '${_doctorName()}، موعد المريض ${a.patientName} غداً الساعة ${a.time}.',
+        dateTime: dayBefore,
+        payload: 'appointment:${a.id}:24h',
+      );
+    }
+
+    final halfHourBefore = appointmentTime.subtract(
+      const Duration(minutes: 30),
+    );
+    if (halfHourBefore.isAfter(now)) {
+      await scheduleNotification(
+        id: _notificationId(a, '30m'),
         title: 'تذكير بموعد مريض',
         body:
             '${_doctorName()}، موعد المريض ${a.patientName} الساعة ${a.time} بعد نصف ساعة.',
-        dateTime: reminderTime,
-        payload: 'appointment:${a.id}',
+        dateTime: halfHourBefore,
+        payload: 'appointment:${a.id}:30m',
+        includeWhatsAppAction: canRemindOnWhatsApp,
       );
     }
   }
 
-  static Future<void> cancelAppointmentNotification(Appointment a) {
-    return cancelNotification(_notificationId(a));
+  static Future<void> cancelAppointmentNotification(Appointment a) async {
+    await cancelNotification(_notificationId(a, '24h'));
+    await cancelNotification(_notificationId(a, '30m'));
   }
 
   static Future<void> onAppointmentAdded(Appointment a) async {
-    await cancelNotification(_notificationId(a));
-    await _scheduleAppointment(a);
+    await cancelAppointmentNotification(a);
+    await _scheduleAppointment(a, patient: await _loadPatient(a.patientId));
   }
 
   static Future<void> scheduleAllAppointments(
@@ -362,8 +449,17 @@ class NotificationService {
                 second.appointmentDateTime,
               ),
             );
+      final patientRows = await AppDatabase.getAllPatients();
+      final patientsById = <String, PatientProfile>{
+        for (final row in patientRows)
+          if (patientRowToProfile(row) case final PatientProfile patient)
+            patient.id: patient,
+      };
       for (final appointment in upcoming) {
-        await _scheduleAppointment(appointment);
+        await _scheduleAppointment(
+          appointment,
+          patient: patientsById[appointment.patientId],
+        );
       }
       await _scheduleDailySummaries(upcoming);
     } catch (_) {
@@ -409,12 +505,94 @@ class NotificationService {
     await _plugin.cancel(id: id);
   }
 
+  static Future<PatientProfile?> _loadPatient(String patientId) async {
+    try {
+      final row = await AppDatabase.getPatientById(patientId);
+      return row == null ? null : patientRowToProfile(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static void _onNotificationTap(NotificationResponse response) {
+    unawaited(_handleNotificationResponse(response));
+  }
+
+  static Future<void> handlePendingLaunchResponse() async {
+    final response = _pendingLaunchResponse;
+    _pendingLaunchResponse = null;
+    if (response != null) await _handleNotificationResponse(response);
+  }
+
+  static Future<void> _handleNotificationResponse(
+    NotificationResponse response,
+  ) async {
+    if (response.actionId == whatsappReminderActionId) {
+      await _openPatientWhatsApp(response.payload);
+      return;
+    }
     if (response.payload == 'cart') {
       navigatorKey.currentState?.pushNamed('/cart');
     } else if (response.payload?.startsWith('/') == true) {
       navigatorKey.currentState?.pushNamed(response.payload!);
+    } else if (response.payload?.startsWith('appointment:') == true ||
+        response.payload?.startsWith('appointments-day:') == true) {
+      navigatorKey.currentState?.pushNamed('/notifications');
     }
+  }
+
+  static Future<void> _openPatientWhatsApp(String? payload) async {
+    final parts = payload?.split(':') ?? const <String>[];
+    if (parts.length < 2 || parts.first != 'appointment') {
+      _showMessage('تعذر قراءة بيانات الموعد.');
+      return;
+    }
+
+    try {
+      final appointmentRow = await AppDatabase.getAppointmentById(parts[1]);
+      final appointment = appointmentRow == null
+          ? null
+          : appointmentRowToAppointment(appointmentRow);
+      if (appointment == null) {
+        _showMessage('هذا الموعد لم يعد موجوداً.');
+        return;
+      }
+      final patient = await _loadPatient(appointment.patientId);
+      if (patient == null) {
+        _showMessage('تعذر العثور على بيانات المريض.');
+        return;
+      }
+      if (!patient.whatsappOptIn) {
+        _showMessage('المريض غير موافق على تذكيرات واتساب.');
+        return;
+      }
+
+      final result = await WhatsAppReminderService.openReminder(
+        phone: patient.phone,
+        message: WhatsAppReminderService.buildMessage(
+          doctorName: _doctorName(),
+          appointmentTime: appointment.appointmentDateTime,
+        ),
+      );
+      switch (result) {
+        case WhatsAppLaunchResult.opened:
+          return;
+        case WhatsAppLaunchResult.invalidPhone:
+          _showMessage('رقم المريض غير صالح لواتساب.');
+        case WhatsAppLaunchResult.unavailable:
+          _showMessage('تعذر فتح واتساب. تأكد من تثبيته واتصال الإنترنت.');
+      }
+    } catch (_) {
+      _showMessage('تعذر فتح تذكير واتساب. حاول مرة أخرى.');
+    }
+  }
+
+  static void _showMessage(String message) {
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   static Future<void> showCartReminder() async {

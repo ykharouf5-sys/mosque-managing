@@ -6,6 +6,7 @@ class AppCachedNetworkImage extends StatelessWidget {
   final BoxFit? fit;
   final double? width;
   final double? height;
+  final Alignment alignment;
   final Widget Function()? errorBuilder;
 
   const AppCachedNetworkImage({
@@ -14,6 +15,7 @@ class AppCachedNetworkImage extends StatelessWidget {
     this.fit,
     this.width,
     this.height,
+    this.alignment = Alignment.center,
     this.errorBuilder,
   });
 
@@ -24,6 +26,7 @@ class AppCachedNetworkImage extends StatelessWidget {
       fit: fit,
       width: width,
       height: height,
+      alignment: alignment,
       fadeInDuration: const Duration(milliseconds: 120),
       errorWidget: (_, _, _) => errorBuilder?.call() ?? const SizedBox.shrink(),
     );

@@ -2,9 +2,10 @@ import 'dart:io';
 import 'package:studentry/patients/data/patient_photo_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/patients/data/patient_data.dart';
-import 'package:studentry/patients/presentation/appointments_screen.dart';
+import 'package:studentry/patients/presentation/new_appointment_screen.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/shared/data/app_database.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +14,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:table_calendar/table_calendar.dart';
 import 'package:uuid/uuid.dart';
-import 'package:studentry/patients/presentation/widgets/appointment_datetime_picker.dart';
 import 'package:studentry/patients/presentation/widgets/patient_avatar.dart';
 
 class PatientProfileScreen extends ConsumerStatefulWidget {
@@ -45,6 +45,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
           final patient = widget.patient;
           patient.name = restored.name;
           patient.phone = restored.phone;
+          patient.whatsappOptIn = restored.whatsappOptIn;
           patient.age = restored.age;
           patient.address = restored.address;
           patient.registrationDate = restored.registrationDate;
@@ -186,7 +187,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
               shape: BoxShape.circle,
               boxShadow: AppShadows.soft,
             ),
-            child: PatientAvatar(radius: 50.r, photoUrl: p.photoUrl),
+            child: PatientAvatar(radius: 50.r),
           ),
           SizedBox(width: 16.w),
           Column(
@@ -275,6 +276,10 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
           const Divider(height: 20),
           _buildInfoRow('رقم الملف', p.id),
           _buildInfoRow('الهاتف', p.phone),
+          _buildInfoRow(
+            'تذكيرات واتساب',
+            p.whatsappOptIn ? 'مفعّلة' : 'غير مفعّلة',
+          ),
           _buildInfoRow('العنوان', p.address),
           _buildInfoRow('تاريخ التسجيل', p.registrationDate),
           _buildInfoRow('ملاحظات', p.notes),
@@ -716,6 +721,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
     final ageCtrl = TextEditingController(text: p.age.toString());
     final addressCtrl = TextEditingController(text: p.address);
     final notesCtrl = TextEditingController(text: p.notes);
+    var whatsappOptIn = p.whatsappOptIn;
 
     showModalBottomSheet(
       context: context,
@@ -724,86 +730,101 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 24,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.textGrey.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
+        return StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.textGrey.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'تعديل بيانات المريض',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
+                  const SizedBox(height: 20),
+                  const Text(
+                    'تعديل بيانات المريض',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: _inputDecoration('الاسم'),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: phoneCtrl,
-                  decoration: _inputDecoration('الهاتف'),
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: ageCtrl,
-                  decoration: _inputDecoration('العمر'),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: addressCtrl,
-                  decoration: _inputDecoration('العنوان'),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: notesCtrl,
-                  decoration: _inputDecoration('ملاحظات'),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      setState(() {
-                        p.name = nameCtrl.text;
-                        p.phone = phoneCtrl.text;
-                        p.age = int.tryParse(ageCtrl.text) ?? p.age;
-                        p.address = addressCtrl.text;
-                        p.notes = notesCtrl.text;
-                      });
-                      if (await _persistPatientLocally() && ctx.mounted) {
-                        Navigator.pop(ctx);
-                      }
-                    },
-                    child: const Text('حفظ'),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: _inputDecoration('الاسم'),
                   ),
-                ),
-                const SizedBox(height: 8),
-              ],
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: phoneCtrl,
+                    decoration: _inputDecoration('الهاتف'),
+                    keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: whatsappOptIn,
+                    activeTrackColor: AppColors.primary,
+                    title: const Text('تذكيرات المواعيد عبر واتساب'),
+                    subtitle: const Text(
+                      'فعّلها فقط بعد موافقة المريض على استلام الرسائل.',
+                    ),
+                    onChanged: (value) =>
+                        setSheetState(() => whatsappOptIn = value),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: ageCtrl,
+                    decoration: _inputDecoration('العمر'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: addressCtrl,
+                    decoration: _inputDecoration('العنوان'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: _inputDecoration('ملاحظات'),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        setState(() {
+                          p.name = nameCtrl.text;
+                          p.phone = phoneCtrl.text;
+                          p.whatsappOptIn = whatsappOptIn;
+                          p.age = int.tryParse(ageCtrl.text) ?? p.age;
+                          p.address = addressCtrl.text;
+                          p.notes = notesCtrl.text;
+                        });
+                        if (await _persistPatientLocally() && ctx.mounted) {
+                          Navigator.pop(ctx);
+                        }
+                      },
+                      child: const Text('حفظ'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
             ),
           ),
         );
@@ -1048,8 +1069,12 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                                         const SizedBox(width: 10),
                                         IconButton(
                                           tooltip: 'تعديل الخطوة',
-                                          onPressed: () => _editTreatmentStep(item),
-                                          icon: const Icon(Icons.edit_outlined, size: 18),
+                                          onPressed: () =>
+                                              _editTreatmentStep(item),
+                                          icon: const Icon(
+                                            Icons.edit_outlined,
+                                            size: 18,
+                                          ),
                                         ),
                                         Expanded(
                                           child: Text(
@@ -1327,13 +1352,25 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('تعديل خطوة العلاج'),
-        content: TextField(controller: controller, autofocus: true, maxLines: 3,
-          decoration: const InputDecoration(labelText: 'الخطوة')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'الخطوة'),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-          ElevatedButton(onPressed: () {
-            if (controller.text.trim().isNotEmpty) Navigator.pop(ctx, controller.text.trim());
-          }, child: const Text('حفظ')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(ctx, controller.text.trim());
+              }
+            },
+            child: const Text('حفظ'),
+          ),
         ],
       ),
     );
@@ -1403,6 +1440,7 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                     (path.startsWith('http://') || path.startsWith('https://'))
                         ? Image.network(
                             path,
+                            headers: AuthService().authorizationHeaders,
                             fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => _imagePlaceholder(),
                           )
@@ -1516,48 +1554,19 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
       width: double.infinity,
       child: ElevatedButton(
         onPressed: () async {
-          final selection = await showAppointmentDateTimePicker(
-            context: context,
-            initialDate: _selectedDay,
-            initialTime: _selectedAppointmentTime,
-          );
-          if (selection == null || !mounted) return;
-          setState(() {
-            _selectedDay = selection.date;
-            _focusedDay = selection.date;
-            _selectedAppointmentTime = selection.time;
-          });
-          final p = widget.patient;
-          final timeStr =
-              '${_selectedAppointmentTime.hour.toString().padLeft(2, '0')}:${_selectedAppointmentTime.minute.toString().padLeft(2, '0')}';
-          final scheduledAt = selection.dateTime;
-          final apt = Appointment(
-            time: timeStr,
-            patientName: p.name,
-            treatment: p.treatmentPlan.isNotEmpty
-                ? p.treatmentPlan.first.procedureName
-                : 'كشف',
-            status: 'مؤكد',
-            patientId: p.id,
-            date: scheduledAt,
-          );
-          try {
-            await ref.read(appointmentListProvider.notifier).add(apt);
-          } catch (error) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('تعذر حفظ الموعد محلياً: $error')),
-            );
-            return;
-          }
-          p.appointmentDate = scheduledAt;
-          await _persistPatientLocally();
-          ref.read(patientListProvider.notifier).refresh();
-          if (!mounted) return;
-          Navigator.push(
+          final changed = await Navigator.push<bool>(
             context,
-            MaterialPageRoute(builder: (_) => const AppointmentsScreen()),
+            MaterialPageRoute(
+              builder: (_) => NewAppointmentScreen(
+                initialPatient: widget.patient,
+                initialDate: _selectedDay,
+              ),
+            ),
           );
+          if (changed == true && mounted) {
+            ref.read(appointmentListProvider.notifier).refresh();
+            setState(() {});
+          }
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,

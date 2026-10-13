@@ -28,6 +28,20 @@ class SyncStatusIndicator extends StatelessWidget {
                 : '${status.waiting} تغييرات بانتظار المزامنة$details',
           );
         }
+        if (status.pullError != null) {
+          return _StatusBar(
+            icon: Icons.cloud_off_rounded,
+            color: Colors.orange.shade800,
+            label: 'تعذر جلب التحديثات؛ البيانات المحلية محفوظة',
+          );
+        }
+        if (status.recoverySnapshots > 0) {
+          return _StatusBar(
+            icon: Icons.history_rounded,
+            color: Colors.orange.shade800,
+            label: 'توجد ${status.recoverySnapshots} نسخ استعادة سريرية تحتاج مراجعة',
+          );
+        }
         return const SizedBox.shrink();
       },
     );

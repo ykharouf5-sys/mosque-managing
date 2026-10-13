@@ -1,5 +1,6 @@
 import 'package:studentry/patients/presentation/appointments_screen.dart';
 import 'package:studentry/patients/presentation/add_patient_screen.dart';
+import 'package:studentry/patients/presentation/new_appointment_screen.dart';
 import 'package:studentry/patients/presentation/reports_screen.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/store/presentation/store_screen.dart';
@@ -49,12 +50,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: PageView(
         controller: _controller,
         onPageChanged: (index) => setState(() => _index = index),
-        children: const [
-          StudentHomeScreen(embedded: true),
-          AppointmentsScreen(embedded: true),
-          UniversityScreen(embedded: true),
-          StoreScreen(embedded: true),
-          ReportsScreen(embedded: true),
+        children: [
+          StudentHomeScreen(embedded: true, active: _index == 0),
+          AppointmentsScreen(embedded: true, active: _index == 1),
+          const UniversityScreen(embedded: true),
+          StoreScreen(embedded: true, active: _index == 3),
+          const ReportsScreen(embedded: true),
         ],
       ),
       bottomNavigationBar: AppBottomNav(
@@ -63,14 +64,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
       floatingActionButton: _index == 0 || _index == 1
           ? FloatingActionButton(
-              tooltip: 'إضافة مريض',
+              tooltip: _index == 0 ? 'إضافة مريض' : 'موعد جديد',
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const AddPatientScreen()),
+                MaterialPageRoute(
+                  builder: (_) => _index == 0
+                      ? const AddPatientScreen()
+                      : const NewAppointmentScreen(),
+                ),
               ),
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              child: const Icon(Icons.person_add_rounded),
+              child: Icon(
+                _index == 0
+                    ? Icons.person_add_rounded
+                    : Icons.event_available_rounded,
+              ),
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

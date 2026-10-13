@@ -65,10 +65,15 @@ class PatientApiService {
     return Map<String, dynamic>.from(response.data['data'] as Map);
   }
 
-  static Future<void> delete(String patientId, {String? operationId}) async {
+  static Future<void> delete(
+    String patientId, {
+    required int version,
+    String? operationId,
+  }) async {
     await _api.delete(
       '/patients/$patientId',
       headers: {'Idempotency-Key': ?operationId},
+      body: {'version': version},
     );
   }
 

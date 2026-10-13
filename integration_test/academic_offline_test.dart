@@ -109,6 +109,9 @@ void main() {
       expect((await AcademicLocalStore.read('subjects')).length, 1);
       expect((await db.query('academic_outbox')).length, 1);
       await db.execute('DROP TRIGGER reject_test_write');
+      // This create may already have reached the server; deleting it must be
+      // delivered instead of cancelled locally.
+      await db.update('academic_outbox', {'attempted': 1});
       await AcademicLocalStore.enqueue(
         'subjects',
         's1',

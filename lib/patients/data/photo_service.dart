@@ -3,6 +3,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:studentry/shared/data/app_database.dart';
 
 class PhotoService {
+  static Future<void> clearAccountPhotos(String accountId) async {
+    if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(accountId)) {
+      throw const FormatException('Invalid account identifier.');
+    }
+    final documents = await getApplicationDocumentsDirectory();
+    final directory = Directory('${documents.path}/account_photos/$accountId');
+    if (await directory.exists()) await directory.delete(recursive: true);
+  }
+
   static Future<String> saveLocally(String patientId, String sourcePath) async {
     if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(patientId)) {
       throw const FormatException('Invalid patient identifier.');
