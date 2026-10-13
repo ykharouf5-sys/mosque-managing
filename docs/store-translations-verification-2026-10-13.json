@@ -1,0 +1,169 @@
+{
+  "date": "2026-10-13",
+  "androidGoogleAuth": {
+    "installedVersionCode": 20261014,
+    "userConfirmed": true,
+    "destination": "student-profile",
+    "productionAudienceFixApplied": true
+  },
+  "catalogProductionDeployed": false,
+  "productionMigrationApplied": false,
+  "tests": {
+    "laravel": {
+      "total": 190,
+      "passed": 189,
+      "skipped": 1,
+      "assertions": 1641,
+      "skipReason": "Optional image WebP/GD capability is unavailable locally"
+    },
+    "mysqlCatalog": {
+      "version": "8.4.11",
+      "tests": 21,
+      "assertions": 225,
+      "result": "passed",
+      "isolatedDatabase": "studentry_catalog_i18n_test_20261013",
+      "productionDatabasePrivileges": false
+    },
+    "flutter": {
+      "passed": 172,
+      "skipped": 1,
+      "skipReason": "Cross-client fixture test requires isolated services; it passed separately"
+    },
+    "crossClient": {
+      "checks": 22,
+      "result": "passed",
+      "transport": "Real Laravel + Next BFF/SSR + Flutter ApiClient/services",
+      "database": "isolated temporary SQLite"
+    },
+    "webUnit": {
+      "passed": 35
+    },
+    "browser": {
+      "functionalAndSeoPassed": 38,
+      "separateViewportTestsPassed": 5,
+      "widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "note": "The original single 100-navigation visual test timed out at 120s; split into five viewport cases, all passed."
+    },
+    "webTypecheck": "passed",
+    "webLint": "passed",
+    "webProductionBuild": "passed",
+    "flutterChangedSourceAnalyze": "passed",
+    "androidReleaseBuild": "passed"
+  },
+  "requiredScenarios": [
+    {
+      "scenario": "إضافة منتج عربي وإنكليزي من المدير",
+      "evidence": "Laravel MySQL + browser bilingual editor + cross-client API",
+      "result": "passed"
+    },
+    {
+      "scenario": "تعديل لغة واحدة دون حذف الأخرى",
+      "evidence": "Laravel + cross-client partial English update",
+      "result": "passed"
+    },
+    {
+      "scenario": "فئة وبانر بلغتين",
+      "evidence": "Laravel MySQL + Flutter wire model + cross-client APIs",
+      "result": "passed"
+    },
+    {
+      "scenario": "حفظ حقيقي في MySQL",
+      "evidence": "21 tests / 225 assertions, isolated AWS MySQL 8.4.11",
+      "result": "passed"
+    },
+    {
+      "scenario": "لغة API المطلوبة",
+      "evidence": "locale query / Accept-Language / Arabic fallback; locale cache and ETag",
+      "result": "passed"
+    },
+    {
+      "scenario": "الإنكليزية على /en",
+      "evidence": "Browser initial HTML + actual English Next SSR in cross-client test",
+      "result": "passed"
+    },
+    {
+      "scenario": "العربية على المسارات العربية",
+      "evidence": "Browser/SEO checks; store route ignores English language cookie",
+      "result": "passed"
+    },
+    {
+      "scenario": "تغيير Flutter مع حفظ السلة",
+      "evidence": "Locale preference + account-isolated CartStorage JSON tests",
+      "result": "passed"
+    },
+    {
+      "scenario": "Offline Mode",
+      "evidence": "Translation maps persisted and restored without network; physical airplane-mode test pending",
+      "result": "passed with stated physical-device limitation"
+    },
+    {
+      "scenario": "تحديث الترجمة بعد Sync",
+      "evidence": "Catalog/cart provider copy refresh retains captured price and quantities",
+      "result": "passed"
+    },
+    {
+      "scenario": "التوافق السابق",
+      "evidence": "Legacy manager writes, API arrays and Arabic fields tested",
+      "result": "passed"
+    },
+    {
+      "scenario": "بحث وفلاتر وطلبات",
+      "evidence": "Laravel/MySQL + server pricing, historical order snapshot, cross-client",
+      "result": "passed"
+    },
+    {
+      "scenario": "Metadata وSitemap",
+      "evidence": "35 web unit tests + browser no-JS metadata + production Next build",
+      "result": "passed"
+    },
+    {
+      "scenario": "استبعاد غير المنشور",
+      "evidence": "MySQL API/search/sitemap tests + browser draft/test 404s",
+      "result": "passed"
+    }
+  ],
+  "safety": {
+    "productionCatalogWrites": false,
+    "productionClinicalWrites": false,
+    "dnsChanges": false,
+    "nginxChanges": false,
+    "envChangedForCatalog": false,
+    "liveServicesReadOnlyCheck": [
+      "studentry-octane",
+      "mysql",
+      "redis-server",
+      "studentry-web-preview"
+    ],
+    "allServicesActive": true
+  },
+  "limitations": [
+    "The MySQL host has no PDO SQLite; the existing academic duplicate-audit SQLite test ran locally instead. All 21 selected catalog MySQL tests passed.",
+    "Catalog candidate APK is not installed over the successfully authenticated version until backend prerequisites are activated.",
+    "Live Google Web OAuth is not demonstrated by the browser fixture OAuth tests.",
+    "Production store activation requires verified backup/restore, inventory schema and code rollout review; no production migration was run."
+  ],
+  "refreshWindows": {
+    "publicCatalogSeconds": 60,
+    "productSitemapSeconds": 600,
+    "note": "Server-rendered public copy may wait for cache revalidation; authenticated sync refreshes shared catalog state."
+  },
+  "androidCatalogCandidate": {
+    "versionCode": 20261015,
+    "versionName": "1.0.0-store-i18n.20261013",
+    "package": "io.studentry.app",
+    "targetPlatform": "android-arm64",
+    "bytes": 84447238,
+    "apk": "C:\\Users\\ROG\\Desktop\\backups\\aqua_orginal\\build\\store-translations\\2026-10-13\\studentry-android-store-i18n-20261015.apk",
+    "sha256": "7def308128b56254a5f3e79bd16da3098ebe8ad8efa5579c21ee730af1f099c6",
+    "certificateMatchesWorkingGoogleApk": true,
+    "signatureVerification": "passed",
+    "installedOnPhone": false,
+    "reasonNotInstalled": "Backend catalog schema has not been activated; preserve working authenticated APK 20261014."
+  }
+}
