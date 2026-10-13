@@ -6,8 +6,8 @@
     "destination": "student-profile",
     "productionAudienceFixApplied": true
   },
-  "catalogProductionDeployed": false,
-  "productionMigrationApplied": false,
+  "catalogProductionDeployed": true,
+  "productionMigrationApplied": true,
   "tests": {
     "laravel": {
       "total": 190,
@@ -54,7 +54,17 @@
     "webLint": "passed",
     "webProductionBuild": "passed",
     "flutterChangedSourceAnalyze": "passed",
-    "androidReleaseBuild": "passed"
+    "androidReleaseBuild": "passed",
+    "deployedMySqlSharedAuth": {
+      "checks": 21,
+      "result": "passed",
+      "productionWrites": false
+    },
+    "productionNextArtifactMySqlBff": {
+      "checks": 23,
+      "result": "passed",
+      "productionWrites": false
+    }
   },
   "requiredScenarios": [
     {
@@ -129,7 +139,7 @@
     }
   ],
   "safety": {
-    "productionCatalogWrites": false,
+    "productionCatalogWrites": true,
     "productionClinicalWrites": false,
     "dnsChanges": false,
     "nginxChanges": false,
@@ -140,13 +150,13 @@
       "redis-server",
       "studentry-web-preview"
     ],
-    "allServicesActive": true
+    "allServicesActive": true,
+    "clinicalFeatureFlagEnabledAfterIsolatedTests": true
   },
   "limitations": [
-    "The MySQL host has no PDO SQLite; the existing academic duplicate-audit SQLite test ran locally instead. All 21 selected catalog MySQL tests passed.",
-    "Catalog candidate APK is not installed over the successfully authenticated version until backend prerequisites are activated.",
-    "Live Google Web OAuth is not demonstrated by the browser fixture OAuth tests.",
-    "Production store activation requires verified backup/restore, inventory schema and code rollout review; no production migration was run."
+    "Successful fresh Google consent on the latest installed APK and website needs user confirmation; SDK popup and signature/nonce rejection checks passed.",
+    "Clinical account/data HTTP checks used deployed code/artifact on isolated restored MySQL; no production patient or user records were created.",
+    "English product translations must be entered by the sales manager; the two legacy products currently have Arabic only."
   ],
   "refreshWindows": {
     "publicCatalogSeconds": 60,
@@ -163,7 +173,20 @@
     "sha256": "7def308128b56254a5f3e79bd16da3098ebe8ad8efa5579c21ee730af1f099c6",
     "certificateMatchesWorkingGoogleApk": true,
     "signatureVerification": "passed",
-    "installedOnPhone": false,
-    "reasonNotInstalled": "Backend catalog schema has not been activated; preserve working authenticated APK 20261014."
+    "installedOnPhone": true,
+    "installedUsing": "adb install -r",
+    "downloadPathOnPhone": "/sdcard/Download/Studentry-20261015.apk",
+    "appDataPreserved": true
+  },
+  "deployment": {
+    "liveWeb": "https://studentry.app",
+    "liveApi": "https://api.studentry.app/api/v1",
+    "webSha": "17a54da59b28297f6a7963bbca5417b363ab60d1",
+    "workflow": "https://github.com/ykharouf5-sys/studentry-web/actions/runs/38405928429",
+    "workflowConclusion": "success",
+    "branch": "fix/laravel-web-integration-20261010",
+    "apiRelease": "20261013-shared-clients-v1",
+    "clinicalWritesEnabled": true,
+    "sessionKeyPreserved": true
   }
 }

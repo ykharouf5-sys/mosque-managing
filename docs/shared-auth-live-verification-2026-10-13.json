@@ -1,0 +1,258 @@
+{
+  "kernel": {
+    "result": "passed",
+    "checks": [
+      "Mobile-compatible registration succeeds",
+      "Actual OTP verification endpoint succeeds in isolated fixture",
+      "Web and mobile login return identical User ID",
+      "Web login preserves independent mobile session",
+      "Web profile update succeeds",
+      "Mobile sees same stored profile",
+      "Web-compatible patient creation succeeds",
+      "Mobile sees patient created by web",
+      "Mobile-compatible patient update succeeds",
+      "Web sees same patient edit",
+      "Mobile-compatible appointment creation succeeds",
+      "Web sees identical appointment",
+      "Web-compatible payment succeeds",
+      "Mobile report reads same financial totals",
+      "Web-compatible registration succeeds",
+      "Web-created account verifies with actual OTP endpoint",
+      "Mobile can log into web-created account with identical User ID",
+      "Another account cannot read the first account patient",
+      "Changed clinic scope is rejected before writes",
+      "Web logout succeeds",
+      "Web logout does not revoke mobile token"
+    ],
+    "count": 21,
+    "productionWrites": false
+  },
+  "bff": {
+    "result": "passed",
+    "count": 23,
+    "checks": [
+      "Native API registration",
+      "Native API OTP verification",
+      "Real Next BFF logs into native-created account",
+      "Next and native share User ID",
+      "Native bearer remains server-side",
+      "Production encrypted session cookie attributes",
+      "Real Next session refresh",
+      "Patient creation through actual Next BFF enabled",
+      "Native reads BFF-created patient",
+      "Native updates shared patient",
+      "Next reads native patient edit",
+      "Native creates appointment",
+      "Next reads native appointment",
+      "Next records patient payment",
+      "Next reports read same financial totals",
+      "Registration through actual Next BFF",
+      "Web account verifies through actual Next BFF",
+      "Native logs into actual BFF-created account",
+      "Next blocks another account patient",
+      "Next rejects stale account scope",
+      "Next logout revokes web session",
+      "Native session survives Next logout",
+      "Logged-out Next session rejected"
+    ],
+    "productionWrites": false,
+    "backend": "deployed Laravel candidate on isolated restored MySQL",
+    "web": "actual deployed production Next artifact",
+    "mobile": "native API HTTP protocol; installed APK login requires device confirmation"
+  },
+  "rollback": {
+    "baseline_booted": true,
+    "transaction_tested": true,
+    "baseline": "/srv/studentry-web-preview-deploy/releases/baseline-1791756365090071330",
+    "tested_at": 1791756371.803244,
+    "setup_sha": "72484989adf4045175514ddeaeb7d6b5613bb591"
+  },
+  "date": "2026-10-13",
+  "liveWeb": "https://studentry.app",
+  "liveApi": "https://api.studentry.app/api/v1",
+  "webSha": "17a54da59b28297f6a7963bbca5417b363ab60d1",
+  "workflow": "https://github.com/ykharouf5-sys/studentry-web/actions/runs/38405928429",
+  "workflowConclusion": "success",
+  "branch": "fix/laravel-web-integration-20261010",
+  "apiRelease": "20261013-shared-clients-v1",
+  "clinicalWritesEnabled": true,
+  "sessionKeyPreserved": true,
+  "catalogMigrationsApplied": [
+    "000031",
+    "000032",
+    "000035",
+    "000036"
+  ],
+  "catalogReviewedProductsPublished": 2,
+  "dnsChanged": false,
+  "nginxChanged": false,
+  "coreServicePidsUnchanged": true,
+  "apkInstalledVersionCode": 20261015,
+  "googleAndroidLastUserConfirmedVersionCode": 20261014,
+  "freshGoogleConsentOn20261015Confirmed": false,
+  "liveAuthAudit": {
+    "origin": "https://studentry.app",
+    "checks": [
+      {
+        "name": "anonymous session rejected",
+        "status": 401
+      },
+      {
+        "name": "cross-origin password login rejected",
+        "status": 403
+      },
+      {
+        "name": "cross-site Google challenge rejected",
+        "status": 403
+      },
+      {
+        "name": "login input validated",
+        "status": 422
+      },
+      {
+        "name": "invalid account rejected without a session",
+        "status": 422
+      },
+      {
+        "name": "Google without challenge rejected",
+        "status": 403
+      },
+      {
+        "name": "Google challenge issued for the configured site origin",
+        "status": 200
+      },
+      {
+        "name": "matching nonce with forged Google signature rejected by Laravel",
+        "status": 401
+      },
+      {
+        "name": "Google replay without challenge rejected",
+        "status": 403
+      },
+      {
+        "name": "rejected identities never establish a session",
+        "status": 401
+      }
+    ],
+    "googleBrowser": {
+      "loginPageStatus": 200,
+      "googleResponses": [
+        {
+          "path": "/gsi/client",
+          "status": 200
+        },
+        {
+          "path": "/gsi/style",
+          "status": 200
+        },
+        {
+          "path": "/gsi/button",
+          "status": 200
+        }
+      ],
+      "errors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+        "Failed to load resource: net::ERR_CONNECTION_CLOSED"
+      ],
+      "failedResponses": [
+        {
+          "origin": "https://studentry.app",
+          "path": "/api/session",
+          "status": 401
+        }
+      ],
+      "googleIframeVisible": true,
+      "challengeSetupError": null,
+      "popup": {
+        "origin": "https://accounts.google.com",
+        "path": "/v3/signin/identifier"
+      },
+      "popupErrors": []
+    },
+    "limitations": [
+      "Successful live password login requires an authorized test account; not tested without credentials.",
+      "Google SDK checked with a fresh browser; actual Google consent and signed successful callback need the owner's Google test login."
+    ]
+  },
+  "publicSiteAudit": {
+    "date": "2026-10-13",
+    "origin": "https://studentry.app",
+    "checks": [
+      "Same reviewed product IDs from Arabic/English live API",
+      {
+        "path": "/",
+        "status": 200
+      },
+      {
+        "path": "/en",
+        "status": 200
+      },
+      {
+        "path": "/store",
+        "status": 200
+      },
+      {
+        "path": "/en/store",
+        "status": 200
+      },
+      {
+        "path": "/auth/login",
+        "status": 200
+      },
+      {
+        "path": "/en/auth/login",
+        "status": 200
+      },
+      {
+        "path": "/sitemap.xml",
+        "status": 200
+      },
+      {
+        "path": "/sitemap-index.xml",
+        "status": 200
+      },
+      "Unpublished sample UUID returns 404"
+    ],
+    "products": [
+      {
+        "id": "9076a055-1dcb-4ce9-9cbf-7bba9279825c",
+        "language": "ar",
+        "status": 200,
+        "canonical": "https://studentry.app/store/9076a055-1dcb-4ce9-9cbf-7bba9279825c",
+        "robots": "index, follow"
+      },
+      {
+        "id": "9076a055-1dcb-4ce9-9cbf-7bba9279825c",
+        "language": "en",
+        "status": 200,
+        "canonical": "https://studentry.app/store/9076a055-1dcb-4ce9-9cbf-7bba9279825c",
+        "robots": "noindex, follow"
+      },
+      {
+        "id": "5434db37-01d3-4ac4-9cb3-919bdbdd13e7",
+        "language": "ar",
+        "status": 200,
+        "canonical": "https://studentry.app/store/5434db37-01d3-4ac4-9cb3-919bdbdd13e7",
+        "robots": "index, follow"
+      },
+      {
+        "id": "5434db37-01d3-4ac4-9cb3-919bdbdd13e7",
+        "language": "en",
+        "status": 200,
+        "canonical": "https://studentry.app/store/5434db37-01d3-4ac4-9cb3-919bdbdd13e7",
+        "robots": "noindex, follow"
+      }
+    ]
+  },
+  "googleResourceDiagnostics": {
+    "failures": [
+      {
+        "origin": "https://studentry.app",
+        "path": "/api/session",
+        "status": 401
+      }
+    ],
+    "popupOpened": true
+  }
+}
