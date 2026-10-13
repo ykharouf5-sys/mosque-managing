@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-13",
+  "approval": "User confirmed both legacy products must remain published",
+  "products": [
+    {
+      "id": "5434db37-01d3-4ac4-9cb3-919bdbdd13e7",
+      "name": "فرشاة اسنان كهربائية",
+      "publication_status": "published"
+    },
+    {
+      "id": "9076a055-1dcb-4ce9-9cbf-7bba9279825c",
+      "name": "معجون اسنان",
+      "publication_status": "published"
+    }
+  ],
+  "productionApplied": false,
+  "demoProductsRemainExcluded": true
+}

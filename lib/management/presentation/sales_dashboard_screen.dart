@@ -1,8 +1,12 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
+import 'widgets/catalog_translation_editor.dart';
 import 'dart:io';
 
-import 'package:studentry/store/data/store_data.dart';
+import 'package:studentry/store/presentation/catalog_page_controls.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/data/store_image_service.dart';
+import 'package:studentry/management/presentation/widgets/category_icon_input.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/data/api_client.dart';
@@ -11,6 +15,7 @@ import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 
@@ -28,7 +33,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    loadStoreSnapshot();
+
     Future.microtask(_loadCatalog);
   }
 
@@ -39,49 +44,47 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
   }
 
   Future<void> _reloadCatalog() async {
-    await loadStoreFromApi(refresh: true);
-    if (!mounted) return;
-    ref
-        .read(catalogProvider.notifier)
-        .loadBannersAndCategories(storeBanners, storeCategories);
-    await ref.read(catalogProvider.notifier).loadInitialProducts();
+    await ref.read(catalogProvider.notifier).refreshCatalog(force: true);
     if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     ref.watch(catalogProvider);
     ref.watch(ordersProvider);
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: Text(_sectionTitles[_selectedIndex]),
+          title: Text(storeUi(_sectionTitles[_selectedIndex])),
           actions: [
             IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'إعدادات الحساب والخصوصية',
+              icon: Icon(Icons.settings_outlined),
+              tooltip: storeUi('إعدادات الحساب والخصوصية'),
               onPressed: () => Navigator.pushNamed(context, '/settings'),
             ),
             IconButton(
-              icon: const Icon(
+              icon: Icon(
                 Icons.notifications_active_outlined,
                 color: AppColors.primary,
               ),
-              tooltip: 'إرسال إشعار للمستخدمين',
+              tooltip: storeUi('إرسال إشعار للمستخدمين'),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const NotificationCampaignScreen(
+                  builder: (_) => NotificationCampaignScreen(
                     managerType: NotificationManagerType.sales,
                   ),
                 ),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.logout, color: AppColors.textDark),
-              tooltip: 'تسجيل الخروج',
+              icon: Icon(Icons.logout, color: AppColors.textDark),
+              tooltip: storeUi('تسجيل الخروج'),
               onPressed: () async {
                 await ref.read(authProvider.notifier).logout();
                 if (context.mounted) {
@@ -96,7 +99,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
           ],
           leading: Builder(
             builder: (ctx) => IconButton(
-              icon: const Icon(Icons.menu, color: AppColors.textDark),
+              icon: Icon(Icons.menu, color: AppColors.textDark),
               onPressed: () => Scaffold.of(ctx).openDrawer(),
             ),
           ),
@@ -105,13 +108,26 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
         body: IndexedStack(
           index: _selectedIndex,
           children: [
-            _CategoriesTab(onDataChanged: _reloadCatalog),
-            _ProductsTab(onDataChanged: _reloadCatalog),
-            _BannersTab(onDataChanged: _reloadCatalog),
-            _CouponsTab(onDataChanged: _reloadCatalog),
+            _CategoriesTab(
+              catalog: ref.read(catalogProvider.notifier),
+              onDataChanged: _reloadCatalog,
+            ),
+            _ProductsTab(
+              catalog: ref.read(catalogProvider.notifier),
+              onDataChanged: _reloadCatalog,
+            ),
+            _BannersTab(
+              catalog: ref.read(catalogProvider.notifier),
+              onDataChanged: _reloadCatalog,
+            ),
+            _CouponsTab(
+              catalog: ref.read(catalogProvider.notifier),
+              onDataChanged: _reloadCatalog,
+            ),
             _OrdersTab(
-              onDataChanged: () =>
-                  ref.read(ordersProvider.notifier).loadInitialOrders(),
+              onDataChanged: () => ref
+                  .read(ordersProvider.notifier)
+                  .loadInitialOrders(force: true),
             ),
           ],
         ),
@@ -138,7 +154,9 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
   Widget _buildSidebar(BuildContext context) {
     return Drawer(
       child: Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: Container(
           color: AppColors.surface,
           child: Column(
@@ -147,7 +165,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.fromLTRB(20.w, 48.h, 20.w, 24.h),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [AppColors.primary, Color(0xFF0E7C8F)],
                     begin: Alignment.topLeft,
@@ -163,7 +181,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                         color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.admin_panel_settings,
                         color: Colors.white,
                         size: 32,
@@ -171,7 +189,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                     ),
                     SizedBox(height: 16.h),
                     Text(
-                      'لوحة تحكم المبيعات',
+                      storeUi('لوحة تحكم المبيعات'),
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20.sp,
@@ -180,7 +198,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                     ),
                     SizedBox(height: 4.h),
                     Text(
-                      'إدارة المتجر',
+                      storeUi('إدارة المتجر'),
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.8),
                         fontSize: 12.sp,
@@ -213,8 +231,8 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('تسجيل الخروج'),
+                    icon: Icon(Icons.logout, size: 18),
+                    label: Text(storeUi('تسجيل الخروج')),
                     onPressed: () async {
                       Navigator.pop(context);
                       await ref.read(authProvider.notifier).logout();
@@ -284,7 +302,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                   ),
                 ),
-                const Spacer(),
+                Spacer(),
                 if (isSelected)
                   Container(
                     width: 4.w,
@@ -349,7 +367,9 @@ Future<bool?> _showDeleteConfirmDialog(
   return showDialog<bool>(
     context: context,
     builder: (ctx) => Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -360,11 +380,7 @@ Future<bool?> _showDeleteConfirmDialog(
                 color: Colors.red.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
-                Icons.delete_outline,
-                color: Colors.red,
-                size: 22,
-              ),
+              child: Icon(Icons.delete_outline, color: Colors.red, size: 22),
             ),
             SizedBox(width: 10.w),
             Text(
@@ -418,6 +434,7 @@ class _GenericListTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: itemCount == 0
@@ -433,7 +450,7 @@ class _GenericListTab extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
         onPressed: onAdd,
-        child: const Icon(Icons.add, color: AppColors.textLight),
+        child: Icon(Icons.add, color: AppColors.textLight),
       ),
     );
   }
@@ -472,14 +489,20 @@ class _GenericListTab extends StatelessWidget {
 
 class _CategoriesTab extends StatelessWidget {
   final VoidCallback onDataChanged;
-  const _CategoriesTab({required this.onDataChanged});
+  const _CategoriesTab({required this.catalog, required this.onDataChanged});
+  final CatalogNotifier catalog;
+  List<Product> get storeProducts => catalog.snapshot.products;
+  List<ProductCategory> get storeCategories => catalog.snapshot.categories;
+  List<PromoBanner> get storeBanners => catalog.snapshot.banners;
+  List<Coupon> get storeCoupons => catalog.snapshot.coupons;
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     return _GenericListTab(
       emptyIcon: 'category',
-      emptyTitle: 'لا توجد تصنيفات',
-      emptyActionLabel: 'إضافة تصنيف',
+      emptyTitle: storeUi('لا توجد تصنيفات'),
+      emptyActionLabel: storeUi('إضافة تصنيف'),
       itemCount: storeCategories.length,
       itemBuilder: (ctx, i) => _buildCategoryCard(ctx, storeCategories[i]),
       onAdd: () => _showCategoryDialog(context, null),
@@ -512,7 +535,7 @@ class _CategoriesTab extends StatelessWidget {
         );
         if (confirmed != true) return false;
         try {
-          await deleteCategory(category.id);
+          await catalog.deleteCategory(category.id);
           onDataChanged();
           return true;
         } catch (error) {
@@ -548,7 +571,10 @@ class _CategoriesTab extends StatelessWidget {
             ),
           ),
           subtitle: Text(
-            '${category.productCount ?? 0} منتج',
+            AppLocale.text(
+              '${category.productCount ?? 0} منتج',
+              '${category.productCount ?? 0} products',
+            ),
             style: TextStyle(color: _kGrey, fontSize: 12.sp),
           ),
           trailing: Icon(Icons.edit_outlined, color: _kGrey, size: 20.sp),
@@ -559,35 +585,53 @@ class _CategoriesTab extends StatelessWidget {
   }
 
   void _showCategoryDialog(BuildContext context, ProductCategory? category) {
-    final nameC = TextEditingController(text: category?.label ?? '');
+    final nameC = TextEditingController(
+      text: category?.translations['ar']?['name'] ?? category?.label ?? '',
+    );
     final urlC = TextEditingController(text: category?.iconUrl ?? '');
+    final englishNameC = TextEditingController(
+      text: category?.translations['en']?['name'] ?? '',
+    );
+    final arCopy = {'name': nameC};
+    final enCopy = {'name': englishNameC};
     final isEdit = category != null;
+    var iconUploading = false;
     _showFormDialog(
       context: context,
       title: isEdit ? 'تعديل التصنيف' : 'إضافة تصنيف',
       icon: Icons.category_outlined,
-      fields: [
-        _DialogField(
-          controller: nameC,
-          label: 'اسم التصنيف',
-          hint: 'مثال: فرش أسنان',
-        ),
-        _DialogField(
-          controller: urlC,
-          label: 'رابط الأيقونة',
-          hint: 'https://...',
-        ),
-      ],
+      fields: [],
+      extraContent: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CatalogTranslationEditor(
+            arabic: arCopy,
+            english: enCopy,
+            labels: {'name': ('اسم التصنيف', 'Category name')},
+          ),
+          CategoryIconInput(
+            controller: urlC,
+            onPick: () => StoreImageService.pickAndUpload(kind: 'category'),
+            onBusyChanged: (busy) => iconUploading = busy,
+          ),
+        ],
+      ),
       onSave: () async {
+        if (iconUploading) throw StateError('انتظر حتى يكتمل رفع الأيقونة');
         if (nameC.text.trim().isEmpty) return;
         if (isEdit) {
-          await updateCategory(
+          await catalog.updateCategory(
             category.id,
             nameC.text.trim(),
             urlC.text.trim(),
+            translations: editorTranslations(arCopy, enCopy),
           );
         } else {
-          await addCategory(nameC.text.trim(), urlC.text.trim());
+          await catalog.addCategory(
+            nameC.text.trim(),
+            urlC.text.trim(),
+            translations: editorTranslations(arCopy, enCopy),
+          );
         }
         onDataChanged();
       },
@@ -599,18 +643,36 @@ class _CategoriesTab extends StatelessWidget {
 
 class _ProductsTab extends StatelessWidget {
   final VoidCallback onDataChanged;
-  const _ProductsTab({required this.onDataChanged});
+  const _ProductsTab({required this.catalog, required this.onDataChanged});
+  final CatalogNotifier catalog;
+  List<Product> get storeProducts => catalog.snapshot.products;
+  List<ProductCategory> get storeCategories => catalog.snapshot.categories;
+  List<PromoBanner> get storeBanners => catalog.snapshot.banners;
+  List<Coupon> get storeCoupons => catalog.snapshot.coupons;
 
   @override
   Widget build(BuildContext context) {
-    return _GenericListTab(
-      emptyIcon: 'product',
-      emptyTitle: 'لا توجد منتجات',
-      emptyActionLabel: 'إضافة منتج',
-      itemCount: storeProducts.length,
-      itemBuilder: (ctx, i) => _buildProductCard(ctx, storeProducts[i]),
-      onAdd: () => _showProductDialog(context, null),
-      onRefresh: onDataChanged,
+    Localizations.localeOf(context);
+    return Column(
+      children: [
+        Expanded(
+          child: _GenericListTab(
+            emptyIcon: 'product',
+            emptyTitle: storeUi('لا توجد منتجات'),
+            emptyActionLabel: storeUi('إضافة منتج'),
+            itemCount: storeProducts.length,
+            itemBuilder: (ctx, i) => _buildProductCard(ctx, storeProducts[i]),
+            onAdd: () => _showProductDialog(context, null),
+            onRefresh: onDataChanged,
+          ),
+        ),
+        CatalogPageControls(
+          page: catalog.snapshot.currentProductPage,
+          lastPage: catalog.snapshot.lastProductPage,
+          loading: catalog.snapshot.isLoadingProducts,
+          onPage: catalog.loadProductsPage,
+        ),
+      ],
     );
   }
 
@@ -639,7 +701,7 @@ class _ProductsTab extends StatelessWidget {
         );
         if (confirmed != true) return false;
         try {
-          await deleteProduct(product.id);
+          await catalog.deleteProduct(product.id);
           onDataChanged();
           return true;
         } catch (error) {
@@ -699,7 +761,9 @@ class _ProductsTab extends StatelessWidget {
             ),
           ),
           subtitle: Text(
-            '${product.price.toStringAsFixed(0)} ر.س - ${product.categoryName}',
+            storeUi(
+              '${product.price.toStringAsFixed(0)} SYP - ${product.categoryName}',
+            ),
             style: TextStyle(color: _kGrey, fontSize: 12.sp),
           ),
           trailing: Icon(Icons.edit_outlined, color: _kGrey, size: 20.sp),
@@ -710,24 +774,46 @@ class _ProductsTab extends StatelessWidget {
   }
 
   void _showProductDialog(BuildContext context, Product? product) {
-    final nameC = TextEditingController(text: product?.name ?? '');
+    final nameC = TextEditingController(
+      text: product?.translations['ar']?['name'] ?? product?.name ?? '',
+    );
     final brandC = TextEditingController(text: product?.brand ?? '');
-    final descC = TextEditingController(text: product?.description ?? '');
+    final descC = TextEditingController(
+      text:
+          product?.translations['ar']?['description'] ??
+          product?.description ??
+          '',
+    );
     final priceC = TextEditingController(
       text: product != null ? product.price.toStringAsFixed(0) : '',
     );
     final stockC = TextEditingController(
-      text: product != null ? product.stock.toString() : '0',
+      text: product != null
+          ? (product.physicalStock ?? product.stock).toString()
+          : '0',
     );
+    final arCopy = {'name': nameC, 'description': descC};
+    final enCopy = {
+      for (final field in arCopy.keys)
+        field: TextEditingController(
+          text: product?.translations['en']?[field] ?? '',
+        ),
+    };
     final isEdit = product != null;
     String? imagePath = product?.imageUrl;
+    var imageUploading = false;
+    String? imageUploadError;
     String? selectedCategoryId = product?.categoryId;
     String? selectedAcademicYear = product?.academicYear;
+    var publicationStatus = product?.publicationStatus ?? 'draft';
+    var isTest = product?.isTest ?? false;
 
     showDialog(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -742,7 +828,7 @@ class _ProductsTab extends StatelessWidget {
                       color: AppColors.primarySurface,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.inventory_2_outlined,
                       color: AppColors.primary,
                       size: 22,
@@ -765,21 +851,28 @@ class _ProductsTab extends StatelessWidget {
                   children: [
                     GestureDetector(
                       onTap: () async {
+                        if (imageUploading) return;
+                        setDialogState(() {
+                          imageUploading = true;
+                          imageUploadError = null;
+                        });
                         try {
                           final uploaded =
                               await StoreImageService.pickAndUpload(
                                 kind: 'product',
                               );
                           if (uploaded != null) {
-                            setDialogState(() => imagePath = uploaded);
+                            if (ctx.mounted) {
+                              setDialogState(() => imagePath = uploaded);
+                            }
                           }
                         } catch (error) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('تعذر رفع الصورة: $error'),
-                              ),
-                            );
+                          if (ctx.mounted) {
+                            setDialogState(() => imageUploadError = '$error');
+                          }
+                        } finally {
+                          if (ctx.mounted) {
+                            setDialogState(() => imageUploading = false);
                           }
                         }
                       },
@@ -791,68 +884,77 @@ class _ProductsTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: AppColors.divider),
                         ),
-                        child: () {
-                          final p = imagePath;
-                          if (p != null && p.isNotEmpty) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: p.startsWith('/') || p.contains(':\\')
-                                  ? Image.file(File(p), fit: BoxFit.cover)
-                                  : Image.network(p, fit: BoxFit.cover),
-                            );
-                          }
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.add_photo_alternate_outlined,
-                                color: AppColors.primary,
-                                size: 32.sp,
-                              ),
-                              SizedBox(height: 4.h),
-                              Text(
-                                'إضافة صورة',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontSize: 11.sp,
-                                ),
-                              ),
-                            ],
-                          );
-                        }(),
+                        child: imageUploading
+                            ? Center(child: CircularProgressIndicator())
+                            : () {
+                                final p = imagePath;
+                                if (p != null && p.isNotEmpty) {
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child:
+                                        p.startsWith('/') || p.contains(':\\')
+                                        ? Image.file(File(p), fit: BoxFit.cover)
+                                        : Image.network(p, fit: BoxFit.cover),
+                                  );
+                                }
+                                return Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      color: AppColors.primary,
+                                      size: 32.sp,
+                                    ),
+                                    SizedBox(height: 4.h),
+                                    Text(
+                                      storeUi('إضافة صورة'),
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 11.sp,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }(),
                       ),
                     ),
+                    if (imageUploading)
+                      Text(storeUi('عم نرفع صورة المنتج... انتظر حتى تكتمل.')),
+                    if (imageUploadError != null)
+                      Text(
+                        AppLocale.text(
+                          'تعذر رفع الصورة: $imageUploadError',
+                          'Could not upload image: $imageUploadError',
+                        ),
+                        style: TextStyle(color: AppColors.danger),
+                      ),
                     SizedBox(height: 16.h),
-                    _styledTextField(
-                      controller: nameC,
-                      label: 'اسم المنتج',
-                      hint: 'مثال: فرشاة أسنان كهربائية',
+                    CatalogTranslationEditor(
+                      arabic: arCopy,
+                      english: enCopy,
+                      labels: {
+                        'name': ('اسم المنتج', 'Product name'),
+                        'description': ('الوصف', 'Description'),
+                      },
                     ),
                     SizedBox(height: 12.h),
                     _styledTextField(
                       controller: priceC,
-                      label: 'السعر (ر.س)',
-                      hint: 'مثال: 49.99',
+                      label: 'السعر (SYP)',
+                      hint: storeUi('مثال: 49.99'),
                       keyboardType: TextInputType.number,
                     ),
                     SizedBox(height: 12.h),
                     _styledTextField(
                       controller: brandC,
                       label: 'الماركة',
-                      hint: 'مثال: NSK PANA-MAX',
-                    ),
-                    SizedBox(height: 12.h),
-                    _styledTextField(
-                      controller: descC,
-                      label: 'الوصف',
-                      hint: 'وصف المنتج...',
-                      maxLines: 3,
+                      hint: storeUi('مثال: NSK PANA-MAX'),
                     ),
                     SizedBox(height: 12.h),
                     _styledTextField(
                       controller: stockC,
                       label: 'المخزون (عدد القطع)',
-                      hint: 'مثال: 50',
+                      hint: storeUi('مثال: 50'),
                       keyboardType: TextInputType.number,
                     ),
                     SizedBox(height: 12.h),
@@ -872,36 +974,68 @@ class _ProductsTab extends StatelessWidget {
                     ),
                     SizedBox(height: 12.h),
                     DropdownButtonFormField<String>(
+                      initialValue: publicationStatus,
+                      decoration: _inputDecoration(
+                        AppLocale.text('حالة النشر', 'Publication status'),
+                      ),
+                      items: [
+                        for (final value in ['draft', 'published', 'archived'])
+                          DropdownMenuItem(
+                            value: value,
+                            child: Text(
+                              value == 'draft'
+                                  ? AppLocale.text('مسودة', 'Draft')
+                                  : value == 'published'
+                                  ? AppLocale.text('منشور', 'Published')
+                                  : AppLocale.text('مؤرشف', 'Archived'),
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => publicationStatus = value!),
+                    ),
+                    SwitchListTile(
+                      title: Text(
+                        AppLocale.text(
+                          'منتج تجريبي (غير ظاهر للعملاء)',
+                          'Test product (hidden from customers)',
+                        ),
+                      ),
+                      value: isTest,
+                      onChanged: (value) =>
+                          setDialogState(() => isTest = value),
+                    ),
+                    DropdownButtonFormField<String>(
                       initialValue: selectedAcademicYear,
                       decoration: _inputDecoration('السنة الدراسية (للطلاب)'),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: null,
-                          child: Text('الكل - بدون تصنيف'),
+                          child: Text(storeUi('الكل - بدون تصنيف')),
                         ),
                         DropdownMenuItem(
                           value: 'الأولى',
-                          child: Text('السنة الأولى'),
+                          child: Text(storeUi('السنة الأولى')),
                         ),
                         DropdownMenuItem(
                           value: 'الثانية',
-                          child: Text('السنة الثانية'),
+                          child: Text(storeUi('السنة الثانية')),
                         ),
                         DropdownMenuItem(
                           value: 'الثالثة',
-                          child: Text('السنة الثالثة'),
+                          child: Text(storeUi('السنة الثالثة')),
                         ),
                         DropdownMenuItem(
                           value: 'الرابعة',
-                          child: Text('السنة الرابعة'),
+                          child: Text(storeUi('السنة الرابعة')),
                         ),
                         DropdownMenuItem(
                           value: 'الخامسة',
-                          child: Text('السنة الخامسة'),
+                          child: Text(storeUi('السنة الخامسة')),
                         ),
                         DropdownMenuItem(
                           value: 'السادسة',
-                          child: Text('السنة السادسة'),
+                          child: Text(storeUi('السنة السادسة')),
                         ),
                       ],
                       onChanged: (v) =>
@@ -918,6 +1052,7 @@ class _ProductsTab extends StatelessWidget {
                 _styledConfirmButton(
                   isEdit ? 'حفظ' : 'إضافة',
                   onPressed: () async {
+                    if (imageUploading) return;
                     final name = nameC.text.trim();
                     final price = double.tryParse(priceC.text.trim());
                     final stock = int.tryParse(stockC.text.trim()) ?? 0;
@@ -932,7 +1067,7 @@ class _ProductsTab extends StatelessWidget {
                     if (cat == null) return;
                     try {
                       if (isEdit) {
-                        await updateProduct(
+                        await catalog.updateProduct(
                           product.id,
                           name,
                           descC.text.trim(),
@@ -943,9 +1078,12 @@ class _ProductsTab extends StatelessWidget {
                           brand: brandC.text.trim(),
                           stock: stock,
                           academicYear: selectedAcademicYear,
+                          translations: editorTranslations(arCopy, enCopy),
+                          publicationStatus: publicationStatus,
+                          isTest: isTest,
                         );
                       } else {
-                        await addProduct(
+                        await catalog.addProduct(
                           name,
                           descC.text.trim(),
                           price,
@@ -955,6 +1093,9 @@ class _ProductsTab extends StatelessWidget {
                           brand: brandC.text.trim(),
                           stock: stock,
                           academicYear: selectedAcademicYear,
+                          translations: editorTranslations(arCopy, enCopy),
+                          publicationStatus: publicationStatus,
+                          isTest: isTest,
                         );
                       }
                       onDataChanged();
@@ -977,10 +1118,16 @@ class _ProductsTab extends StatelessWidget {
 
 class _BannersTab extends StatelessWidget {
   final VoidCallback onDataChanged;
-  const _BannersTab({required this.onDataChanged});
+  const _BannersTab({required this.catalog, required this.onDataChanged});
+  final CatalogNotifier catalog;
+  List<Product> get storeProducts => catalog.snapshot.products;
+  List<ProductCategory> get storeCategories => catalog.snapshot.categories;
+  List<PromoBanner> get storeBanners => catalog.snapshot.banners;
+  List<Coupon> get storeCoupons => catalog.snapshot.coupons;
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: storeBanners.isEmpty
@@ -996,7 +1143,7 @@ class _BannersTab extends StatelessWidget {
             ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: AppColors.textLight),
+        child: Icon(Icons.add, color: AppColors.textLight),
         onPressed: () => _showBannerDialog(context, null),
       ),
     );
@@ -1010,13 +1157,13 @@ class _BannersTab extends StatelessWidget {
           Icon(Icons.slideshow_outlined, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            'لا توجد عروض',
+            storeUi('لا توجد عروض'),
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
           SizedBox(height: 12.h),
           ElevatedButton.icon(
             icon: Icon(Icons.add, size: 18.sp),
-            label: const Text('إضافة عرض'),
+            label: Text(storeUi('إضافة عرض')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.textLight,
@@ -1056,7 +1203,7 @@ class _BannersTab extends StatelessWidget {
         );
         if (confirmed != true) return false;
         try {
-          await deleteBanner(banner.id);
+          await catalog.deleteBanner(banner.id);
           onDataChanged();
           return true;
         } catch (error) {
@@ -1078,7 +1225,7 @@ class _BannersTab extends StatelessWidget {
             height: 56.h,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [AppColors.primary, Color(0xFF0E7C8F)],
               ),
             ),
@@ -1119,7 +1266,7 @@ class _BannersTab extends StatelessWidget {
                     size: 20.sp,
                   ),
                   onPressed: () => _confirmSendNotification(context, banner),
-                  tooltip: 'إرسال إشعار',
+                  tooltip: storeUi('إرسال إشعار'),
                   constraints: BoxConstraints(minWidth: 36.w, minHeight: 36.h),
                   padding: EdgeInsets.zero,
                 ),
@@ -1138,7 +1285,9 @@ class _BannersTab extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -1151,7 +1300,7 @@ class _BannersTab extends StatelessWidget {
                   color: AppColors.primarySurface,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.notifications_active,
                   color: AppColors.primary,
                   size: 22,
@@ -1159,7 +1308,7 @@ class _BannersTab extends StatelessWidget {
               ),
               SizedBox(width: 10.w),
               Text(
-                'إرسال إشعار',
+                storeUi('إرسال إشعار'),
                 style: TextStyle(
                   color: AppColors.textDark,
                   fontWeight: FontWeight.bold,
@@ -1169,7 +1318,9 @@ class _BannersTab extends StatelessWidget {
             ],
           ),
           content: Text(
-            'سيتم إرسال إشعار لجميع المستخدمين حول:\n"${banner.title}"؟',
+            storeUi(
+              'سيتم إرسال إشعار لجميع المستخدمين حول:\n"${banner.title}"؟',
+            ),
           ),
           actions: [
             _styledDialogButton('إلغاء', onPressed: () => Navigator.pop(ctx)),
@@ -1213,7 +1364,7 @@ class _BannersTab extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('تمت جدولة الإشعار للإرسال على دفعات'),
+          content: Text(storeUi('تمت جدولة الإشعار للإرسال على دفعات')),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -1225,27 +1376,54 @@ class _BannersTab extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('تعذر جدولة الإشعار')));
+      ).showSnackBar(SnackBar(content: Text(storeUi('تعذر جدولة الإشعار'))));
     }
   }
 
   void _showBannerDialog(BuildContext context, PromoBanner? banner) {
-    final titleC = TextEditingController(text: banner?.title ?? '');
-    final subtitleC = TextEditingController(text: banner?.subtitle ?? '');
-    final discountC = TextEditingController(text: banner?.discountText ?? '');
-    final ctaC = TextEditingController(text: banner?.ctaText ?? '');
+    final titleC = TextEditingController(
+      text: banner?.translations['ar']?['title'] ?? banner?.title ?? '',
+    );
+    final subtitleC = TextEditingController(
+      text: banner?.translations['ar']?['subtitle'] ?? banner?.subtitle ?? '',
+    );
+    final discountC = TextEditingController(
+      text:
+          banner?.translations['ar']?['discount_text'] ??
+          banner?.discountText ??
+          '',
+    );
+    final ctaC = TextEditingController(
+      text: banner?.translations['ar']?['cta_text'] ?? banner?.ctaText ?? '',
+    );
     final routeC = TextEditingController(
       text: banner?.actionRoute ?? '/promo-detail',
     );
+    final arCopy = {
+      'title': titleC,
+      'subtitle': subtitleC,
+      'discount_text': discountC,
+      'cta_text': ctaC,
+    };
+    final enCopy = {
+      for (final field in [...arCopy.keys, 'image_url'])
+        field: TextEditingController(
+          text: banner?.translations['en']?[field] ?? '',
+        ),
+    };
     final isEdit = banner != null;
     String? imagePath = banner?.imageUrl;
+    var imageUploading = false;
+    String? imageUploadError;
     String? selectedProductId = banner?.productId;
     String? selectedCategoryId = banner?.categoryId;
 
     showDialog(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -1260,7 +1438,7 @@ class _BannersTab extends StatelessWidget {
                       color: AppColors.primarySurface,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.slideshow_outlined,
                       color: AppColors.primary,
                       size: 22,
@@ -1283,21 +1461,28 @@ class _BannersTab extends StatelessWidget {
                   children: [
                     GestureDetector(
                       onTap: () async {
+                        if (imageUploading) return;
+                        setDialogState(() {
+                          imageUploading = true;
+                          imageUploadError = null;
+                        });
                         try {
                           final uploaded =
                               await StoreImageService.pickAndUpload(
                                 kind: 'banner',
                               );
                           if (uploaded != null) {
-                            setDialogState(() => imagePath = uploaded);
+                            if (ctx.mounted) {
+                              setDialogState(() => imagePath = uploaded);
+                            }
                           }
                         } catch (error) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('تعذر رفع الصورة: $error'),
-                              ),
-                            );
+                          if (ctx.mounted) {
+                            setDialogState(() => imageUploadError = '$error');
+                          }
+                        } finally {
+                          if (ctx.mounted) {
+                            setDialogState(() => imageUploading = false);
                           }
                         }
                       },
@@ -1309,69 +1494,76 @@ class _BannersTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: AppColors.divider),
                         ),
-                        child: () {
-                          final p = imagePath;
-                          if (p != null && p.isNotEmpty) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: p.startsWith('/') || p.contains(':\\')
-                                  ? Image.file(File(p), fit: BoxFit.cover)
-                                  : Image.network(p, fit: BoxFit.cover),
-                            );
-                          }
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.add_photo_alternate_outlined,
-                                color: AppColors.primary,
-                                size: 32.sp,
-                              ),
-                              SizedBox(height: 4.h),
-                              Text(
-                                'إضافة صورة',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontSize: 11.sp,
-                                ),
-                              ),
-                            ],
-                          );
-                        }(),
+                        child: imageUploading
+                            ? Center(child: CircularProgressIndicator())
+                            : () {
+                                final p = imagePath;
+                                if (p != null && p.isNotEmpty) {
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child:
+                                        p.startsWith('/') || p.contains(':\\')
+                                        ? Image.file(File(p), fit: BoxFit.cover)
+                                        : Image.network(p, fit: BoxFit.cover),
+                                  );
+                                }
+                                return Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      color: AppColors.primary,
+                                      size: 32.sp,
+                                    ),
+                                    SizedBox(height: 4.h),
+                                    Text(
+                                      storeUi('إضافة صورة'),
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 11.sp,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }(),
                       ),
                     ),
+                    if (imageUploading)
+                      Text(storeUi('عم نرفع صورة البانر... انتظر حتى تكتمل.')),
+                    if (imageUploadError != null)
+                      Text(
+                        AppLocale.text(
+                          'تعذر رفع الصورة: $imageUploadError',
+                          'Could not upload image: $imageUploadError',
+                        ),
+                        style: TextStyle(color: AppColors.danger),
+                      ),
                     SizedBox(height: 16.h),
-                    _styledTextField(
-                      controller: titleC,
-                      label: 'العنوان',
-                      hint: 'مثال: خصم خاص',
+                    CatalogTranslationEditor(
+                      arabic: arCopy,
+                      english: enCopy,
+                      labels: {
+                        'title': ('العنوان', 'Title'),
+                        'subtitle': ('النص الفرعي', 'Subtitle'),
+                        'discount_text': ('نص الخصم', 'Discount text'),
+                        'cta_text': ('نص الزر', 'Button text'),
+                      },
                     ),
-                    SizedBox(height: 12.h),
-                    _styledTextField(
-                      controller: subtitleC,
-                      label: 'النص الفرعي',
-                      hint: 'مثال: على أدوات العناية',
-                    ),
-                    SizedBox(height: 12.h),
-                    _styledTextField(
-                      controller: discountC,
-                      label: 'نص الخصم',
-                      hint: 'مثال: خصم 30%',
-                    ),
-                    SizedBox(height: 12.h),
-                    _styledTextField(
-                      controller: ctaC,
-                      label: 'نص الزر',
-                      hint: 'مثال: تسوق الآن',
+                    TextField(
+                      controller: enCopy['image_url'],
+                      decoration: InputDecoration(
+                        labelText:
+                            'English image URL (optional) / صورة إنجليزية اختيارية',
+                      ),
                     ),
                     SizedBox(height: 12.h),
                     DropdownButtonFormField<String>(
                       initialValue: selectedCategoryId,
                       decoration: _inputDecoration('الفئة (اختياري)'),
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: null,
-                          child: Text('بدون فئة'),
+                          child: Text(storeUi('بدون فئة')),
                         ),
                         ...storeCategories.map(
                           (cat) => DropdownMenuItem(
@@ -1388,9 +1580,9 @@ class _BannersTab extends StatelessWidget {
                       initialValue: selectedProductId,
                       decoration: _inputDecoration('المنتج (اختياري)'),
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: null,
-                          child: Text('بدون منتج'),
+                          child: Text(storeUi('بدون منتج')),
                         ),
                         ...storeProducts.map(
                           (p) => DropdownMenuItem(
@@ -1410,7 +1602,7 @@ class _BannersTab extends StatelessWidget {
                       _styledTextField(
                         controller: routeC,
                         label: 'رابط الإجراء',
-                        hint: 'مثال: /promo-detail',
+                        hint: storeUi('مثال: /promo-detail'),
                       ),
                   ],
                 ),
@@ -1423,10 +1615,11 @@ class _BannersTab extends StatelessWidget {
                 _styledConfirmButton(
                   isEdit ? 'حفظ' : 'إضافة',
                   onPressed: () async {
+                    if (imageUploading) return;
                     if (titleC.text.trim().isEmpty) return;
                     try {
                       if (isEdit) {
-                        await updateBanner(
+                        await catalog.updateBanner(
                           banner.id,
                           titleC.text.trim(),
                           subtitleC.text.trim(),
@@ -1436,9 +1629,10 @@ class _BannersTab extends StatelessWidget {
                           routeC.text.trim(),
                           productId: selectedProductId,
                           categoryId: selectedCategoryId,
+                          translations: editorTranslations(arCopy, enCopy),
                         );
                       } else {
-                        await addBanner(
+                        await catalog.addBanner(
                           titleC.text.trim(),
                           subtitleC.text.trim(),
                           discountC.text.trim(),
@@ -1447,6 +1641,7 @@ class _BannersTab extends StatelessWidget {
                           routeC.text.trim(),
                           productId: selectedProductId,
                           categoryId: selectedCategoryId,
+                          translations: editorTranslations(arCopy, enCopy),
                         );
                       }
                       onDataChanged();
@@ -1469,10 +1664,16 @@ class _BannersTab extends StatelessWidget {
 
 class _CouponsTab extends StatelessWidget {
   final VoidCallback onDataChanged;
-  const _CouponsTab({required this.onDataChanged});
+  const _CouponsTab({required this.catalog, required this.onDataChanged});
+  final CatalogNotifier catalog;
+  List<Product> get storeProducts => catalog.snapshot.products;
+  List<ProductCategory> get storeCategories => catalog.snapshot.categories;
+  List<PromoBanner> get storeBanners => catalog.snapshot.banners;
+  List<Coupon> get storeCoupons => catalog.snapshot.coupons;
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: storeCoupons.isEmpty
@@ -1488,7 +1689,7 @@ class _CouponsTab extends StatelessWidget {
             ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: AppColors.textLight),
+        child: Icon(Icons.add, color: AppColors.textLight),
         onPressed: () => _showCouponDialog(context, null),
       ),
     );
@@ -1502,13 +1703,13 @@ class _CouponsTab extends StatelessWidget {
           Icon(Icons.discount_outlined, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            'لا توجد كوبونات',
+            storeUi('لا توجد كوبونات'),
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
           SizedBox(height: 12.h),
           ElevatedButton.icon(
             icon: Icon(Icons.add, size: 18.sp),
-            label: const Text('إضافة كوبون'),
+            label: Text(storeUi('إضافة كوبون')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.textLight,
@@ -1550,7 +1751,7 @@ class _CouponsTab extends StatelessWidget {
         );
         if (confirmed != true) return false;
         try {
-          await deleteCoupon(coupon.id);
+          await catalog.deleteCoupon(coupon.id);
           onDataChanged();
           return true;
         } catch (error) {
@@ -1641,7 +1842,7 @@ class _CouponsTab extends StatelessWidget {
                     child: Text(
                       coupon.discountType == 'percentage'
                           ? '${coupon.discountValue.toStringAsFixed(0)}%'
-                          : '${coupon.discountValue.toStringAsFixed(0)} ر.س',
+                          : '${coupon.discountValue.toStringAsFixed(0)} SYP',
                       style: TextStyle(
                         color: AppColors.primary,
                         fontSize: 11.sp,
@@ -1652,14 +1853,18 @@ class _CouponsTab extends StatelessWidget {
                   if (coupon.minPurchase != null) ...[
                     SizedBox(width: 8.w),
                     Text(
-                      'أقل فاتورة: ${coupon.minPurchase!.toStringAsFixed(0)} ر.س',
+                      storeUi(
+                        'أقل فاتورة: ${coupon.minPurchase!.toStringAsFixed(0)} SYP',
+                      ),
                       style: TextStyle(color: _kGrey, fontSize: 10.sp),
                     ),
                   ],
                   if (coupon.expiresAt != null) ...[
                     SizedBox(width: 8.w),
                     Text(
-                      'حتى: ${coupon.expiresAt!.day}/${coupon.expiresAt!.month}',
+                      storeUi(
+                        'حتى: ${coupon.expiresAt!.day}/${coupon.expiresAt!.month}',
+                      ),
                       style: TextStyle(color: _kGrey, fontSize: 10.sp),
                     ),
                   ],
@@ -1717,7 +1922,9 @@ class _CouponsTab extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -1760,13 +1967,13 @@ class _CouponsTab extends StatelessWidget {
                     _styledTextField(
                       controller: codeC,
                       label: 'كود الكوبون',
-                      hint: 'مثال: SAVE20',
+                      hint: storeUi('مثال: SAVE20'),
                     ),
                     SizedBox(height: 12.h),
                     _styledTextField(
                       controller: descC,
                       label: 'الوصف',
-                      hint: 'مثال: خصم 20% على المشتريات',
+                      hint: storeUi('مثال: خصم 20% على المشتريات'),
                     ),
                     SizedBox(height: 12.h),
                     Row(
@@ -1775,7 +1982,7 @@ class _CouponsTab extends StatelessWidget {
                           child: _styledTextField(
                             controller: valueC,
                             label: 'قيمة الخصم',
-                            hint: 'مثال: 20',
+                            hint: storeUi('مثال: 20'),
                             keyboardType: TextInputType.number,
                           ),
                         ),
@@ -1784,14 +1991,14 @@ class _CouponsTab extends StatelessWidget {
                           child: DropdownButtonFormField<String>(
                             initialValue: discountType,
                             decoration: _inputDecoration('نوع الخصم'),
-                            items: const [
+                            items: [
                               DropdownMenuItem(
                                 value: 'percentage',
-                                child: Text('نسبة %'),
+                                child: Text(storeUi('نسبة %')),
                               ),
                               DropdownMenuItem(
                                 value: 'fixed',
-                                child: Text('قيمة ثابتة'),
+                                child: Text(storeUi('قيمة ثابتة')),
                               ),
                             ],
                             onChanged: (v) =>
@@ -1804,7 +2011,7 @@ class _CouponsTab extends StatelessWidget {
                     _styledTextField(
                       controller: minC,
                       label: 'أقل فاتورة (اختياري)',
-                      hint: 'مثال: 100',
+                      hint: storeUi('مثال: 100'),
                       keyboardType: TextInputType.number,
                     ),
                     SizedBox(height: 12.h),
@@ -1812,9 +2019,9 @@ class _CouponsTab extends StatelessWidget {
                       initialValue: selectedCategoryId,
                       decoration: _inputDecoration('الفئة (اختياري)'),
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: null,
-                          child: Text('جميع الفئات'),
+                          child: Text(storeUi('جميع الفئات')),
                         ),
                         ...storeCategories.map(
                           (cat) => DropdownMenuItem(
@@ -1833,9 +2040,9 @@ class _CouponsTab extends StatelessWidget {
                       initialValue: selectedProductId,
                       decoration: _inputDecoration('المنتج (اختياري)'),
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: null,
-                          child: Text('جميع المنتجات'),
+                          child: Text(storeUi('جميع المنتجات')),
                         ),
                         ...storeProducts.map(
                           (p) => DropdownMenuItem(
@@ -1876,12 +2083,10 @@ class _CouponsTab extends StatelessWidget {
                                 context: context,
                                 initialDate:
                                     expiresAt ??
-                                    DateTime.now().add(
-                                      const Duration(days: 30),
-                                    ),
+                                    DateTime.now().add(Duration(days: 30)),
                                 firstDate: DateTime.now(),
                                 lastDate: DateTime.now().add(
-                                  const Duration(days: 365),
+                                  Duration(days: 365),
                                 ),
                               );
                               if (picked != null) {
@@ -1934,7 +2139,7 @@ class _CouponsTab extends StatelessWidget {
                     final minVal = double.tryParse(minC.text.trim());
                     try {
                       if (isEdit) {
-                        await updateCoupon(
+                        await catalog.updateCoupon(
                           coupon.id,
                           codeC.text.trim().toUpperCase(),
                           descC.text.trim(),
@@ -1947,7 +2152,7 @@ class _CouponsTab extends StatelessWidget {
                           categoryId: selectedCategoryId,
                         );
                       } else {
-                        await addCoupon(
+                        await catalog.addCoupon(
                           codeC.text.trim().toUpperCase(),
                           descC.text.trim(),
                           discountType,
@@ -1997,8 +2202,8 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
       widget.onDataChanged();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم تحديث حالة الطلب'),
+          SnackBar(
+            content: Text(storeUi('تم تحديث حالة الطلب')),
             backgroundColor: AppColors.success,
           ),
         );
@@ -2007,7 +2212,12 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تعذر تحديث الطلب: $error'),
+            content: Text(
+              AppLocale.text(
+                'تعذر تحديث الطلب: $error',
+                'Could not update order: $error',
+              ),
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -2019,6 +2229,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final allOrders = ref.watch(ordersProvider).orders;
     if (allOrders.isEmpty) {
       return Center(
@@ -2028,7 +2239,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
             Icon(Icons.receipt_long_outlined, color: _kGrey, size: 48.sp),
             SizedBox(height: 12.h),
             Text(
-              'لا توجد طلبات بعد',
+              storeUi('لا توجد طلبات بعد'),
               style: TextStyle(color: _kGrey, fontSize: 14.sp),
             ),
           ],
@@ -2160,7 +2371,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
           BoxShadow(
             color: AppColors.primary.withValues(alpha: 0.25),
             blurRadius: 12,
-            offset: const Offset(0, 4),
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -2174,7 +2385,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.bar_chart_rounded,
                   color: Colors.white,
                   size: 28,
@@ -2182,7 +2393,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               ),
               SizedBox(width: 14.w),
               Text(
-                'إحصائيات هذا الشهر',
+                storeUi('إحصائيات هذا الشهر'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16.sp,
@@ -2204,7 +2415,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               _statItem(
                 Icons.payments_rounded,
                 'الإيرادات',
-                '${totalRevenue.toStringAsFixed(0)} ر.س',
+                '${totalRevenue.toStringAsFixed(0)} SYP',
                 Colors.white,
               ),
               SizedBox(width: 8.w),
@@ -2222,14 +2433,14 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               _statItem(
                 Icons.local_shipping,
                 'التوصيل',
-                '${totalDelivery.toStringAsFixed(0)} ر.س',
+                '${totalDelivery.toStringAsFixed(0)} SYP',
                 Colors.white70,
               ),
               SizedBox(width: 8.w),
               _statItem(
                 Icons.trending_up,
                 'متوسط الطلب',
-                '${avgOrder.toStringAsFixed(0)} ر.س',
+                '${avgOrder.toStringAsFixed(0)} SYP',
                 Colors.white70,
               ),
             ],
@@ -2254,7 +2465,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
             ),
           ),
           Text(
-            label,
+            storeUi(label),
             style: TextStyle(
               color: color.withValues(alpha: 0.8),
               fontSize: 10.sp,
@@ -2270,12 +2481,12 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
     Map<OrderStatus, int> counts,
     int total,
   ) {
-    if (total == 0) return const SizedBox.shrink();
+    if (total == 0) return SizedBox.shrink();
     final colors = {
       OrderStatus.pending: AppColors.pending,
       OrderStatus.accepted: AppColors.primary,
-      OrderStatus.preparing: const Color(0xFF9C27B0),
-      OrderStatus.outForDelivery: const Color(0xFF2196F3),
+      OrderStatus.preparing: Color(0xFF9C27B0),
+      OrderStatus.outForDelivery: Color(0xFF2196F3),
       OrderStatus.delivered: AppColors.success,
       OrderStatus.rejected: Colors.red,
       OrderStatus.cancelled: Colors.red,
@@ -2309,7 +2520,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               ),
               SizedBox(width: 6.w),
               Text(
-                'توزيع حالات الطلبات',
+                storeUi('توزيع حالات الطلبات'),
                 style: TextStyle(
                   color: AppColors.textDark,
                   fontSize: 13.sp,
@@ -2355,7 +2566,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   ),
                   SizedBox(width: 4.w),
                   Text(
-                    '${labels[s]}: ${counts[s]} ($pct%)',
+                    '${storeUi(labels[s]!)}: ${counts[s]} ($pct%)',
                     style: TextStyle(color: _kGrey, fontSize: 10.sp),
                   ),
                 ],
@@ -2371,7 +2582,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
     BuildContext context,
     List<MapEntry<String, int>> sortedProducts,
   ) {
-    if (sortedProducts.isEmpty) return const SizedBox.shrink();
+    if (sortedProducts.isEmpty) return SizedBox.shrink();
     final top5 = sortedProducts.take(5).toList();
     final maxQty = top5.isNotEmpty ? top5.first.value : 1;
 
@@ -2394,7 +2605,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               ),
               SizedBox(width: 6.w),
               Text(
-                'أفضل 5 منتجات مبيعاً',
+                storeUi('أفضل 5 منتجات مبيعاً'),
                 style: TextStyle(
                   color: AppColors.textDark,
                   fontSize: 13.sp,
@@ -2486,7 +2697,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
     );
     final dailyRevenue = days.map((d) {
       final dayStart = DateTime(d.year, d.month, d.day);
-      final dayEnd = dayStart.add(const Duration(hours: 24));
+      final dayEnd = dayStart.add(Duration(hours: 24));
       return orders
           .where(
             (o) =>
@@ -2524,7 +2735,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               Icon(Icons.show_chart, color: AppColors.primary, size: 16.sp),
               SizedBox(width: 6.w),
               Text(
-                'إيرادات آخر 7 أيام',
+                storeUi('إيرادات آخر 7 أيام'),
                 style: TextStyle(
                   color: AppColors.textDark,
                   fontSize: 13.sp,
@@ -2598,9 +2809,9 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
       case OrderStatus.accepted:
         return AppColors.primary;
       case OrderStatus.preparing:
-        return const Color(0xFF9C27B0);
+        return Color(0xFF9C27B0);
       case OrderStatus.outForDelivery:
-        return const Color(0xFF2196F3);
+        return Color(0xFF2196F3);
       case OrderStatus.delivered:
         return AppColors.success;
       case OrderStatus.rejected:
@@ -2626,7 +2837,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
       child: ExpansionTile(
         tilePadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
         childrenPadding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 16.h),
-        shape: const Border(),
+        shape: Border(),
         leading: CircleAvatar(
           backgroundColor: statusColor.withValues(alpha: 0.1),
           child: Icon(Icons.receipt, color: statusColor, size: 20.sp),
@@ -2634,14 +2845,17 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
         title: Row(
           children: [
             Text(
-              'طلب #${order.id.substring(0, 8)}',
+              AppLocale.text(
+                'طلب #${order.id.substring(0, 8)}',
+                'Order #${order.id.substring(0, 8)}',
+              ),
               style: TextStyle(
                 color: AppColors.textDark,
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const Spacer(),
+            Spacer(),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
               decoration: BoxDecoration(
@@ -2660,11 +2874,13 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
           ],
         ),
         subtitle: Text(
-          '${order.items.length} منتج • ${order.totalPrice.toStringAsFixed(0)} ر.س',
+          storeUi(
+            '${order.items.length} منتج • ${order.totalPrice.toStringAsFixed(0)} SYP',
+          ),
           style: TextStyle(color: _kGrey, fontSize: 12.sp),
         ),
         children: [
-          const Divider(),
+          Divider(),
           ...order.items.map(
             (item) => Padding(
               padding: EdgeInsets.only(bottom: 6.h),
@@ -2688,7 +2904,9 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                     ),
                   ),
                   Text(
-                    '${item.quantity}× ${item.totalPrice.toStringAsFixed(0)} ر.س',
+                    storeUi(
+                      '${item.quantity}× ${item.totalPrice.toStringAsFixed(0)} SYP',
+                    ),
                     style: TextStyle(color: _kGrey, fontSize: 12.sp),
                   ),
                 ],
@@ -2704,7 +2922,10 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   Icon(Icons.person_outline, size: 12.sp, color: _kGrey),
                   SizedBox(width: 4.w),
                   Text(
-                    'الطبيب: ${order.doctorName}',
+                    AppLocale.text(
+                      'الطبيب: ${order.doctorName}',
+                      'Doctor: ${order.doctorName}',
+                    ),
                     style: TextStyle(
                       color: _kGrey,
                       fontSize: 11.sp,
@@ -2723,7 +2944,10 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   Icon(Icons.location_city, size: 12.sp, color: _kGrey),
                   SizedBox(width: 4.w),
                   Text(
-                    'المحافظة: ${order.doctorGovernorate}',
+                    AppLocale.text(
+                      'المحافظة: ${order.doctorGovernorate}',
+                      'Governorate: ${order.doctorGovernorate}',
+                    ),
                     style: TextStyle(color: _kGrey, fontSize: 11.sp),
                   ),
                 ],
@@ -2737,7 +2961,10 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   Icon(Icons.phone_outlined, size: 12.sp, color: _kGrey),
                   SizedBox(width: 4.w),
                   Text(
-                    'رقم: ${order.doctorPhone}',
+                    AppLocale.text(
+                      'رقم: ${order.doctorPhone}',
+                      'Phone: ${order.doctorPhone}',
+                    ),
                     style: TextStyle(color: _kGrey, fontSize: 11.sp),
                   ),
                 ],
@@ -2752,7 +2979,10 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   SizedBox(width: 4.w),
                   Expanded(
                     child: Text(
-                      'العيادة: ${order.clinicAddress}',
+                      AppLocale.text(
+                        'العيادة: ${order.clinicAddress}',
+                        'Clinic: ${order.clinicAddress}',
+                      ),
                       style: TextStyle(color: _kGrey, fontSize: 11.sp),
                     ),
                   ),
@@ -2764,8 +2994,35 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
             Padding(
               padding: EdgeInsets.only(top: 2.h),
               child: Text(
-                'العنوان: ${order.shippingAddress}',
+                AppLocale.text(
+                  'العنوان: ${order.shippingAddress}',
+                  'Address: ${order.shippingAddress}',
+                ),
                 style: TextStyle(color: _kGrey, fontSize: 11.sp),
+              ),
+            ),
+          if (order.locationLatitude != null && order.locationLongitude != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final url = Uri.https('www.google.com', '/maps/search/', {
+                    'api': '1',
+                    'query':
+                        '${order.locationLatitude},${order.locationLongitude}',
+                  });
+                  if (!await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      ) &&
+                      context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(storeUi('تعذر فتح موقع التوصيل'))),
+                    );
+                  }
+                },
+                icon: Icon(Icons.map_outlined, size: 18),
+                label: Text(storeUi('فتح موقع التوصيل')),
               ),
             ),
           if (order.governorate != null || order.region != null)
@@ -2792,7 +3049,10 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   Icon(Icons.phone_outlined, size: 12.sp, color: _kGrey),
                   SizedBox(width: 4.w),
                   Text(
-                    'الهاتف: ${order.phone}',
+                    AppLocale.text(
+                      'الهاتف: ${order.phone}',
+                      'Phone: ${order.phone}',
+                    ),
                     style: TextStyle(color: _kGrey, fontSize: 11.sp),
                   ),
                 ],
@@ -2806,7 +3066,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   Icon(Icons.payment_outlined, size: 12.sp, color: _kGrey),
                   SizedBox(width: 4.w),
                   Text(
-                    'الدفع: ${order.paymentMethod == 'sham_cash' ? 'شام كاش' : 'دفع عند الاستلام'}',
+                    '${storeUi('الدفع:')} ${storeUi(order.paymentMethod == 'sham_cash' ? 'شام كاش' : 'دفع عند الاستلام')}',
                     style: TextStyle(color: _kGrey, fontSize: 11.sp),
                   ),
                 ],
@@ -2824,7 +3084,9 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   ),
                   SizedBox(width: 4.w),
                   Text(
-                    'التوصيل: ${order.deliveryPrice.toStringAsFixed(0)} ر.س',
+                    storeUi(
+                      'التوصيل: ${order.deliveryPrice.toStringAsFixed(0)} SYP',
+                    ),
                     style: TextStyle(color: _kGrey, fontSize: 11.sp),
                   ),
                 ],
@@ -2840,14 +3102,19 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   Icon(Icons.discount_outlined, size: 12.sp, color: _kGrey),
                   SizedBox(width: 4.w),
                   Text(
-                    'خصم (${order.couponCode}): ${order.discountAmount!.toStringAsFixed(0)} ر.س',
+                    storeUi(
+                      'خصم (${order.couponCode}): ${order.discountAmount!.toStringAsFixed(0)} SYP',
+                    ),
                     style: TextStyle(color: _kGrey, fontSize: 11.sp),
                   ),
                 ],
               ),
             ),
           Text(
-            'تاريخ: ${_formatDate(order.createdAt)}',
+            AppLocale.text(
+              'تاريخ: ${_formatDate(order.createdAt)}',
+              'Date: ${_formatDate(order.createdAt)}',
+            ),
             style: TextStyle(color: _kGrey, fontSize: 11.sp),
           ),
           if (order.status == OrderStatus.pending) ...[
@@ -2879,7 +3146,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               children: [
                 _styledDialogButton(
                   'قيد التحضير',
-                  color: const Color(0xFF9C27B0),
+                  color: Color(0xFF9C27B0),
                   onPressed: _updatingOrders.contains(order.id)
                       ? null
                       : () => _changeOrderStatus(order, 'processing'),
@@ -2902,7 +3169,7 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
               children: [
                 _styledDialogButton(
                   'خرج للتوصيل',
-                  color: const Color(0xFF2196F3),
+                  color: Color(0xFF2196F3),
                   onPressed: _updatingOrders.contains(order.id)
                       ? null
                       : () => _changeOrderStatus(order, 'shipped'),
@@ -2956,12 +3223,15 @@ void _showFormDialog({
   required String title,
   required IconData icon,
   required List<_DialogField> fields,
+  Widget? extraContent,
   required Future<void> Function() onSave,
 }) {
   showDialog(
     context: context,
     builder: (ctx) => Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -2985,10 +3255,11 @@ void _showFormDialog({
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: fields
-              .map(
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...fields.map(
                 (f) => Padding(
                   padding: EdgeInsets.only(bottom: 12.h),
                   child: _styledTextField(
@@ -2997,8 +3268,10 @@ void _showFormDialog({
                     hint: f.hint,
                   ),
                 ),
-              )
-              .toList(),
+              ),
+              ?extraContent,
+            ],
+          ),
         ),
         actions: [
           _styledDialogButton('إلغاء', onPressed: () => Navigator.pop(ctx)),
@@ -3020,14 +3293,21 @@ void _showFormDialog({
 }
 
 void _showMutationError(BuildContext context, Object error) {
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text('تعذر حفظ التغيير: $error')));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        AppLocale.text(
+          'تعذر حفظ التغيير: $error',
+          'Could not save change: $error',
+        ),
+      ),
+    ),
+  );
 }
 
 InputDecoration _inputDecoration(String label) {
   return InputDecoration(
-    labelText: label,
+    labelText: storeUi(label),
     filled: true,
     fillColor: AppColors.primarySurface.withValues(alpha: 0.3),
     contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
@@ -3057,6 +3337,6 @@ Widget _styledTextField({
     controller: controller,
     keyboardType: keyboardType,
     maxLines: maxLines,
-    decoration: _inputDecoration(label).copyWith(hintText: hint),
+    decoration: _inputDecoration(label).copyWith(hintText: storeUi(hint)),
   );
 }

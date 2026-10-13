@@ -1,3 +1,6 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/data/catalog_translations.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
 
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
@@ -28,7 +31,7 @@ class SearchResultsScreen extends ConsumerStatefulWidget {
 class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   late TextEditingController _searchController;
   final SearchDebouncer _searchDebouncer = SearchDebouncer();
-  List<Product> _results = const [];
+  List<Product> _results = [];
   String? _studentAcademicYear;
   bool _isLoading = false;
   int _page = 1;
@@ -55,7 +58,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     final generation = ++_searchGeneration;
     setState(() {
       _isLoading = true;
-      _results = const [];
+      _results = [];
     });
     await _loadPage(query.trim(), generation, page: 1);
   }
@@ -93,9 +96,20 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
             return Product(
               id: item['id'] as String,
               name: item['name'] as String,
+              translations: parseCatalogCopy(item['translations']),
+              categoryTranslations:
+                  ref
+                      .read(catalogProvider)
+                      .categories
+                      .where((c) => c.id == item['categoryId'])
+                      .firstOrNull
+                      ?.translations ??
+                  const {},
               brand: item['brand'] as String? ?? '',
               description: item['description'] as String? ?? '',
               imageUrl: item['imageUrl'] as String? ?? '',
+              thumbnailUrl: item['thumbnailUrl'] as String?,
+              physicalStock: (item['physicalStock'] as num?)?.toInt(),
               categoryId: item['categoryId'] as String? ?? '',
               categoryName: categoryNames[item['categoryId']] ?? '',
               price: (item['price'] as num?)?.toDouble() ?? 0,
@@ -133,16 +147,19 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
-        bottomNavigationBar: const AppBottomNav(selectedIndex: 3),
+        bottomNavigationBar: AppBottomNav(selectedIndex: 3),
         body: Column(
           children: [
             _buildSearchBar(),
             if (_results.isEmpty && _isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
+              Expanded(child: Center(child: CircularProgressIndicator()))
             else if (_results.isEmpty)
               Expanded(child: _buildEmptyState())
             else ...[
@@ -167,7 +184,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
+            icon: Icon(Icons.arrow_back, color: AppColors.textDark),
             onPressed: () => Navigator.pop(context),
           ),
           SizedBox(width: 4.w),
@@ -183,7 +200,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                 onChanged: _scheduleSearch,
                 onSubmitted: _submitSearch,
                 decoration: InputDecoration(
-                  hintText: 'ابحث عن منتج...',
+                  hintText: storeUi('ابحث عن منتج...'),
                   hintStyle: TextStyle(
                     color: AppColors.textGray,
                     fontSize: 13.sp,
@@ -218,12 +235,15 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
           Icon(Icons.search_off_rounded, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            'لا توجد نتائج لـ "${_searchController.text.trim()}"',
+            AppLocale.text(
+              'لا توجد نتائج لـ "${_searchController.text.trim()}"',
+              'No results for "${_searchController.text.trim()}"',
+            ),
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
           SizedBox(height: 8.h),
           Text(
-            'جرب البحث بكلمة أخرى',
+            storeUi('جرب البحث بكلمة أخرى'),
             style: TextStyle(color: _kGrey, fontSize: 12.sp),
           ),
         ],
@@ -236,7 +256,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
       padding: EdgeInsets.all(16.r),
       child: GridView.builder(
         itemCount: _results.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
@@ -294,12 +314,10 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                 child: SizedBox(
                   width: double.infinity,
-                  child: product.imageUrl.isEmpty
+                  child: product.listImageUrl.isEmpty
                       ? Container(
                           color: AppColors.primarySurface,
                           child: Icon(
@@ -308,10 +326,10 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                             size: 32.sp,
                           ),
                         )
-                      : product.imageUrl.startsWith('/') ||
-                            product.imageUrl.contains(':\\')
+                      : product.listImageUrl.startsWith('/') ||
+                            product.listImageUrl.contains(':\\')
                       ? Image.file(
-                          File(product.imageUrl),
+                          File(product.listImageUrl),
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => Container(
                             color: AppColors.primarySurface,
@@ -323,7 +341,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                           ),
                         )
                       : AppCachedNetworkImage(
-                          url: product.imageUrl,
+                          url: product.listImageUrl,
                           fit: BoxFit.cover,
                           errorBuilder: () => Container(
                             color: AppColors.primarySurface,
@@ -354,7 +372,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                   ),
                   SizedBox(height: 4.h),
                   Text(
-                    '${product.price.toStringAsFixed(0)} ر.س',
+                    storeUi('${product.price.toStringAsFixed(0)} SYP'),
                     style: TextStyle(
                       color: AppColors.primary,
                       fontSize: 13.sp,

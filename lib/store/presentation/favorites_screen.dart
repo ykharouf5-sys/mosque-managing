@@ -1,3 +1,5 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/presentation/product_detail_screen.dart';
@@ -20,22 +22,33 @@ class FavoritesScreen extends ConsumerStatefulWidget {
 class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final products = ref.watch(catalogProvider).products;
-    final favIds = ref.watch(favoritesProvider).productIds;
-    final items = products.where((p) => favIds.contains(p.id)).toList();
+    final favorites = ref.watch(favoritesProvider);
+    final items = favorites.productIds
+        .map((id) {
+          for (final product in products) {
+            if (product.id == id) return product;
+          }
+          return favorites.savedProducts[id];
+        })
+        .whereType<Product>()
+        .toList();
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: const Text('المفضلة'),
+          title: Text(storeUi('المفضلة')),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
+            icon: Icon(Icons.arrow_back, color: AppColors.textDark),
             onPressed: () => Navigator.pop(context),
           ),
         ),
-        bottomNavigationBar: const AppBottomNav(selectedIndex: -1),
+        bottomNavigationBar: AppBottomNav(selectedIndex: -1),
         body: items.isEmpty ? _buildEmpty() : _buildList(items),
       ),
     );
@@ -49,12 +62,12 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           Icon(Icons.favorite_border, color: _kGrey, size: 64.sp),
           SizedBox(height: 16.h),
           Text(
-            'لا توجد منتجات مفضلة',
+            storeUi('لا توجد منتجات مفضلة'),
             style: TextStyle(color: _kGrey, fontSize: 16.sp),
           ),
           SizedBox(height: 8.h),
           Text(
-            'أضف منتجات إلى المفضلة',
+            storeUi('أضف منتجات إلى المفضلة'),
             style: TextStyle(color: _kGrey, fontSize: 13.sp),
           ),
         ],
@@ -95,7 +108,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                   width: 64.w,
                   height: 64.h,
                   child: AppCachedNetworkImage(
-                    url: product.imageUrl,
+                    url: product.listImageUrl,
                     fit: BoxFit.cover,
                     errorBuilder: () => Container(
                       color: AppColors.primarySurface,
@@ -132,7 +145,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                     ),
                     SizedBox(height: 4.h),
                     Text(
-                      '${product.price.toStringAsFixed(0)} ر.س',
+                      storeUi('${product.price.toStringAsFixed(0)} SYP'),
                       style: TextStyle(
                         color: AppColors.primary,
                         fontSize: 14.sp,
@@ -147,11 +160,18 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                   try {
                     await ref
                         .read(favoritesProvider.notifier)
-                        .toggle(product.id);
+                        .toggle(product.id, product: product);
                   } catch (error) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('تعذر تحديث المفضلة: $error')),
+                        SnackBar(
+                          content: Text(
+                            AppLocale.text(
+                              'تعذر تحديث المفضلة: $error',
+                              'Could not update favorites: $error',
+                            ),
+                          ),
+                        ),
                       );
                     }
                   }

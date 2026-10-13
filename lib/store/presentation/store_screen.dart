@@ -1,35 +1,40 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
 
 import 'dart:async';
-import 'dart:math';
 
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
-import 'package:studentry/shared/data/api_config.dart';
+import 'package:studentry/store/data/catalog_refresh_schedule.dart';
 import 'package:studentry/store/data/store_models.dart';
-import 'package:studentry/store/data/store_data.dart';
+
 import 'package:studentry/store/presentation/all_categories_screen.dart';
 import 'package:studentry/store/presentation/product_detail_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:studentry/store/presentation/widgets/category_outline_icon.dart';
+import 'package:studentry/store/presentation/widgets/store_promo_card.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/shared/widgets/pagination_controls.dart';
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
+import 'package:studentry/shared/data/connectivity_service.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
 const Color kFieldBg = Color(0xFFF4F9FA);
 const Color kFieldBorder = Color(0xFFE0E0E0);
-const Color kBannerEnd = Color(0xFF0E7C8F);
 
 class StoreScreen extends ConsumerStatefulWidget {
   final bool embedded;
+  final bool active;
 
-  const StoreScreen({super.key, this.embedded = false});
+  const StoreScreen({super.key, this.embedded = false, this.active = true});
 
   @override
   ConsumerState<StoreScreen> createState() => _StoreScreenState();
@@ -46,46 +51,97 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   Future<void>? _catalogRefresh;
   bool _isInitialCatalogLoading = true;
   bool _initialCatalogFailed = false;
+  bool _visible = false;
+  bool _needsPageMetadata = true;
+  final _refreshSchedule = CatalogRefreshSchedule();
+  late final Future<void> _catalogSetup;
 
   @override
   void initState() {
     super.initState();
+    ConnectivityService.isOnline.addListener(_onConnectivity);
     _loadAcademicYear();
-    final hasSnapshot = loadStoreSnapshot();
-    _isInitialCatalogLoading = !hasSnapshot;
-    Future.microtask(() {
-      ref
+    _isInitialCatalogLoading = true;
+    _catalogSetup = Future.microtask(() async {
+      if (!mounted) return;
+      final loaded = ref
           .read(catalogProvider.notifier)
-          .loadCachedSnapshot(storeBanners, storeCategories);
-      _refreshCatalog();
+          .restoreSnapshot(academicYear: _studentAcademicYear);
+      _needsPageMetadata = !ref
+          .read(catalogProvider.notifier)
+          .hasCachedPagination;
+      if (mounted &&
+          loaded &&
+          ref.read(catalogProvider.notifier).hasCachedProductPage) {
+        setState(() => _isInitialCatalogLoading = false);
+      }
+      await _refreshSchedule.prepare(AuthService().userId);
     });
+  }
+
+  void _onVisibility(bool active) {
+    _visible = active;
+    _catalogTimer?.cancel();
+    if (active) {
+      unawaited(_resumeCatalogUpdates());
+    }
+  }
+
+  void _onConnectivity() {
+    if (_visible && ConnectivityService.isOnline.value) {
+      unawaited(_resumeCatalogUpdates());
+    }
+  }
+
+  Future<void> _resumeCatalogUpdates() async {
+    await _catalogSetup;
+    if (!mounted || !_visible) return;
+    await _refreshSchedule.prepare(AuthService().userId);
+    if (!mounted || !_visible) return;
+    if (_isInitialCatalogLoading || _needsPageMetadata) {
+      await _refreshCatalog(); // A first installation cannot wait for a batch.
+    }
     _scheduleCatalogRefresh();
   }
 
-  Future<void> _refreshCatalog() {
+  Future<void> _refreshCatalog({bool force = false}) {
+    if (!mounted || !_visible) {
+      return Future.value();
+    }
+    if (!ConnectivityService.isOnline.value) {
+      if (_isInitialCatalogLoading && !_initialCatalogFailed) {
+        setState(() => _initialCatalogFailed = true);
+      }
+      return Future.value();
+    }
     final active = _catalogRefresh;
     if (active != null) return active;
     late final Future<void> refresh;
-    refresh = _performCatalogRefresh().whenComplete(() {
+    refresh = _performCatalogRefresh(force: force).whenComplete(() {
       if (identical(_catalogRefresh, refresh)) _catalogRefresh = null;
     });
     _catalogRefresh = refresh;
     return refresh;
   }
 
-  Future<void> _performCatalogRefresh() async {
-    final loaded = await loadStoreFromApi(refresh: true);
+  Future<void> _performCatalogRefresh({bool force = false}) async {
+    await _catalogSetup;
+    if (!mounted || !_visible) return;
+    final loaded = await ref
+        .read(catalogProvider.notifier)
+        .refreshCatalog(academicYear: _studentAcademicYear, force: force);
     if (!mounted) return;
+    await _refreshSchedule.completed(success: loaded);
+    if (!mounted) return;
+    _scheduleCatalogRefresh();
     if (!loaded) {
       if (_isInitialCatalogLoading) {
         setState(() => _initialCatalogFailed = true);
       }
       return;
     }
-    ref
-        .read(catalogProvider.notifier)
-        .loadBannersAndCategories(storeBanners, storeCategories);
-    await ref.read(catalogProvider.notifier).loadInitialProducts();
+    _needsPageMetadata = false;
+
     if (mounted && (_isInitialCatalogLoading || _initialCatalogFailed)) {
       setState(() {
         _isInitialCatalogLoading = false;
@@ -96,25 +152,31 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
 
   void _scheduleCatalogRefresh() {
     _catalogTimer?.cancel();
-    _searchDebouncer.dispose();
-    final stagger = Duration(seconds: Random().nextInt(61));
-    _catalogTimer = Timer(ApiConfig.catalogRefreshInterval + stagger, () async {
+    if (!mounted || !_visible) return;
+    _catalogTimer = Timer(_refreshSchedule.delay, () async {
       await _refreshCatalog();
+      if (!ConnectivityService.isOnline.value) {
+        await _refreshSchedule.completed(success: false);
+      }
       _scheduleCatalogRefresh();
     });
   }
 
-  Future<void> _loadAcademicYear() async {
+  void _loadAcademicYear() {
     if (ref.read(authProvider).role == 'student') {
-      _studentAcademicYear = null;
+      _studentAcademicYear = AuthService().academicYear;
     }
   }
 
   List<Product> _computeDisplayProducts(List<Product> products, String? role) {
     if (role == 'student' && _studentAcademicYear != null) {
-      return ref
-          .read(catalogProvider.notifier)
-          .getProductsByAcademicYear(_studentAcademicYear);
+      return products
+          .where(
+            (p) =>
+                p.academicYear == _studentAcademicYear ||
+                p.academicYear == null,
+          )
+          .toList();
     }
     return products;
   }
@@ -122,6 +184,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   @override
   void dispose() {
     _catalogTimer?.cancel();
+    ConnectivityService.isOnline.removeListener(_onConnectivity);
     _bannerController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -149,7 +212,13 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => RefreshVisibility(
+    active: widget.active,
+    onChanged: _onVisibility,
+    child: _buildContent(context),
+  );
+
+  Widget _buildContent(BuildContext context) {
     final catalog = ref.watch(catalogProvider);
     final role = ref.watch(authProvider).role;
     final cartItemCount = ref.watch(cartProvider).itemCount;
@@ -161,79 +230,76 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      drawer: const AppDrawer(),
+      drawer: AppDrawer(),
       drawerEnableOpenDragGesture: !widget.embedded,
       appBar: _buildAppBar(cartItemCount, favIds),
       bottomNavigationBar: widget.embedded
           ? null
-          : const AppBottomNav(selectedIndex: 3),
+          : AppBottomNav(selectedIndex: 3),
       body: _isInitialCatalogLoading
           ? Center(
               child: _initialCatalogFailed
                   ? Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.cloud_off_outlined,
                           color: AppColors.primary,
                           size: 44,
                         ),
-                        const SizedBox(height: 12),
-                        const Text('تعذر تحميل أحدث نسخة من المتجر'),
-                        const SizedBox(height: 12),
+                        SizedBox(height: 12),
+                        Text(storeUi('تعذر تحميل أحدث نسخة من المتجر')),
+                        SizedBox(height: 12),
                         FilledButton.icon(
                           onPressed: () {
                             setState(() => _initialCatalogFailed = false);
-                            _refreshCatalog();
+                            _refreshCatalog(force: true);
                           },
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('إعادة المحاولة'),
+                          icon: Icon(Icons.refresh),
+                          label: Text(storeUi('إعادة المحاولة')),
                         ),
                       ],
                     )
-                  : const CircularProgressIndicator(color: AppColors.primary),
+                  : CircularProgressIndicator(color: AppColors.primary),
             )
           : RefreshIndicator(
               color: AppColors.primary,
-              onRefresh: _refreshCatalog,
+              onRefresh: () => _refreshCatalog(force: true),
               child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
+                physics: AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
                     if (_showSearch) _buildSearchBar(favIds),
-                    if (_showSearch) const SizedBox(height: 16),
+                    if (_showSearch) SizedBox(height: 16),
                     if (banners.isNotEmpty) _buildPromoBannerSlider(banners),
-                    if (banners.isNotEmpty) const SizedBox(height: 20),
+                    if (banners.isNotEmpty) SizedBox(height: 20),
                     _buildCategoriesHeader(),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     categories.isEmpty
                         ? _buildEmptyCategoriesState()
                         : _buildHorizontalCategories(categories),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
                     if (displayProducts.isNotEmpty) ...[
                       if (role == 'student' && _studentAcademicYear != null)
                         _buildAcademicYearBanner(),
-                      _buildSectionHeader('الأكثر تقييماً', Icons.star_rounded),
-                      const SizedBox(height: 12),
-                      _buildProductRow(
-                        _sortedProducts(
-                          displayProducts,
-                          (a, b) => b.rating.compareTo(a.rating),
-                        ).take(6).toList(),
-                      ),
-                      const SizedBox(height: 24),
+                      if (displayProducts.any((p) => p.rating > 0)) ...[
+                        _buildSectionHeader('منتجات مميزة', Icons.star_rounded),
+                        SizedBox(height: 12),
+                        _buildProductRow(
+                          _sortedProducts(
+                            displayProducts.where((p) => p.rating > 0).toList(),
+                            (a, b) => b.rating.compareTo(a.rating),
+                          ).take(6).toList(),
+                        ),
+                        SizedBox(height: 24),
+                      ],
                       _buildSectionHeader(
-                        'الأكثر مبيعاً',
-                        Icons.trending_up_rounded,
+                        'استكشف المنتجات',
+                        Icons.grid_view_rounded,
                       ),
-                      const SizedBox(height: 12),
-                      _buildProductRow(
-                        _sortedProducts(
-                          displayProducts,
-                          (a, b) => b.reviewsCount.compareTo(a.reviewsCount),
-                        ).take(6).toList(),
-                      ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 12),
+                      _buildProductGrid(displayProducts),
+                      SizedBox(height: 16),
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 16.w),
                         child: PaginationControls(
@@ -258,8 +324,14 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                               : null,
                         ),
                       ),
-                      const SizedBox(height: 20),
-                    ],
+                      SizedBox(height: 20),
+                    ] else
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: Text(
+                          storeUi('لا توجد منتجات في هذه الصفحة حالياً.'),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -273,12 +345,12 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
       elevation: 0,
       leading: Builder(
         builder: (ctx) => IconButton(
-          icon: const Icon(Icons.menu, color: AppColors.textDark),
+          icon: Icon(Icons.menu, color: AppColors.textDark),
           onPressed: () => Scaffold.of(ctx).openDrawer(),
         ),
       ),
       title: Text(
-        'المتجر',
+        storeUi('المتجر'),
         style: TextStyle(
           color: AppColors.textDark,
           fontWeight: FontWeight.bold,
@@ -304,7 +376,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           },
         ),
         IconButton(
-          icon: const Icon(
+          icon: Icon(
             Icons.favorite_outline,
             color: AppColors.textDark,
             size: 24,
@@ -315,7 +387,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           clipBehavior: Clip.none,
           children: [
             IconButton(
-              icon: const Icon(
+              icon: Icon(
                 Icons.shopping_cart_outlined,
                 color: AppColors.primary,
                 size: 26,
@@ -327,18 +399,15 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                 right: 6,
                 top: 6,
                 child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
+                  padding: EdgeInsets.all(4),
+                  decoration: BoxDecoration(
                     color: Colors.red,
                     shape: BoxShape.circle,
                   ),
-                  constraints: const BoxConstraints(
-                    minWidth: 18,
-                    minHeight: 18,
-                  ),
+                  constraints: BoxConstraints(minWidth: 18, minHeight: 18),
                   child: Text(
                     '$cartItemCount',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textLight,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
@@ -365,9 +434,9 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
               onChanged: _scheduleSearch,
               onSubmitted: _submitSearch,
               decoration: InputDecoration(
-                hintText: 'ابحث عن منتج...',
+                hintText: storeUi('ابحث عن منتج...'),
                 hintStyle: TextStyle(color: _kGrey, fontSize: 14.sp),
-                suffixIcon: const Icon(Icons.search, color: AppColors.primary),
+                suffixIcon: Icon(Icons.search, color: AppColors.primary),
                 filled: true,
                 fillColor: kFieldBg,
                 contentPadding: EdgeInsets.symmetric(
@@ -376,14 +445,11 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: kFieldBorder),
+                  borderSide: BorderSide(color: kFieldBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                    color: AppColors.primary,
-                    width: 1.5,
-                  ),
+                  borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                 ),
               ),
             ),
@@ -401,7 +467,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  const Center(
+                  Center(
                     child: Icon(
                       Icons.favorite,
                       color: AppColors.primary,
@@ -413,18 +479,18 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                       left: 6,
                       top: 4,
                       child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
+                        padding: EdgeInsets.all(3),
+                        decoration: BoxDecoration(
                           color: Colors.red,
                           shape: BoxShape.circle,
                         ),
-                        constraints: const BoxConstraints(
+                        constraints: BoxConstraints(
                           minWidth: 16,
                           minHeight: 16,
                         ),
                         child: Text(
                           '${favIds.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.white,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
@@ -445,13 +511,20 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   Widget _buildPromoBannerSlider(List<PromoBanner> banners) {
     return Column(
       children: [
-        SizedBox(
-          height: 200.h,
-          child: PageView.builder(
-            controller: _bannerController,
-            itemCount: banners.length,
-            onPageChanged: (i) => setState(() => _currentBannerIndex = i),
-            itemBuilder: (_, i) => _buildBannerCard(banners[i]),
+        LayoutBuilder(
+          builder: (context, constraints) => SizedBox(
+            height:
+                ((constraints.maxWidth - 32.w) / 2).clamp(180.0, 230.0) +
+                (MediaQuery.textScalerOf(context).scale(18) - 18).clamp(
+                  0.0,
+                  30.0,
+                ),
+            child: PageView.builder(
+              controller: _bannerController,
+              itemCount: banners.length,
+              onPageChanged: (i) => setState(() => _currentBannerIndex = i),
+              itemBuilder: (_, i) => _buildBannerCard(banners[i]),
+            ),
           ),
         ),
         SizedBox(height: 10.h),
@@ -460,8 +533,8 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           children: List.generate(
             banners.length,
             (i) => AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
+              duration: Duration(milliseconds: 200),
+              margin: EdgeInsets.symmetric(horizontal: 3),
               width: _currentBannerIndex == i ? 8 : 6,
               height: _currentBannerIndex == i ? 8 : 6,
               decoration: BoxDecoration(
@@ -479,110 +552,46 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
 
   Widget _buildBannerCard(PromoBanner banner) {
     final catalog = ref.watch(catalogProvider);
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16.w),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, kBannerEnd],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 10,
-            top: 10,
-            bottom: 10,
-            child: () {
-              final url = banner.imageUrl;
-              if (url.startsWith('/') || url.contains(':\\')) {
-                return Image.file(
-                  File(url),
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                );
-              }
-              return AppCachedNetworkImage(
-                url: url,
-                fit: BoxFit.contain,
-                errorBuilder: () => const SizedBox.shrink(),
+    final url = banner.imageUrl;
+    final image = url.startsWith('/') || url.contains(':\\')
+        ? Image.file(
+            File(url),
+            fit: BoxFit.cover,
+            alignment: Alignment.centerRight,
+            errorBuilder: (_, _, _) => SizedBox.shrink(),
+          )
+        : AppCachedNetworkImage(
+            url: url,
+            fit: BoxFit.cover,
+            alignment: Alignment.centerRight,
+            errorBuilder: () => SizedBox.shrink(),
+          );
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.w),
+      child: StorePromoCard(
+        banner: banner,
+        image: image,
+        onTap: () {
+          if (banner.productId != null) {
+            final product = catalog.products
+                .where((p) => p.id == banner.productId)
+                .firstOrNull;
+            if (product != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ProductDetailsScreen(product: product),
+                ),
               );
-            }(),
-          ),
-          Padding(
-            padding: EdgeInsets.all(20.r),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  banner.title,
-                  style: TextStyle(
-                    color: AppColors.textLight,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20.sp,
-                  ),
-                ),
-                SizedBox(height: 4.h),
-                Text(
-                  banner.subtitle,
-                  style: TextStyle(
-                    color: AppColors.textLight.withValues(alpha: 0.9),
-                    fontSize: 13.sp,
-                  ),
-                ),
-                SizedBox(height: 6.h),
-                Text(
-                  banner.discountText,
-                  style: TextStyle(
-                    color: AppColors.textLight,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 32.sp,
-                  ),
-                ),
-                SizedBox(height: 16.h),
-                GestureDetector(
-                  onTap: () {
-                    if (banner.productId != null) {
-                      final prod = catalog.products
-                          .where((p) => p.id == banner.productId)
-                          .firstOrNull;
-                      if (prod != null) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ProductDetailsScreen(product: prod),
-                          ),
-                        );
-                        return;
-                      }
-                    }
-                    Navigator.pushNamed(context, banner.actionRoute);
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 20.w,
-                      vertical: 10.h,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: Text(
-                      banner.ctaText,
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13.sp,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+              return;
+            }
+          }
+          Navigator.pushNamed(
+            context,
+            banner.actionRoute,
+            arguments: banner.categoryId,
+          );
+        },
       ),
     );
   }
@@ -594,7 +603,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'التصنيفات',
+            storeUi('التصنيفات'),
             style: TextStyle(
               color: AppColors.textDark,
               fontWeight: FontWeight.bold,
@@ -604,10 +613,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           GestureDetector(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const AllCategoriesScreen()),
+              MaterialPageRoute(builder: (_) => AllCategoriesScreen()),
             ),
             child: Text(
-              'عرض الكل',
+              storeUi('عرض الكل'),
               style: TextStyle(color: AppColors.primary, fontSize: 13.sp),
             ),
           ),
@@ -651,7 +660,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           SizedBox(width: 12.w),
           Expanded(
             child: Text(
-              'منتجات مقترحة لطلاب السنة $_studentAcademicYear',
+              AppLocale.text(
+                'منتجات مقترحة لطلاب السنة $_studentAcademicYear',
+                'Recommended for academic year $_studentAcademicYear',
+              ),
               style: TextStyle(
                 fontSize: 13.sp,
                 color: AppColors.textDark,
@@ -717,7 +729,26 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     );
   }
 
-  Widget _buildProductCard(Product product) {
+  Widget _buildProductGrid(List<Product> products) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.w),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: NeverScrollableScrollPhysics(),
+        itemCount: products.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.78,
+        ),
+        itemBuilder: (_, index) =>
+            _buildProductCard(products[index], wide: true),
+      ),
+    );
+  }
+
+  Widget _buildProductCard(Product product, {bool wide = false}) {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
@@ -726,7 +757,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
         ),
       ),
       child: Container(
-        width: 140.w,
+        width: wide ? double.infinity : 140.w,
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
@@ -737,12 +768,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(15),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
                 child: SizedBox(
                   width: double.infinity,
-                  child: product.imageUrl.isEmpty
+                  child: product.listImageUrl.isEmpty
                       ? Container(
                           color: AppColors.primarySurface,
                           child: Icon(
@@ -751,10 +780,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                             size: 28.sp,
                           ),
                         )
-                      : product.imageUrl.startsWith('/') ||
-                            product.imageUrl.contains(':\\')
+                      : product.listImageUrl.startsWith('/') ||
+                            product.listImageUrl.contains(':\\')
                       ? Image.file(
-                          File(product.imageUrl),
+                          File(product.listImageUrl),
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => Container(
                             color: AppColors.primarySurface,
@@ -766,7 +795,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                           ),
                         )
                       : AppCachedNetworkImage(
-                          url: product.imageUrl,
+                          url: product.listImageUrl,
                           fit: BoxFit.cover,
                           errorBuilder: () => Container(
                             color: AppColors.primarySurface,
@@ -799,20 +828,16 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                   Row(
                     children: [
                       Text(
-                        '${product.price.toStringAsFixed(0)} ر.س',
+                        storeUi('${product.price.toStringAsFixed(0)} SYP'),
                         style: TextStyle(
                           color: AppColors.primary,
                           fontSize: 12.sp,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const Spacer(),
+                      Spacer(),
                       if (product.rating > 0) ...[
-                        const Icon(
-                          Icons.star,
-                          color: Color(0xFFFFC107),
-                          size: 12,
-                        ),
+                        Icon(Icons.star, color: Color(0xFFFFC107), size: 12),
                         SizedBox(width: 2.w),
                         Text(
                           product.rating.toStringAsFixed(1),
@@ -835,13 +860,15 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     showDialog(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
-            'تعديل اسم التصنيف',
+          title: Text(
+            storeUi('تعديل اسم التصنيف'),
             style: TextStyle(
               color: AppColors.textDark,
               fontWeight: FontWeight.bold,
@@ -849,12 +876,12 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           ),
           content: TextField(
             controller: controller,
-            decoration: const InputDecoration(labelText: 'الاسم'),
+            decoration: InputDecoration(labelText: storeUi('الاسم')),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء'),
+              child: Text(storeUi('إلغاء')),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -871,13 +898,34 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                         .read(catalogProvider.notifier)
                         .updateCategory(
                           category.id,
-                          controller.text.trim(),
+                          AppLocale.language == 'ar'
+                              ? controller.text.trim()
+                              : (category.translations['ar']?['name'] ??
+                                    category.toJson()['label'] as String),
                           category.iconUrl,
+                          translations: {
+                            'ar': {
+                              'name': AppLocale.language == 'ar'
+                                  ? controller.text.trim()
+                                  : (category.translations['ar']?['name'] ??
+                                        category.toJson()['label']),
+                            },
+                            'en': AppLocale.language == 'en'
+                                ? {'name': controller.text.trim()}
+                                : category.translations['en'],
+                          },
                         );
                   } catch (error) {
                     if (ctx.mounted) {
                       ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text('تعذر تعديل التصنيف: $error')),
+                        SnackBar(
+                          content: Text(
+                            AppLocale.text(
+                              'تعذر تعديل التصنيف: $error',
+                              'Could not update category: $error',
+                            ),
+                          ),
+                        ),
                       );
                     }
                     return;
@@ -885,7 +933,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
               },
-              child: const Text('حفظ'),
+              child: Text(storeUi('حفظ')),
             ),
           ],
         ),
@@ -896,12 +944,12 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   void _showCategoryOptions(ProductCategory category) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: EdgeInsets.symmetric(vertical: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -913,31 +961,28 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Text(
                 category.label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textDark,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               ListTile(
-                leading: const Icon(
-                  Icons.edit_outlined,
-                  color: AppColors.primary,
-                ),
-                title: const Text('تعديل الاسم'),
+                leading: Icon(Icons.edit_outlined, color: AppColors.primary),
+                title: Text(storeUi('تعديل الاسم')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _editCategoryName(category);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text(
-                  'حذف التصنيف',
+                leading: Icon(Icons.delete_outline, color: Colors.red),
+                title: Text(
+                  storeUi('حذف التصنيف'),
                   style: TextStyle(color: Colors.red),
                 ),
                 onTap: () {
@@ -948,14 +993,17 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      title: const Text('تأكيد الحذف'),
+                      title: Text(storeUi('تأكيد الحذف')),
                       content: Text(
-                        'سيتم حذف "${category.label}" وجميع منتجاته',
+                        AppLocale.text(
+                          'سيتم حذف "${category.label}" وجميع منتجاته',
+                          'Delete "${category.label}" and its products?',
+                        ),
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(dCtx),
-                          child: const Text('إلغاء'),
+                          child: Text(storeUi('إلغاء')),
                         ),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
@@ -975,13 +1023,18 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                               if (dCtx.mounted) {
                                 ScaffoldMessenger.of(dCtx).showSnackBar(
                                   SnackBar(
-                                    content: Text('تعذر حذف التصنيف: $error'),
+                                    content: Text(
+                                      AppLocale.text(
+                                        'تعذر حذف التصنيف: $error',
+                                        'Could not delete category: $error',
+                                      ),
+                                    ),
                                   ),
                                 );
                               }
                             }
                           },
-                          child: const Text('حذف'),
+                          child: Text(storeUi('حذف')),
                         ),
                       ],
                     ),
@@ -1009,36 +1062,20 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: kFieldBorder, width: 1),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: EdgeInsets.symmetric(vertical: 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            category.iconUrl.endsWith('.svg')
-                ? SvgPicture.network(
-                    category.iconUrl,
-                    colorFilter: const ColorFilter.mode(
-                      AppColors.primary,
-                      BlendMode.srcIn,
-                    ),
-                    width: 28,
-                    height: 28,
-                  )
-                : AppCachedNetworkImage(
-                    url: category.iconUrl,
-                    width: 28,
-                    height: 28,
-                    errorBuilder: () => const Icon(
-                      Icons.category_outlined,
-                      color: AppColors.primary,
-                      size: 28,
-                    ),
-                  ),
-            const SizedBox(height: 8),
+            CategoryOutlineIcon(
+              label: category.label,
+              iconUrl: category.iconUrl,
+            ),
+            SizedBox(height: 8),
             Text(
               category.label,
-              style: const TextStyle(color: AppColors.textDark, fontSize: 11),
+              style: TextStyle(color: AppColors.textDark, fontSize: 11),
               textAlign: TextAlign.center,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -1050,13 +1087,13 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   Widget _buildEmptyCategoriesState() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
+        padding: EdgeInsets.symmetric(vertical: 24),
         child: Column(
           children: [
-            const Icon(Icons.category_outlined, color: _kGrey, size: 40),
-            const SizedBox(height: 8),
-            const Text(
-              'لا توجد تصنيفات حالياً',
+            Icon(Icons.category_outlined, color: _kGrey, size: 40),
+            SizedBox(height: 8),
+            Text(
+              storeUi('لا توجد تصنيفات حالياً'),
               style: TextStyle(color: _kGrey, fontSize: 13),
             ),
           ],

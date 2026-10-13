@@ -39,11 +39,14 @@ class StorePollingService {
   static void setAppActive(bool active) {
     if (_isAppActive == active) return;
     _isAppActive = active;
-    if (active &&
-        ConnectivityService.isOnline.value &&
-        _accountId != null &&
-        _accountId != null) {
+    if (!active) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    if (active && ConnectivityService.isOnline.value && _accountId != null) {
       _pollNow(_generation, _accountId!);
+      _scheduleNextPoll(_generation, _accountId!);
     }
   }
 
@@ -66,12 +69,12 @@ class StorePollingService {
     }
     _accountId = accountId;
     if (_isAppActive) await _pollNow(generation, accountId);
-    if (!_isCurrent(generation, accountId)) return;
+    if (!_isAppActive || !_isCurrent(generation, accountId)) return;
     _scheduleNextPoll(generation, accountId);
   }
 
   static void _scheduleNextPoll(int generation, String accountId) {
-    if (!_isCurrent(generation, accountId)) return;
+    if (!_isAppActive || !_isCurrent(generation, accountId)) return;
     _timer?.cancel();
     final delay =
         _pollInterval -
@@ -88,7 +91,9 @@ class StorePollingService {
   }
 
   static Future<void> _pollNow(int generation, String accountId) async {
-    if (!_isCurrent(generation, accountId) ||
+    if (!_isAppActive ||
+        !ConnectivityService.isOnline.value ||
+        !_isCurrent(generation, accountId) ||
         _pollingGeneration == generation) {
       return;
     }

@@ -1,7 +1,14 @@
+import 'package:studentry/store/data/catalog_translations.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'package:studentry/shared/cache/cache_manager.dart';
+import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/data/api_config.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
+import 'package:studentry/shared/data/request_diagnostics.dart';
 import 'package:studentry/store/data/pending_order_service.dart';
+import 'package:studentry/store/data/cart_storage.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/store/data/store_polling_service.dart';
 import 'package:studentry/store/data/store_api_service.dart';
@@ -60,6 +67,142 @@ class CatalogState {
 }
 
 class CatalogNotifier extends Notifier<CatalogState> {
+  CatalogState get snapshot => state;
+  static String get summaryCacheKey =>
+      'catalog:v2:${ApiConfig.baseUrl}:summary';
+  static String pageCacheKey(int page, {String? academicYear}) =>
+      'catalog:v2:${ApiConfig.baseUrl}:products:$page:25:${academicYear ?? 'all'}';
+  static String pageMetadataCacheKey(int page, {String? academicYear}) =>
+      '${pageCacheKey(page, academicYear: academicYear)}:metadata';
+  Future<bool>? _refreshing;
+  String? _activeProductYear;
+  Object? _catalogVersion;
+  bool _pageValidated = false;
+  bool get hasCachedProductPage =>
+      CacheManager.instance.get<List<dynamic>>(
+        pageCacheKey(1, academicYear: _activeProductYear),
+      ) !=
+      null;
+
+  bool get hasCachedPagination =>
+      CacheManager.instance.get<Map<String, dynamic>>(
+            pageMetadataCacheKey(1, academicYear: _activeProductYear),
+          )?['lastPage']
+          is int;
+
+  void _selectAcademicYear(String? academicYear) {
+    if (_activeProductYear == academicYear) return;
+    _activeProductYear = academicYear;
+    _products.clear();
+    _currentProductPage = 0;
+    _pageValidated = false;
+    state = state.copyWith(
+      products: const [],
+      currentProductPage: 1,
+      lastProductPage: 1,
+      hasMoreProducts: true,
+    );
+  }
+
+  bool restoreSnapshot({String? academicYear}) {
+    _selectAcademicYear(academicYear);
+    final cached = CacheManager.instance.get<Map<String, dynamic>>(
+      summaryCacheKey,
+    );
+    if (cached == null) return false;
+    _catalogVersion = cached['version'];
+    _categories
+      ..clear()
+      ..addAll(
+        (cached['categories'] as List).map(
+          (r) => ProductCategory.fromJson(Map<String, dynamic>.from(r as Map)),
+        ),
+      );
+    _banners
+      ..clear()
+      ..addAll(
+        (cached['banners'] as List).map(
+          (r) => PromoBanner.fromJson(Map<String, dynamic>.from(r as Map)),
+        ),
+      );
+    loadCachedSnapshot(_banners.toList(), _categories.toList());
+    return true;
+  }
+
+  Future<bool> refreshCatalog({String? academicYear, bool force = false}) {
+    _selectAcademicYear(academicYear);
+    if (_refreshing != null) return _refreshing!;
+    late final Future<bool> pending;
+    pending = _refreshCatalog(force: force).whenComplete(() {
+      if (identical(_refreshing, pending)) _refreshing = null;
+    });
+    return _refreshing = pending;
+  }
+
+  Future<bool> _refreshCatalog({bool force = false}) async {
+    try {
+      final data = await StoreApiService.fetchCatalogSummary(force: force);
+      if (!ref.mounted) return false;
+      final categories = (data['categories'] as List)
+          .map(
+            (r) => ProductCategory.fromJson(
+              StoreApiService.rowToCategoryMap(
+                Map<String, dynamic>.from(r as Map),
+              ),
+            ),
+          )
+          .toList();
+      final banners = (data['banners'] as List)
+          .map(
+            (r) => PromoBanner.fromJson(
+              StoreApiService.rowToBannerMap(
+                Map<String, dynamic>.from(r as Map),
+              ),
+            ),
+          )
+          .toList();
+      loadBannersAndCategories(banners, categories);
+      await CacheManager.instance.set(
+        summaryCacheKey,
+        {
+          'categories': categories.map((r) => r.toJson()).toList(),
+          'banners': banners.map((r) => r.toJson()).toList(),
+          'version': data['version'],
+        },
+        ttl: const Duration(days: 30),
+        tags: const [CacheTags.catalog],
+      );
+      if (!ref.mounted) return false;
+      // A 304/version match means the selected page is still valid, including
+      // a successfully loaded empty page. Do not fetch it again on every tick.
+      final changed = _catalogVersion != data['version'];
+      _catalogVersion = data['version'];
+      if (force || changed || !_pageValidated) {
+        _pageValidated = false;
+        await loadProductsPage(
+          state.currentProductPage,
+          force: force || changed,
+          reason: force ? RequestReason.manual : RequestReason.automatic,
+        );
+        if (!_pageValidated) return false;
+      }
+      if (!ref.mounted) return false;
+      if (AuthService().hasPermission('coupons.manage')) {
+        final rows = await StoreApiService.fetchCoupons();
+        if (!ref.mounted) return false;
+        _coupons
+          ..clear()
+          ..addAll(rows.map(Coupon.fromJson));
+      } else {
+        _coupons.clear();
+      }
+      _rebuildState();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static const int productPageSize = 25;
   final List<Product> _products = [];
   final List<PromoBanner> _banners = [];
@@ -80,6 +223,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
   }
 
   void _rebuildState() {
+    if (!ref.mounted) return;
     _recalcProductCounts();
     state = state.copyWith(
       banners: [..._banners],
@@ -91,7 +235,9 @@ class CatalogNotifier extends Notifier<CatalogState> {
 
   void _recalcProductCounts() {
     for (final cat in _categories) {
-      cat.productCount = _products.where((p) => p.categoryId == cat.id).length;
+      cat.productCount ??= _products
+          .where((p) => p.categoryId == cat.id)
+          .length;
     }
   }
 
@@ -119,7 +265,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
   }
 
   /// Hydrates products persisted by the previous successful server response.
-  /// Categories and banners are supplied by store_data's snapshot loader.
+  /// Categories and banners are supplied by the same catalog snapshot.
   void loadCachedSnapshot(
     List<PromoBanner> banners,
     List<ProductCategory> categories,
@@ -130,7 +276,9 @@ class CatalogNotifier extends Notifier<CatalogState> {
     _categories
       ..clear()
       ..addAll(categories);
-    final cached = CacheManager.instance.get<List<dynamic>>('products:all');
+    final cached = CacheManager.instance.get<List<dynamic>>(
+      pageCacheKey(1, academicYear: _activeProductYear),
+    );
     if (cached != null) {
       _products
         ..clear()
@@ -139,6 +287,17 @@ class CatalogNotifier extends Notifier<CatalogState> {
             (item) => Product.fromJson(Map<String, dynamic>.from(item as Map)),
           ),
         );
+      final metadata = CacheManager.instance.get<Map<String, dynamic>>(
+        pageMetadataCacheKey(1, academicYear: _activeProductYear),
+      );
+      final lastPage = (metadata?['lastPage'] as int?) ?? 1;
+      _currentProductPage = 0;
+      _pageValidated = metadata != null;
+      state = state.copyWith(
+        currentProductPage: 1,
+        lastProductPage: lastPage,
+        hasMoreProducts: lastPage > 1,
+      );
     }
     _rebuildState();
   }
@@ -149,7 +308,12 @@ class CatalogNotifier extends Notifier<CatalogState> {
     state = state.copyWith(isLoadingProducts: true);
     _currentProductPage = 0;
     try {
-      final page = await StoreApiService.fetchProductPage(1, productPageSize);
+      final page = await StoreApiService.fetchProductPage(
+        1,
+        productPageSize,
+        academicYear: _activeProductYear,
+      );
+      if (!ref.mounted) return;
       final rows = page.rows;
       final categoryNames = {
         for (final category in _categories) category.id: category.label,
@@ -159,9 +323,20 @@ class CatalogNotifier extends Notifier<CatalogState> {
         return Product(
           id: m['id'] as String,
           name: m['name'] as String,
+          translations: parseCatalogCopy(m['translations']),
+          publicationStatus: m['publicationStatus'] as String? ?? 'published',
+          isTest: m['isTest'] == true,
+          categoryTranslations:
+              _categories
+                  .where((c) => c.id == m['categoryId'])
+                  .firstOrNull
+                  ?.translations ??
+              const {},
           brand: m['brand'] as String? ?? '',
           description: m['description'] as String? ?? '',
           imageUrl: m['imageUrl'] as String? ?? '',
+          thumbnailUrl: m['thumbnailUrl'] as String?,
+          physicalStock: (m['physicalStock'] as num?)?.toInt(),
           categoryId: m['categoryId'] as String? ?? '',
           categoryName: categoryNames[m['categoryId']] ?? '',
           price: (m['price'] as num?)?.toDouble() ?? 0,
@@ -181,7 +356,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
       _currentProductPage = page.currentPage - 1;
       final hasMore = page.currentPage < page.lastPage;
       _recalcProductCounts();
-      _cacheProducts();
+      _cacheProducts(lastPage: page.lastPage);
       state = state.copyWith(
         categories: [..._categories],
         products: [..._products],
@@ -192,12 +367,17 @@ class CatalogNotifier extends Notifier<CatalogState> {
       );
     } catch (_) {
       // Keep the cached snapshot visible when the server is unreachable.
+      if (!ref.mounted) return;
       state = state.copyWith(isLoadingProducts: false);
     }
   }
 
   /// Replaces the current products with exactly one REST page.
-  Future<void> loadProductsPage(int requestedPage) async {
+  Future<void> loadProductsPage(
+    int requestedPage, {
+    bool force = false,
+    RequestReason reason = RequestReason.navigation,
+  }) async {
     if (state.isLoadingProducts || requestedPage < 1) return;
     state = state.copyWith(isLoadingProducts: true);
     final previousPage = _currentProductPage;
@@ -205,16 +385,31 @@ class CatalogNotifier extends Notifier<CatalogState> {
       final page = await StoreApiService.fetchProductPage(
         requestedPage,
         productPageSize,
+        academicYear: _activeProductYear,
+        force: force,
+        reason: reason,
       );
       final rows = page.rows;
+      if (!ref.mounted) return;
       final parsed = rows.map((row) {
         final m = StoreApiService.rowToProductMap(row);
         return Product(
           id: m['id'] as String,
           name: m['name'] as String,
+          translations: parseCatalogCopy(m['translations']),
+          publicationStatus: m['publicationStatus'] as String? ?? 'published',
+          isTest: m['isTest'] == true,
+          categoryTranslations:
+              _categories
+                  .where((c) => c.id == m['categoryId'])
+                  .firstOrNull
+                  ?.translations ??
+              const {},
           brand: m['brand'] as String? ?? '',
           description: m['description'] as String? ?? '',
           imageUrl: m['imageUrl'] as String? ?? '',
+          thumbnailUrl: m['thumbnailUrl'] as String?,
+          physicalStock: (m['physicalStock'] as num?)?.toInt(),
           categoryId: m['categoryId'] as String? ?? '',
           categoryName: m['categoryName'] as String? ?? '',
           price: (m['price'] as num?)?.toDouble() ?? 0,
@@ -232,8 +427,9 @@ class CatalogNotifier extends Notifier<CatalogState> {
         ..clear()
         ..addAll(parsed);
       _currentProductPage = page.currentPage - 1;
+      _pageValidated = true;
       _recalcProductCounts();
-      _cacheProducts();
+      _cacheProducts(lastPage: page.lastPage);
       final hasMore = page.currentPage < page.lastPage;
       state = state.copyWith(
         categories: [..._categories],
@@ -244,6 +440,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
         lastProductPage: page.lastPage,
       );
     } catch (_) {
+      if (!ref.mounted) return;
       _currentProductPage = previousPage;
       state = state.copyWith(isLoadingProducts: false);
     }
@@ -252,27 +449,47 @@ class CatalogNotifier extends Notifier<CatalogState> {
   Future<void> loadNextProductsPage() =>
       loadProductsPage(state.currentProductPage + 1);
 
-  void _cacheProducts() {
-    if (_products.isNotEmpty) {
-      CacheManager.instance.set(
-        'products:all',
-        _products.map((p) => p.toJson()).toList(),
-        ttl: const Duration(days: 30),
-        tags: [CacheTags.products],
-      );
-    }
+  void _cacheProducts({int? lastPage}) {
+    if (!ref.mounted) return;
+    CacheManager.instance.set(
+      pageCacheKey(_currentProductPage + 1, academicYear: _activeProductYear),
+      _products.map((p) => p.toJson()).toList(),
+      ttl: const Duration(days: 30),
+      tags: [CacheTags.products],
+    );
+    CacheManager.instance.set(
+      pageMetadataCacheKey(
+        _currentProductPage + 1,
+        academicYear: _activeProductYear,
+      ),
+      {'lastPage': lastPage ?? state.lastProductPage},
+      ttl: const Duration(days: 30),
+      tags: [CacheTags.products],
+    );
   }
 
   // ── Category CRUD ──
 
-  Future<void> addCategory(String name, String iconUrl) async {
+  Future<void> addCategory(
+    String name,
+    String iconUrl, {
+    Map<String, dynamic>? translations,
+  }) async {
     final id = const Uuid().v4();
     await StoreApiService.insertCategory({
       'id': id,
       'name': name,
       'iconUrl': iconUrl,
+      'translations': ?translations,
     });
-    _categories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
+    _categories.add(
+      ProductCategory(
+        id: id,
+        label: name,
+        iconUrl: iconUrl,
+        translations: parseCatalogCopy(translations),
+      ),
+    );
     CacheManager.instance.invalidateTags([
       CacheTags.catalog,
       CacheTags.categories,
@@ -291,13 +508,35 @@ class CatalogNotifier extends Notifier<CatalogState> {
     _rebuildState();
   }
 
-  Future<void> updateCategory(String id, String name, String iconUrl) async {
-    await StoreApiService.updateCategory(id, name, iconUrl);
+  Future<void> updateCategory(
+    String id,
+    String name,
+    String iconUrl, {
+    Map<String, dynamic>? translations,
+  }) async {
+    await StoreApiService.updateCategory(
+      id,
+      name,
+      iconUrl,
+      translations: translations,
+    );
     final idx = _categories.indexWhere((c) => c.id == id);
     if (idx >= 0) {
-      _categories[idx] = ProductCategory(id: id, label: name, iconUrl: iconUrl);
+      _categories[idx] = ProductCategory(
+        id: id,
+        label: name,
+        iconUrl: iconUrl,
+        translations: parseCatalogCopy(translations),
+      );
     } else {
-      _categories.add(ProductCategory(id: id, label: name, iconUrl: iconUrl));
+      _categories.add(
+        ProductCategory(
+          id: id,
+          label: name,
+          iconUrl: iconUrl,
+          translations: parseCatalogCopy(translations),
+        ),
+      );
     }
     CacheManager.instance.invalidateTags([
       CacheTags.catalog,
@@ -318,11 +557,17 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String brand = '',
     int stock = 0,
     String? academicYear,
+    Map<String, dynamic>? translations,
+    String? publicationStatus,
+    bool? isTest,
   }) async {
     final id = const Uuid().v4();
     await StoreApiService.insertProduct({
       'id': id,
       'name': name,
+      'translations': ?translations,
+      'publicationStatus': ?publicationStatus,
+      'isTest': ?isTest,
       'brand': brand,
       'description': description,
       'imageUrl': imageUrl,
@@ -334,6 +579,9 @@ class CatalogNotifier extends Notifier<CatalogState> {
     _products.add(
       Product(
         id: id,
+        translations: parseCatalogCopy(translations),
+        publicationStatus: publicationStatus ?? 'published',
+        isTest: isTest ?? false,
         name: name,
         description: description,
         price: price,
@@ -370,9 +618,15 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String brand = '',
     int stock = 0,
     String? academicYear,
+    Map<String, dynamic>? translations,
+    String? publicationStatus,
+    bool? isTest,
   }) async {
     await StoreApiService.updateProduct(id, {
       'name': name,
+      'translations': ?translations,
+      'publicationStatus': ?publicationStatus,
+      'isTest': ?isTest,
       'brand': brand,
       'description': description,
       'imageUrl': imageUrl,
@@ -385,6 +639,10 @@ class CatalogNotifier extends Notifier<CatalogState> {
     if (idx >= 0) {
       _products[idx] = Product(
         id: id,
+        translations: parseCatalogCopy(translations),
+        publicationStatus:
+            publicationStatus ?? _products[idx].publicationStatus,
+        isTest: isTest ?? _products[idx].isTest,
         name: name,
         description: description,
         price: price,
@@ -413,11 +671,13 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String actionRoute, {
     String? productId,
     String? categoryId,
+    Map<String, dynamic>? translations,
   }) async {
     final id = const Uuid().v4();
     await StoreApiService.insertBanner({
       'id': id,
       'title': title,
+      'translations': ?translations,
       'subtitle': subtitle,
       'discountText': discountText,
       'imageUrl': imageUrl,
@@ -429,6 +689,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
     _banners.add(
       PromoBanner(
         id: id,
+        translations: parseCatalogCopy(translations),
         title: title,
         subtitle: subtitle,
         discountText: discountText,
@@ -466,9 +727,11 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String actionRoute, {
     String? productId,
     String? categoryId,
+    Map<String, dynamic>? translations,
   }) async {
     await StoreApiService.updateBanner(id, {
       'title': title,
+      'translations': ?translations,
       'subtitle': subtitle,
       'discountText': discountText,
       'imageUrl': imageUrl,
@@ -481,6 +744,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
     if (idx >= 0) {
       _banners[idx] = PromoBanner(
         id: id,
+        translations: parseCatalogCopy(translations),
         title: title,
         subtitle: subtitle,
         discountText: discountText,
@@ -494,6 +758,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
       _banners.add(
         PromoBanner(
           id: id,
+          translations: parseCatalogCopy(translations),
           title: title,
           subtitle: subtitle,
           discountText: discountText,
@@ -616,6 +881,11 @@ class CartState {
   }
 
   double get discountedTotal => total - discountAmount;
+  double get deliveryTotal => items.fold(
+    0.0,
+    (sum, item) => sum + item.product.deliveryPrice * item.quantity,
+  );
+  double get grandTotal => discountedTotal + deliveryTotal;
 
   CartState copyWith({
     List<CartItem>? items,
@@ -632,13 +902,87 @@ class CartState {
 class CartNotifier extends Notifier<CartState> {
   final List<CartItem> _items = [];
   Coupon? _appliedCoupon;
+  String? _storageKey;
+  bool _restored = false;
+  final List<void Function()> _beforeRestore = [];
+  Future<void> persistence = Future.value();
 
   @override
   CartState build() {
+    ref.listen(catalogProvider, (_, next) => refreshProductCopy(next.products));
+    final userId = AuthService().userId;
+    _storageKey = userId == null
+        ? null
+        : CartStorage.key(ApiConfig.baseUrl, userId);
+    final key = _storageKey;
+    _restored = key == null;
+    final generation = AuthService().sessionGeneration;
+    if (key != null) {
+      Future.microtask(() async {
+        final items = await CartStorage.load(key);
+        if (!ref.mounted || generation != AuthService().sessionGeneration) {
+          return;
+        }
+        _items
+          ..clear()
+          ..addAll(items);
+        _restored = true;
+        final edits = List<void Function()>.from(_beforeRestore);
+        _beforeRestore.clear();
+        for (final edit in edits) {
+          edit();
+        }
+        state = CartState(items: [..._items]);
+        refreshProductCopy(ref.read(catalogProvider).products);
+      });
+    }
     return CartState(items: [..._items], appliedCoupon: _appliedCoupon);
   }
 
+  void _persist() {
+    if (!_restored && _storageKey != null) return;
+    final key = _storageKey;
+    if (key != null) {
+      persistence = CartStorage.save(key, _items);
+      // Callers can await persistence; avoid an unhandled background failure.
+      unawaited(persistence.catchError((Object _) {}));
+    }
+  }
+
+  /// Catalog sync refreshes display copy only; cart money/quantities remain the same.
+  void refreshProductCopy(List<Product> products) {
+    if (!_restored || _items.isEmpty) return;
+    final current = {for (final product in products) product.id: product};
+    var changed = false;
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      final latest = current[item.product.id];
+      if (latest == null ||
+          latest.translations.isEmpty ||
+          jsonEncode(latest.translations) ==
+              jsonEncode(item.product.translations)) {
+        continue;
+      }
+      final copy = item.product.toJson();
+      copy['translations'] = latest.translations;
+      copy['categoryTranslations'] = latest.categoryTranslations;
+      _items[i] = CartItem(
+        product: Product.fromJson(copy),
+        quantity: item.quantity,
+      );
+      changed = true;
+    }
+    if (changed && ref.mounted) {
+      state = CartState(items: [..._items], appliedCoupon: _appliedCoupon);
+      _persist();
+    }
+  }
+
   void addToCart(Product product, {int quantity = 1}) {
+    if (quantity < 1) return;
+    if (!_restored) {
+      _beforeRestore.add(() => addToCart(product, quantity: quantity));
+    }
     final existing = _items.indexWhere((i) => i.product.id == product.id);
     if (existing >= 0) {
       _items[existing].quantity += quantity;
@@ -646,11 +990,14 @@ class CartNotifier extends Notifier<CartState> {
       _items.add(CartItem(product: product, quantity: quantity));
     }
     state = CartState(items: [..._items], appliedCoupon: _appliedCoupon);
+    _persist();
   }
 
   void removeFromCart(String productId) {
+    if (!_restored) _beforeRestore.add(() => removeFromCart(productId));
     _items.removeWhere((i) => i.product.id == productId);
     state = CartState(items: [..._items], appliedCoupon: _appliedCoupon);
+    _persist();
   }
 
   void updateQuantity(String productId, int newQuantity) {
@@ -658,17 +1005,23 @@ class CartNotifier extends Notifier<CartState> {
       removeFromCart(productId);
       return;
     }
+    if (!_restored) {
+      _beforeRestore.add(() => updateQuantity(productId, newQuantity));
+    }
     final idx = _items.indexWhere((i) => i.product.id == productId);
     if (idx >= 0) {
       _items[idx].quantity = newQuantity;
       state = CartState(items: [..._items], appliedCoupon: _appliedCoupon);
+      _persist();
     }
   }
 
   void clearCart() {
+    if (!_restored) _beforeRestore.add(clearCart);
     _items.clear();
     _appliedCoupon = null;
     state = const CartState();
+    _persist();
   }
 
   /// Creates an order from cart state, saves to PendingOrderService, returns the Order.
@@ -680,6 +1033,8 @@ class CartNotifier extends Notifier<CartState> {
     required String phone,
     String? governorate,
     String? region,
+    double? locationLatitude,
+    double? locationLongitude,
   }) async {
     if (_items.isEmpty) throw Exception('السلة فارغة');
     final orderId = const Uuid().v4();
@@ -689,10 +1044,11 @@ class CartNotifier extends Notifier<CartState> {
     final order = Order(
       id: orderId,
       items: List.from(_items),
-      totalPrice: discountedTotal,
+      totalPrice: discountedTotal + state.deliveryTotal,
+      awaitingSync: true,
       createdAt: now,
       updatedAt: now,
-      userId: '',
+      userId: AuthService().userId ?? '',
       notes: notes,
       couponCode: _appliedCoupon?.code,
       discountAmount: discountAmount > 0 ? discountAmount : null,
@@ -701,7 +1057,9 @@ class CartNotifier extends Notifier<CartState> {
       phone: phone,
       governorate: governorate,
       region: region,
-      deliveryPrice: _items.fold(0.0, (t, i) => t + i.product.deliveryPrice),
+      locationLatitude: locationLatitude,
+      locationLongitude: locationLongitude,
+      deliveryPrice: state.deliveryTotal,
     );
 
     final orderMap = order.toJson();
@@ -709,16 +1067,18 @@ class CartNotifier extends Notifier<CartState> {
     orderMap['updatedAt'] = now.toUtc().toIso8601String();
     final result = await PendingOrderService.savePendingOrder(orderMap);
 
-    if (result == 'insufficient_stock') {
+    if (result.status == 'insufficient_stock') {
       throw Exception('المخزون غير كافٍ لبعض المنتجات');
     }
-    if (result == 'invalid_order') {
+    if (result.isPermanentFailure) {
       throw Exception(
         'تعذر اعتماد الطلب أو كود الخصم. حدّث السلة وحاول مجدداً.',
       );
     }
 
-    return order;
+    return result.isConfirmed && result.confirmedOrder != null
+        ? Order.fromJson(result.confirmedOrder!)
+        : order;
   }
 
   Future<String?> applyCoupon(String code) async {
@@ -763,28 +1123,82 @@ final cartProvider = NotifierProvider<CartNotifier, CartState>(
 
 class FavoritesState {
   final Set<String> productIds;
-  const FavoritesState({this.productIds = const {}});
+  final Map<String, Product> savedProducts;
+  const FavoritesState({
+    this.productIds = const {},
+    this.savedProducts = const {},
+  });
   bool isFavorite(String id) => productIds.contains(id);
 }
 
 class FavoritesNotifier extends Notifier<FavoritesState> {
   final Set<String> _productIds = {};
+  final Map<String, Product> _savedProducts = {};
+  static const cacheTtl = Duration(days: 180);
+  static String cacheKey(String userId) =>
+      'favorites:v1:${ApiConfig.baseUrl}:$userId';
+
+  FavoritesState _snapshot() => FavoritesState(
+    productIds: Set.from(_productIds),
+    savedProducts: Map.from(_savedProducts),
+  );
+
+  Future<void> _persist(String userId) =>
+      CacheManager.instance.set(cacheKey(userId), {
+        'ids': _productIds.toList(),
+        'products': _savedProducts.map(
+          (id, product) => MapEntry(id, product.toJson()),
+        ),
+      }, ttl: cacheTtl);
 
   @override
   FavoritesState build() {
-    Future.microtask(load);
-    return FavoritesState(productIds: Set.from(_productIds));
+    _productIds.clear();
+    _savedProducts.clear();
+    final userId = AuthService().userId;
+    if (userId != null) {
+      final cached = CacheManager.instance.get<Map<String, dynamic>>(
+        cacheKey(userId),
+      );
+      if (cached != null) {
+        _productIds.addAll((cached['ids'] as List? ?? []).map((id) => '$id'));
+        final products = cached['products'];
+        if (products is Map) {
+          for (final entry in products.entries) {
+            try {
+              final product = Product.fromJson(
+                Map<String, dynamic>.from(entry.value as Map),
+              );
+              if (_productIds.contains(product.id)) {
+                _savedProducts[product.id] = product;
+              }
+            } catch (_) {
+              // Ignore a stale product snapshot, but keep its favorite ID.
+            }
+          }
+        }
+      }
+      Future.microtask(load);
+    }
+    return _snapshot();
   }
 
   Future<void> load() async {
     final generation = AuthService().sessionGeneration;
+    final userId = AuthService().userId;
+    if (userId == null) return;
     try {
       final ids = await StoreApiService.fetchFavorites();
-      if (generation != AuthService().sessionGeneration) return;
+      if (generation != AuthService().sessionGeneration ||
+          userId != AuthService().userId) {
+        return;
+      }
       _productIds
         ..clear()
         ..addAll(ids);
-      state = FavoritesState(productIds: Set.from(_productIds));
+      _savedProducts.removeWhere((id, _) => !_productIds.contains(id));
+      state = _snapshot();
+      await _persist(userId);
     } on StaleSessionException {
       return;
     } catch (_) {
@@ -795,15 +1209,21 @@ class FavoritesNotifier extends Notifier<FavoritesState> {
     }
   }
 
-  Future<void> toggle(String productId) async {
+  Future<void> toggle(String productId, {Product? product}) async {
+    final userId = AuthService().userId;
+    if (userId == null) return;
     if (_productIds.contains(productId)) {
       await StoreApiService.removeFavorite(productId);
       _productIds.remove(productId);
+      _savedProducts.remove(productId);
     } else {
       await StoreApiService.addFavorite(productId);
       _productIds.add(productId);
+      if (product != null) _savedProducts[productId] = product;
     }
-    state = FavoritesState(productIds: Set.from(_productIds));
+    if (userId != AuthService().userId) return;
+    state = _snapshot();
+    await _persist(userId);
   }
 }
 
@@ -908,10 +1328,29 @@ class OrdersNotifier extends Notifier<OrdersState> {
   final List<Order> _orders = [];
   int _currentPage = 0;
   Future<void>? _initialLoad;
+  String? _syncSince;
+  DateTime? _lastLoadedAt;
+  bool _lastRefreshSucceeded = false;
+  bool _refreshAgain = false;
+  bool get lastRefreshSucceeded => _lastRefreshSucceeded;
+
+  bool get hasActiveOrders => _orders.any(
+    (order) =>
+        order.awaitingSync ||
+        !{
+          OrderStatus.delivered,
+          OrderStatus.cancelled,
+          OrderStatus.rejected,
+        }.contains(order.status),
+  );
 
   @override
   OrdersState build() {
     StorePollingService.onNewOrders = addOrdersFromPolling;
+    final subscription = PendingOrderService.updates.listen((_) {
+      if (ref.mounted) unawaited(loadInitialOrders(force: true));
+    });
+    ref.onDispose(subscription.cancel);
     return OrdersState(orders: [..._orders]);
   }
 
@@ -925,64 +1364,148 @@ class OrdersNotifier extends Notifier<OrdersState> {
     state = state.copyWith(orders: [..._orders]);
   }
 
-  /// Loads the first page of orders from REST, replacing existing.
-  Future<void> loadInitialOrders() {
+  /// Initial page once, then an inclusive change feed; pagination is preserved.
+  Future<void> loadInitialOrders({bool force = false}) {
     final active = _initialLoad;
-    if (active != null) return active;
+    if (active != null) {
+      if (force) _refreshAgain = true;
+      return active;
+    }
+    if (state.isLoadingMore) {
+      if (force) {
+        _refreshAgain = true;
+        _lastRefreshSucceeded = false;
+      }
+      return Future.value();
+    }
+    if (!force &&
+        _lastLoadedAt != null &&
+        DateTime.now().difference(_lastLoadedAt!) <
+            const Duration(seconds: 60)) {
+      return Future.value();
+    }
     late final Future<void> request;
     request = _loadInitialOrders().whenComplete(() {
       if (identical(_initialLoad, request)) _initialLoad = null;
+      _runDeferredRefresh();
     });
     _initialLoad = request;
     return request;
   }
 
   Future<void> _loadInitialOrders() async {
-    _currentPage = 0;
-    final rows = await StoreApiService.fetchOrdersPage(0, pageSize);
-    final parsed = _parseOrders(rows);
-    _orders
-      ..clear()
-      ..addAll(parsed);
-    _cacheOrders();
-    final hasMore = rows.length >= pageSize;
-    state = state.copyWith(
-      orders: [..._orders],
-      isLoadingMore: false,
-      hasMore: hasMore,
-    );
+    _lastRefreshSucceeded = false;
+    final generation = AuthService().sessionGeneration;
+    final dataGeneration = AppDatabase.captureActiveDataGeneration();
+    try {
+      final initial = _syncSince == null;
+      List<Map<String, dynamic>> rows;
+      String? serverTime;
+      bool hasMore = state.hasMore;
+      if (initial) {
+        final page = await StoreApiService.fetchOrderPage(0, pageSize);
+        rows = page.rows;
+        serverTime = page.serverTime;
+        hasMore = page.hasMore;
+      } else {
+        final changes = await StoreApiService.fetchOrderChanges(_syncSince!);
+        rows = changes.rows;
+        serverTime = changes.serverTime;
+      }
+      if (!ref.mounted || generation != AuthService().sessionGeneration) return;
+      final parsed = _parseOrders(rows);
+      final local = await AppDatabase.getPendingOrders(
+        expectedGeneration: dataGeneration,
+      );
+      if (!ref.mounted || generation != AuthService().sessionGeneration) return;
+      final merged = mergeOrderSnapshots(
+        mergeConfirmedOrderUpdates(_orders, parsed),
+        local,
+      );
+      _orders
+        ..clear()
+        ..addAll(merged);
+      _syncSince = serverTime;
+      _lastLoadedAt = DateTime.now();
+      _lastRefreshSucceeded = true;
+      _cacheOrders();
+      state = state.copyWith(
+        orders: [..._orders],
+        isLoadingMore: false,
+        hasMore: hasMore,
+      );
+    } catch (_) {
+      // An offline refresh must preserve the account's visible snapshot.
+      try {
+        final local = await AppDatabase.getPendingOrders(
+          expectedGeneration: dataGeneration,
+        );
+        if (ref.mounted && generation == AuthService().sessionGeneration) {
+          final merged = mergeOrderSnapshots(_orders, local);
+          _orders
+            ..clear()
+            ..addAll(merged);
+          state = state.copyWith(orders: [..._orders]);
+        }
+      } catch (_) {
+        /* Preserve snapshot if the account/database changed. */
+      }
+      if (ref.mounted) state = state.copyWith(isLoadingMore: false);
+    }
   }
 
   /// Loads the next page of orders from REST and appends.
   Future<void> loadNextOrdersPage() async {
+    final initial = _initialLoad;
+    if (initial != null) await initial;
+    if (!ref.mounted) return;
     if (state.isLoadingMore || !state.hasMore) return;
     state = state.copyWith(isLoadingMore: true);
     _currentPage++;
-    final rows = await StoreApiService.fetchOrdersPage(_currentPage, pageSize);
-    final parsed = _parseOrders(rows);
-    _orders.addAll(parsed);
-    _cacheOrders();
-    final hasMore = rows.length >= pageSize;
-    state = state.copyWith(
-      orders: [..._orders],
-      isLoadingMore: false,
-      hasMore: hasMore,
-    );
+    try {
+      final page = await StoreApiService.fetchOrderPage(_currentPage, pageSize);
+      final rows = page.rows;
+      if (!ref.mounted) return;
+      final merged = mergeConfirmedOrderUpdates(_orders, _parseOrders(rows));
+      _orders
+        ..clear()
+        ..addAll(merged);
+      _cacheOrders();
+      state = state.copyWith(
+        orders: [..._orders],
+        isLoadingMore: false,
+        hasMore: page.hasMore,
+      );
+    } catch (_) {
+      _currentPage--;
+      if (ref.mounted) state = state.copyWith(isLoadingMore: false);
+    } finally {
+      _runDeferredRefresh();
+    }
+  }
+
+  void _runDeferredRefresh() {
+    if (_refreshAgain &&
+        ref.mounted &&
+        !state.isLoadingMore &&
+        _initialLoad == null) {
+      _refreshAgain = false;
+      unawaited(loadInitialOrders(force: true));
+    }
   }
 
   void addOrdersFromPolling(List<Order> newOrders) {
-    for (final order in newOrders) {
-      if (!_orders.any((o) => o.id == order.id)) {
-        _orders.insert(0, order);
-      }
-    }
+    final merged = mergeConfirmedOrderUpdates(_orders, newOrders);
+    _orders
+      ..clear()
+      ..addAll(merged);
     _cacheOrders();
     state = state.copyWith(orders: [..._orders]);
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {
     await StoreApiService.updateOrderStatus(orderId, status);
-    await loadInitialOrders();
+    await loadInitialOrders(force: true);
   }
 
   void _cacheOrders() {
@@ -1011,6 +1534,9 @@ class OrdersNotifier extends Notifier<OrdersState> {
             [],
         status: orderStatusFromWire(m['status']?.toString()),
         totalPrice: (m['totalPrice'] as num?)?.toDouble() ?? 0,
+        deliveryPrice: (m['deliveryPrice'] as num?)?.toDouble() ?? 0,
+        discountAmount: (m['discountAmount'] as num?)?.toDouble(),
+        couponCode: m['couponCode'] as String?,
         paymentMethod: m['paymentMethod']?.toString() ?? 'cod',
         createdAt:
             DateTime.tryParse(m['createdAt']?.toString() ?? '') ??
@@ -1022,9 +1548,62 @@ class OrdersNotifier extends Notifier<OrdersState> {
         phone: m['phone']?.toString(),
         governorate: m['governorate']?.toString(),
         region: m['region']?.toString(),
+        locationLatitude:
+            ((m['locationLatitude'] ?? m['location_latitude']) as num?)
+                ?.toDouble(),
+        locationLongitude:
+            ((m['locationLongitude'] ?? m['location_longitude']) as num?)
+                ?.toDouble(),
       );
     }).toList();
   }
+}
+
+/// Delta merging must not discard loaded history or duplicate overlapping pages.
+List<Order> mergeConfirmedOrderUpdates(
+  List<Order> existing,
+  List<Order> updates,
+) {
+  final byId = {for (final order in existing) order.id: order};
+  for (final order in updates) {
+    final old = byId[order.id];
+    if (old == null ||
+        old.awaitingSync ||
+        old.submissionError != null ||
+        !order.updatedAt.isBefore(old.updatedAt)) {
+      byId[order.id] = order;
+    }
+  }
+  return byId.values.toList()..sort((a, b) {
+    final time = b.createdAt.compareTo(a.createdAt);
+    return time == 0 ? b.id.compareTo(a.id) : time;
+  });
+}
+
+/// Local queued/failed attempts remain visible; a confirmed server order wins
+/// if a response was lost and the same id exists in both snapshots.
+List<Order> mergeOrderSnapshots(
+  List<Order> confirmed,
+  List<Map<String, dynamic>> localRows,
+) {
+  final orders = {for (final order in confirmed) order.id: order};
+  for (final row in localRows) {
+    final data = Map<String, dynamic>.from(
+      jsonDecode(row['data'] as String) as Map,
+    );
+    final id = data['id'] as String;
+    if (orders[id] != null &&
+        !orders[id]!.awaitingSync &&
+        orders[id]!.submissionError == null) {
+      continue;
+    }
+    orders[id] = Order.fromJson({
+      ...data,
+      'awaitingSync': data['submissionError'] == null,
+    });
+  }
+  return orders.values.toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 }
 
 final ordersProvider = NotifierProvider<OrdersNotifier, OrdersState>(

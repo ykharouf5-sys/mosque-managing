@@ -2,12 +2,12 @@ import 'package:studentry/shared/data/api_client.dart';
 import 'package:image_picker/image_picker.dart';
 
 class StoreImageService {
-  static const _maxUploadBytes = 2 * 1024 * 1024;
+  static const _maxUploadBytes = 8 * 1024 * 1024;
   static Future<String?> pickAndUpload({String kind = 'product'}) async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      maxWidth: kind == 'banner' ? 1920 : 1400,
-      maxHeight: kind == 'banner' ? 1080 : 1400,
+      maxWidth: kind == 'category' ? 512 : (kind == 'banner' ? 1920 : 1400),
+      maxHeight: kind == 'category' ? 512 : (kind == 'banner' ? 1080 : 1400),
       imageQuality: kind == 'banner' ? 72 : 75,
     );
     return picked == null ? null : uploadFile(picked.path, kind: kind);
@@ -20,7 +20,7 @@ class StoreImageService {
     final source = XFile(filePath);
     final bytes = await source.readAsBytes();
     if (bytes.length > _maxUploadBytes) {
-      throw Exception('حجم الصورة بعد الضغط يتجاوز 2 ميغابايت');
+      throw Exception('حجم الصورة بعد الضغط يتجاوز 8 ميغابايت');
     }
     final r = await ApiClient.instance.upload(
       '/store/images',

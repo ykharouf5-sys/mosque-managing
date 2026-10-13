@@ -1,3 +1,5 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/store/data/store_models.dart';
@@ -5,8 +7,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:studentry/shared/widgets/app_cached_network_image.dart';
+import 'package:studentry/store/presentation/widgets/category_outline_icon.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
@@ -23,27 +24,30 @@ class AllCategoriesScreen extends ConsumerStatefulWidget {
 class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final catalog = ref.watch(catalogProvider);
     final cartItemCount = ref.watch(cartProvider).itemCount;
     final categories = catalog.categories;
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
-        drawer: const AppDrawer(),
-        bottomNavigationBar: const AppBottomNav(selectedIndex: 3),
+        drawer: AppDrawer(),
+        bottomNavigationBar: AppBottomNav(selectedIndex: 3),
         appBar: AppBar(
           backgroundColor: AppColors.surface,
           elevation: 0,
           leading: Builder(
             builder: (ctx) => IconButton(
-              icon: const Icon(Icons.menu, color: AppColors.textDark),
+              icon: Icon(Icons.menu, color: AppColors.textDark),
               onPressed: () => Scaffold.of(ctx).openDrawer(),
             ),
           ),
           title: Text(
-            'التصنيفات',
+            storeUi('التصنيفات'),
             style: TextStyle(
               color: AppColors.textDark,
               fontWeight: FontWeight.bold,
@@ -71,7 +75,7 @@ class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
                     top: 6.h,
                     child: Container(
                       padding: EdgeInsets.all(4.r),
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: Colors.red,
                         shape: BoxShape.circle,
                       ),
@@ -110,9 +114,9 @@ class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: ListView.separated(
-                      physics: const AlwaysScrollableScrollPhysics(),
+                      physics: AlwaysScrollableScrollPhysics(),
                       itemCount: categories.length,
-                      separatorBuilder: (_, _) => const Divider(
+                      separatorBuilder: (_, _) => Divider(
                         color: _kDivider,
                         height: 1,
                         indent: 16,
@@ -138,26 +142,11 @@ class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
         child: Row(
           children: [
-            category.iconUrl.endsWith('.svg')
-                ? SvgPicture.network(
-                    category.iconUrl,
-                    colorFilter: const ColorFilter.mode(
-                      AppColors.primary,
-                      BlendMode.srcIn,
-                    ),
-                    width: 24.w,
-                    height: 24.h,
-                  )
-                : AppCachedNetworkImage(
-                    url: category.iconUrl,
-                    width: 24.w,
-                    height: 24.h,
-                    errorBuilder: () => Icon(
-                      Icons.category_outlined,
-                      color: AppColors.primary,
-                      size: 24.sp,
-                    ),
-                  ),
+            CategoryOutlineIcon(
+              label: category.label,
+              iconUrl: category.iconUrl,
+              size: 26,
+            ),
             SizedBox(width: 14.w),
             Expanded(
               child: Column(
@@ -175,7 +164,10 @@ class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
                     Padding(
                       padding: EdgeInsets.only(top: 2.h),
                       child: Text(
-                        '${category.productCount} منتج',
+                        AppLocale.text(
+                          '${category.productCount} منتج',
+                          '${category.productCount} products',
+                        ),
                         style: TextStyle(color: _kGrey, fontSize: 12.sp),
                       ),
                     ),
@@ -197,7 +189,7 @@ class _AllCategoriesScreenState extends ConsumerState<AllCategoriesScreen> {
           Icon(Icons.category_outlined, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            'لا توجد تصنيفات متاحة حالياً',
+            storeUi('لا توجد تصنيفات متاحة حالياً'),
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
         ],

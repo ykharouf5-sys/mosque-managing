@@ -24,7 +24,11 @@ import 'package:studentry/auth/presentation/register_screen.dart';
 import 'package:studentry/auth/presentation/welcome_screen.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/patients/presentation/notifications_screen.dart';
+import 'package:studentry/patients/data/notification_service.dart';
 import 'package:studentry/shared/data/api_config.dart';
+import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/widgets/refresh_visibility.dart';
+import 'package:studentry/shared/data/storage_usage_service.dart';
 import 'package:studentry/shared/cache/cache_manager.dart';
 import 'package:studentry/shared/data/connectivity_service.dart';
 import 'package:studentry/shared/data/auth_service.dart';
@@ -36,6 +40,7 @@ import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/widgets/main_navigation_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:studentry/store/data/store_api_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,16 +81,9 @@ Future<void> main() async {
         throw TimeoutException('SharedPreferences timed out');
       },
     );
-    final langCode = saved.getString('app_language');
-    if (langCode != null) {
-      AppLocale.localeNotifier.value = Locale(langCode);
-    } else {
-      final deviceLocale = WidgetsBinding.instance.platformDispatcher.locale;
-      if (deviceLocale.languageCode == 'ar' ||
-          deviceLocale.languageCode == 'en') {
-        AppLocale.localeNotifier.value = Locale(deviceLocale.languageCode);
-      }
-    }
+    AppLocale.localeNotifier.value = Locale(
+      saved.getString('app_language') == 'en' ? 'en' : 'ar',
+    );
   } catch (e) {
     debugPrint('[boot] language prefs skipped: $e');
   }
@@ -138,6 +136,11 @@ Future<void> main() async {
 
   debugPrint('[boot] runApp');
   runApp(const ProviderScope(child: MyApp()));
+  // Compiled runtime never uses hot-reload VM payloads from an older debug
+  // install. Clean only that exact triplet; keep all account documents intact.
+  unawaited(
+    StorageUsageService.cleanupDevelopmentArtifacts().catchError((_) => 0),
+  );
 }
 
 /// Shown when the app was built without a valid release configuration
@@ -222,11 +225,26 @@ class MyApp extends ConsumerStatefulWidget {
   ConsumerState<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends ConsumerState<MyApp> {
+class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
+  StreamSubscription? _authSubscription;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppLocale.localeNotifier.addListener(_localeChanged);
+    _setAppActive(
+      WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+    );
     _initAuthListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(NotificationService.handlePendingLaunchResponse());
+      // Auth initialization happens before the listener is attached. Restore
+      // the academic cache/polling binding for an already signed-in account.
+      if (AuthService().isLoggedIn) {
+        unawaited(AcademicStore.instance.rebindToCurrentSession());
+      }
+    });
   }
 
   void _initAuthListener() {
@@ -236,7 +254,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     // it would modify a provider while the widget tree is building.
     currentUserId = authService.userId;
     currentUserRole = authService.role;
-    authService.onAuthChange.listen((event) async {
+    _authSubscription = authService.onAuthChange.listen((event) async {
       if (event.session?.user != null) {
         final user = event.session!.user;
         final uid = user.id;
@@ -248,7 +266,7 @@ class _MyAppState extends ConsumerState<MyApp> {
           _invalidateUserScopedProviders();
           await Future.wait<dynamic>([
             PendingOrderService.retryPending(),
-            SyncService.syncNow(force: true),
+            SyncService.syncNow(),
             AcademicStore.instance.rebindToCurrentSession(),
             StorePollingService.rebindToCurrentSession(),
           ]);
@@ -267,6 +285,9 @@ class _MyAppState extends ConsumerState<MyApp> {
   }
 
   void _invalidateUserScopedProviders() {
+    ApiClient.instance.invalidateReads();
+    StoreApiService.resetSession();
+    ref.invalidate(catalogProvider);
     ref.invalidate(patientListProvider);
     ref.invalidate(patientDirectoryProvider);
     ref.invalidate(appointmentListProvider);
@@ -276,6 +297,29 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.invalidate(favoritesProvider);
     ref.invalidate(reviewsProvider);
     ref.invalidate(ordersProvider);
+  }
+
+  void _setAppActive(bool active) {
+    SyncService.setAppActive(active);
+    StorePollingService.setAppActive(active);
+    AcademicStore.instance.setAppActive(active);
+  }
+
+  void _localeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _setAppActive(state == AppLifecycleState.resumed);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppLocale.localeNotifier.removeListener(_localeChanged);
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -288,6 +332,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       builder: (context, child) {
         return MaterialApp(
           navigatorKey: navigatorKey,
+          navigatorObservers: [refreshRouteObserver],
           debugShowCheckedModeBanner: false,
           locale: locale,
           supportedLocales: const [Locale('ar'), Locale('en')],
@@ -314,6 +359,7 @@ class _MyAppState extends ConsumerState<MyApp> {
             '/student-home': (context) => Consumer(
               builder: (context, ref, _) => const MainNavigationScreen(),
             ),
+            '/store': (context) => const MainNavigationScreen(initialIndex: 3),
             '/schedule': (context) => const ScheduleScreen(),
             '/lessons': (context) => const LessonsScreen(),
             '/university': (context) => const UniversityScreen(),

@@ -1,6 +1,9 @@
+import 'package:studentry/utils/app_locale.dart';
 import 'dart:convert';
+import 'order_submission_result.dart';
 import 'package:studentry/shared/data/api_client.dart';
 import 'package:studentry/shared/data/api_request_queue.dart';
+import 'package:studentry/shared/data/request_diagnostics.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -23,9 +26,19 @@ class StoreApiService {
   static Future<Map<String, dynamic>>? _catalogRequest;
   static int? _catalogRequestGeneration;
   static int _catalogGeneration = 0;
+  static DateTime? _catalogCheckedAt;
 
-  static Future<Map<String, dynamic>> _loadCatalog({bool refresh = false}) {
-    if (_catalog != null && !refresh) return Future.value(_catalog!);
+  static Future<Map<String, dynamic>> _loadCatalog({
+    bool refresh = false,
+    bool force = false,
+  }) {
+    if (_catalog != null &&
+        !force &&
+        _catalogCheckedAt != null &&
+        DateTime.now().difference(_catalogCheckedAt!) <
+            const Duration(minutes: 5)) {
+      return Future.value(_catalog!);
+    }
     final active = _catalogRequest;
     final generation = _catalogGeneration;
     if (active != null && _catalogRequestGeneration == generation) {
@@ -48,7 +61,15 @@ class StoreApiService {
     _catalogGeneration++;
     _catalog = null;
     _catalogEtag = null;
+    _catalogCheckedAt = null;
+    _api.invalidateReads();
   }
+
+  static void resetSession() => _invalidateCatalog();
+
+  static Future<Map<String, dynamic>> fetchCatalogSummary({
+    bool force = false,
+  }) => _loadCatalog(refresh: true, force: force);
 
   static Future<Map<String, dynamic>> _requestCatalog({
     required bool refresh,
@@ -57,20 +78,24 @@ class StoreApiService {
     final etag = _catalogEtag;
     final r = await _api.get(
       '/store/catalog',
-      query: const {'include_products': '0'},
-      headers: {if (refresh && etag != null) 'If-None-Match': etag},
+      reason: refresh ? RequestReason.automatic : RequestReason.navigation,
+      query: const {'include_products': '0', 'locale': 'ar'},
+      headers: {'If-None-Match': ?etag},
     );
     if (generation != _catalogGeneration) {
       throw const _StaleCatalogResponse();
     }
+    _catalogCheckedAt = DateTime.now();
     if (r.statusCode == 304 && _catalog != null) return _catalog!;
+    final oldVersion = _catalog?['version'];
     _catalog = Map<String, dynamic>.from(r.data['data'] as Map);
+    if (oldVersion != _catalog!['version']) _api.invalidateReads();
     _catalogEtag = r.headers['etag'];
     return _catalog!;
   }
 
   static Future<void> refreshCatalog() async {
-    await _loadCatalog(refresh: true);
+    await _loadCatalog(refresh: true, force: true);
   }
 
   static Future<List<Map<String, dynamic>>> fetchCategories() async =>
@@ -102,12 +127,18 @@ class StoreApiService {
     String? search,
     String? categoryId,
     String? academicYear,
+    bool force = false,
+    RequestReason reason = RequestReason.navigation,
   }) async {
     final r = await _api.get(
       '/store/products',
+      freshness: const Duration(minutes: 5),
+      force: force,
+      reason: reason,
       query: {
         'page': '$page',
         'per_page': '$pageSize',
+        'locale': AppLocale.language,
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         if (categoryId != null && categoryId.isNotEmpty)
           'category_id': categoryId,
@@ -130,6 +161,7 @@ class StoreApiService {
         'id': c['id'] ?? const Uuid().v4(),
         'name': c['name'],
         'icon_url': c['iconUrl'] ?? c['icon_url'],
+        if (c.containsKey('translations')) 'translations': c['translations'],
       },
     );
     _invalidateCatalog();
@@ -138,11 +170,12 @@ class StoreApiService {
   static Future<void> updateCategory(
     String id,
     String name,
-    String iconUrl,
-  ) async {
+    String iconUrl, {
+    Map<String, dynamic>? translations,
+  }) async {
     await _api.put(
       '/store/categories/$id',
-      body: {'name': name, 'icon_url': iconUrl},
+      body: {'name': name, 'icon_url': iconUrl, 'translations': ?translations},
     );
     _invalidateCatalog();
   }
@@ -158,7 +191,10 @@ class StoreApiService {
   }
 
   static Future<void> updateProduct(String id, Map<String, dynamic> p) async {
-    await _api.put('/store/products/$id', body: _productPayload(p));
+    await _api.put(
+      '/store/products/$id',
+      body: _productPayload(p, partial: true),
+    );
     _invalidateCatalog();
   }
 
@@ -173,7 +209,10 @@ class StoreApiService {
   }
 
   static Future<void> updateBanner(String id, Map<String, dynamic> b) async {
-    await _api.put('/store/banners/$id', body: _bannerPayload(b));
+    await _api.put(
+      '/store/banners/$id',
+      body: _bannerPayload(b, partial: true),
+    );
     _invalidateCatalog();
   }
 
@@ -299,14 +338,67 @@ class StoreApiService {
     int page,
     int pageSize, {
     String? status,
-  }) async {
+  }) async => (await fetchOrderPage(page, pageSize, status: status)).rows;
+
+  static Future<
+    ({List<Map<String, dynamic>> rows, String? serverTime, bool hasMore})
+  >
+  fetchOrderPage(int page, int pageSize, {String? status}) async {
     final q = {'page': '${page + 1}', 'per_page': '$pageSize'};
     if (status != null) q['status'] = status;
-    final r = await _api.get('/orders', query: q);
-    return _maps(r.data['data']['data']);
+    final r = await _api.get(
+      '/orders',
+      query: q,
+      reason: RequestReason.navigation,
+    );
+    final payload = r.data['data']['data'];
+    return (
+      rows: _maps(payload),
+      serverTime: r.data['server_time'] as String?,
+      hasMore:
+          (r.data['data']['current_page'] as num) <
+          (r.data['data']['last_page'] as num),
+    );
   }
 
-  static Future<String> createOrderSafe(Map<String, dynamic> order) async {
+  /// Keyset change feed: keeps old loaded pages and downloads changed statuses
+  /// even if their orders are no longer on page one. Never cache this feed.
+  static Future<({List<Map<String, dynamic>> rows, String serverTime})>
+  fetchOrderChanges(String since) async {
+    final rows = <Map<String, dynamic>>[];
+    String? cursor;
+    String? until;
+    final seenCursors = <String>{};
+    do {
+      final r = await _api.get(
+        '/orders',
+        reason: RequestReason.automatic,
+        query: {
+          'updated_since': since,
+          'per_page': '25',
+          'cursor': ?cursor,
+          'sync_until': ?until,
+        },
+      );
+      final serverTime = r.data['server_time'] as String?;
+      if (serverTime == null ||
+          DateTime.tryParse(serverTime) == null ||
+          (until != null && serverTime != until)) {
+        throw const FormatException('Invalid order sync boundary');
+      }
+      until = serverTime;
+      rows.addAll(_maps(r.data['data']['data']));
+      cursor = r.data['data']['next_cursor'] as String?;
+      if (cursor != null && !seenCursors.add(cursor)) {
+        throw const FormatException('Repeated order sync cursor');
+      }
+    } while (cursor != null);
+    return (rows: rows, serverTime: until);
+  }
+
+  static Future<OrderSubmissionResult> createOrderSafe(
+    Map<String, dynamic> order,
+  ) async {
     try {
       final row = order.containsKey('total') ? order : orderToRow(order);
       final details = Map<String, dynamic>.from(row)
@@ -321,11 +413,33 @@ class StoreApiService {
           'details': details,
         },
       );
-      return r.data['data']['result']?.toString() ?? 'error';
+      final payload = Map<String, dynamic>.from(r.data['data'] as Map);
+      final confirmed = payload['order'];
+      return OrderSubmissionResult(
+        payload['result']?.toString() ?? 'error',
+        confirmedOrder: confirmed is Map
+            ? rowToOrderMap(Map<String, dynamic>.from(confirmed))
+            : null,
+      );
     } on ApiException catch (e) {
-      if (e.statusCode == 409) return 'insufficient_stock';
-      if (e.statusCode == 422) return 'invalid_order';
-      return 'error';
+      if (e.statusCode == 409) {
+        final details = e.details;
+        final result = details is Map && details['data'] is Map
+            ? details['data']['result']?.toString()
+            : null;
+        return OrderSubmissionResult(
+          result == 'insufficient_stock'
+              ? 'insufficient_stock'
+              : 'invalid_order',
+        );
+      }
+      if (e.statusCode == 422) {
+        return const OrderSubmissionResult('invalid_order');
+      }
+      if (e.statusCode == 401 || e.statusCode == 403 || e.statusCode == 404) {
+        return const OrderSubmissionResult('forbidden');
+      }
+      return OrderSubmissionResult('error', retryAfter: e.retryAfter);
     }
   }
 
@@ -335,23 +449,33 @@ class StoreApiService {
 
   static Map<String, dynamic> rowToCategoryMap(Map<String, dynamic> r) => {
     'id': r['id'],
-    'label': r['name'],
+    'translations': r['translations'],
+    'label': (r['translations'] as Map?)?['ar']?['name'] ?? r['name'],
     'iconUrl': r['icon_url'] ?? '',
-    'name': r['name'],
+    'productCount': r['products_count'],
+    'name': (r['translations'] as Map?)?['ar']?['name'] ?? r['name'],
     'icon_url': r['icon_url'],
   };
   static Map<String, dynamic> rowToProductMap(Map<String, dynamic> r) => {
     'id': r['id'],
-    'name': r['name'],
+    'translations': r['translations'],
+    'name': (r['translations'] as Map?)?['ar']?['name'] ?? r['name'],
+    'publicationStatus': r['publication_status'] ?? 'published',
+    'isTest': r['is_test'] == true,
     'brand': r['brand'] ?? '',
-    'description': r['description'] ?? '',
+    'description':
+        (r['translations'] as Map?)?['ar']?['description'] ??
+        r['description'] ??
+        '',
     'imageUrl': r['image_url'] ?? '',
+    'thumbnailUrl': r['thumbnail_url'],
     'categoryId': r['category_id'] ?? '',
     'categoryName': '',
     'price': _toDouble(r['price']),
     'rating': _toDouble(r['reviews_avg_rating']),
     'reviewsCount': _toInt(r['reviews_count']),
-    'stock': _toInt(r['stock']),
+    'stock': _toInt(r['available_quantity'] ?? r['stock']),
+    'physicalStock': _toInt(r['stock']),
     'createdAt': r['created_at'] ?? DateTime.now().toIso8601String(),
     'academicYear': r['academic_year'],
     'deliveryPrice': _toDouble(r['delivery_price']),
@@ -359,6 +483,7 @@ class StoreApiService {
   };
   static Map<String, dynamic> rowToBannerMap(Map<String, dynamic> r) => {
     'id': r['id'],
+    'translations': r['translations'],
     'title': r['title'] ?? '',
     'subtitle': r['subtitle'] ?? '',
     'discountText': r['discount_text'] ?? '',
@@ -371,6 +496,7 @@ class StoreApiService {
   static Map<String, dynamic> rowToOrderMap(Map<String, dynamic> r) {
     final d = Map<String, dynamic>.from(r['details'] as Map? ?? {});
     return {
+      ...d,
       'id': r['id'],
       'items': _normalizeOrderItems(r['items']),
       'totalPrice': _toDouble(r['total'] ?? r['totalPrice']),
@@ -378,7 +504,12 @@ class StoreApiService {
       'createdAt': r['created_at'],
       'updatedAt': r['updated_at'] ?? r['created_at'],
       'userId': r['user_id'] ?? '',
-      ...d,
+      'deliveryPrice': _toDouble(d['delivery_price'] ?? d['deliveryPrice']),
+      'discountAmount': _toDouble(d['discount_amount'] ?? d['discountAmount']),
+      'couponCode': d['coupon_code'] ?? d['couponCode'],
+      'shippingAddress': d['shipping_address'] ?? d['shippingAddress'],
+      'paymentMethod': d['payment_method'] ?? d['paymentMethod'],
+      'awaitingSync': false,
     };
   }
 
@@ -405,6 +536,8 @@ class StoreApiService {
               item['product_name']?.toString() ??
               item['productName']?.toString() ??
               '',
+          'translations':
+              item['product_translations'] ?? product['translations'],
           'brand': product['brand']?.toString() ?? '',
           'description': product['description']?.toString() ?? '',
           'imageUrl':
@@ -456,33 +589,88 @@ class StoreApiService {
     'phone': o['phone'],
     'governorate': o['governorate'],
     'region': o['region'],
+    'location_latitude': o['locationLatitude'] ?? o['location_latitude'],
+    'location_longitude': o['locationLongitude'] ?? o['location_longitude'],
   };
-  static Map<String, dynamic> _productPayload(Map<String, dynamic> p) => {
-    'id': p['id'] ?? const Uuid().v4(),
-    'category_id': p['categoryId'] ?? p['category_id'],
-    'name': p['name'],
-    'brand': p['brand'] ?? '',
-    'description': p['description'] ?? '',
-    'academic_year': p['academicYear'] ?? p['academic_year'],
-    'price': (p['price'] as num?)?.toDouble() ?? 0,
-    'delivery_price':
-        (p['deliveryPrice'] as num?)?.toDouble() ??
-        (p['delivery_price'] as num?)?.toDouble() ??
-        0,
-    'stock': (p['stock'] as num?)?.toInt() ?? 0,
-    'image_url': p['imageUrl'] ?? p['image_url'] ?? '',
-  };
-  static Map<String, dynamic> _bannerPayload(Map<String, dynamic> b) => {
-    'id': b['id'] ?? const Uuid().v4(),
-    'title': b['title'] ?? '',
-    'subtitle': b['subtitle'] ?? '',
-    'discount_text': b['discountText'] ?? b['discount_text'] ?? '',
-    'image_url': b['imageUrl'] ?? b['image_url'] ?? '',
-    'cta_text': b['ctaText'] ?? b['cta_text'] ?? '',
-    'action_route': b['actionRoute'] ?? b['action_route'] ?? '',
-    'product_id': b['productId'] ?? b['product_id'],
-    'category_id': b['categoryId'] ?? b['category_id'],
-  };
+  static Map<String, dynamic> _productPayload(
+    Map<String, dynamic> p, {
+    bool partial = false,
+  }) {
+    final body = <String, dynamic>{
+      'id': p['id'] ?? const Uuid().v4(),
+      'category_id': p['categoryId'] ?? p['category_id'],
+      'name': p['name'],
+      'brand': p['brand'] ?? '',
+      'description': p['description'] ?? '',
+      'academic_year': p['academicYear'] ?? p['academic_year'],
+      'price': (p['price'] as num?)?.toDouble() ?? 0,
+      'delivery_price':
+          (p['deliveryPrice'] as num?)?.toDouble() ??
+          (p['delivery_price'] as num?)?.toDouble() ??
+          0,
+      'stock': (p['stock'] as num?)?.toInt() ?? 0,
+      'image_url': p['imageUrl'] ?? p['image_url'] ?? '',
+    };
+    if (partial) {
+      body.remove('id');
+      const aliases = <String, List<String>>{
+        'category_id': ['categoryId', 'category_id'],
+        'name': ['name'],
+        'brand': ['brand'],
+        'description': ['description'],
+        'academic_year': ['academicYear', 'academic_year'],
+        'price': ['price'],
+        'delivery_price': ['deliveryPrice', 'delivery_price'],
+        'stock': ['stock'],
+        'image_url': ['imageUrl', 'image_url'],
+      };
+      body.removeWhere(
+        (key, _) => !(aliases[key]?.any(p.containsKey) ?? false),
+      );
+    }
+    if (p.containsKey('translations')) body['translations'] = p['translations'];
+    if (p.containsKey('publicationStatus')) {
+      body['publication_status'] = p['publicationStatus'];
+    }
+    if (p.containsKey('isTest')) body['is_test'] = p['isTest'];
+    return body;
+  }
+
+  static Map<String, dynamic> _bannerPayload(
+    Map<String, dynamic> b, {
+    bool partial = false,
+  }) {
+    final body = <String, dynamic>{
+      'id': b['id'] ?? const Uuid().v4(),
+      'title': b['title'] ?? '',
+      'subtitle': b['subtitle'] ?? '',
+      'discount_text': b['discountText'] ?? b['discount_text'] ?? '',
+      'image_url': b['imageUrl'] ?? b['image_url'] ?? '',
+      'cta_text': b['ctaText'] ?? b['cta_text'] ?? '',
+      'action_route': b['actionRoute'] ?? b['action_route'] ?? '',
+      'product_id': b['productId'] ?? b['product_id'],
+      'category_id': b['categoryId'] ?? b['category_id'],
+    };
+    if (partial) {
+      body.remove('id');
+      const aliases = <String, List<String>>{
+        'title': ['title'],
+        'subtitle': ['subtitle'],
+        'discount_text': ['discountText', 'discount_text'],
+        'image_url': ['imageUrl', 'image_url'],
+        'cta_text': ['ctaText', 'cta_text'],
+        'action_route': ['actionRoute', 'action_route'],
+        'product_id': ['productId', 'product_id'],
+        'category_id': ['categoryId', 'category_id'],
+      };
+      body.removeWhere(
+        (key, _) => !(aliases[key]?.any(b.containsKey) ?? false),
+      );
+    }
+    if (b.containsKey('translations')) body['translations'] = b['translations'];
+    return body;
+  }
+
   static Map<String, dynamic> _couponPayload(
     Map<String, dynamic> coupon, {
     required bool includeId,

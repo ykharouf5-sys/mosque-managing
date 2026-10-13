@@ -1,32 +1,52 @@
+// ignore_for_file: prefer_initializing_formals
+import 'package:studentry/utils/app_locale.dart';
+import 'catalog_translations.dart';
+
 class PromoBanner {
   final String id,
-      title,
-      subtitle,
-      discountText,
-      imageUrl,
-      ctaText,
+      _title,
+      _subtitle,
+      _discountText,
+      _imageUrl,
+      _ctaText,
       actionRoute;
+  final CatalogCopy translations;
+  String get title => AppLocale.catalogText(translations, "title", _title);
+  String get subtitle =>
+      AppLocale.catalogText(translations, "subtitle", _subtitle);
+  String get discountText =>
+      AppLocale.catalogText(translations, "discount_text", _discountText);
+  String get ctaText =>
+      AppLocale.catalogText(translations, "cta_text", _ctaText);
+  String get imageUrl =>
+      AppLocale.catalogText(translations, "image_url", _imageUrl);
   final String? productId;
   final String? categoryId;
   const PromoBanner({
     required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.discountText,
-    required this.imageUrl,
-    required this.ctaText,
+    required String title,
+    required String subtitle,
+    required String discountText,
+    required String imageUrl,
+    required String ctaText,
     required this.actionRoute,
     this.productId,
     this.categoryId,
-  });
+    this.translations = const {},
+  }) : _title = title,
+       _subtitle = subtitle,
+       _discountText = discountText,
+       _imageUrl = imageUrl,
+       _ctaText = ctaText;
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'title': title,
-    'subtitle': subtitle,
-    'discountText': discountText,
-    'imageUrl': imageUrl,
-    'ctaText': ctaText,
+    'translations': translations,
+    'title': _title,
+    'subtitle': _subtitle,
+    'discountText': _discountText,
+    'imageUrl': _imageUrl,
+    'ctaText': _ctaText,
     'actionRoute': actionRoute,
     if (productId != null) 'productId': productId,
     if (categoryId != null) 'categoryId': categoryId,
@@ -34,6 +54,7 @@ class PromoBanner {
 
   factory PromoBanner.fromJson(Map<String, dynamic> json) => PromoBanner(
     id: json['id'] as String,
+    translations: parseCatalogCopy(json['translations']),
     title: json['title'] as String,
     subtitle: json['subtitle'] as String,
     discountText: json['discountText'] as String,
@@ -96,45 +117,64 @@ class Coupon {
 }
 
 class ProductCategory {
-  final String id, label, iconUrl;
+  final String id, _label, iconUrl;
+  final CatalogCopy translations;
+  String get label => AppLocale.catalogText(translations, "name", _label);
   int? productCount;
   ProductCategory({
     required this.id,
-    required this.label,
+    required String label,
     required this.iconUrl,
     this.productCount,
-  });
+    this.translations = const {},
+  }) : _label = label;
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'label': label,
+    'label': _label,
+    'translations': translations,
     'iconUrl': iconUrl,
+    if (productCount != null) 'productCount': productCount,
   };
 
   factory ProductCategory.fromJson(Map<String, dynamic> json) =>
       ProductCategory(
         id: json['id'] as String,
+        translations: parseCatalogCopy(json['translations']),
         label: json['label'] as String,
         iconUrl: json['iconUrl'] as String,
+        productCount: (json['productCount'] as num?)?.toInt(),
       );
 }
 
 class Product {
-  final String id, name, description, imageUrl, categoryId, categoryName;
+  final String id, _name, _description, imageUrl, categoryId, _categoryName;
+  final CatalogCopy translations, categoryTranslations;
+  final String publicationStatus;
+  final bool isTest;
+  String get name => AppLocale.catalogText(translations, "name", _name);
+  String get description =>
+      AppLocale.catalogText(translations, "description", _description);
+  String get categoryName =>
+      AppLocale.catalogText(categoryTranslations, "name", _categoryName);
   final double price, rating;
   final int reviewsCount, stock;
   final DateTime createdAt;
   final String brand;
   final String? academicYear;
   final double deliveryPrice;
+  final String? thumbnailUrl;
+  final int? physicalStock;
+  String get listImageUrl =>
+      thumbnailUrl?.isNotEmpty == true ? thumbnailUrl! : imageUrl;
   Product({
     required this.id,
-    required this.name,
+    required String name,
     this.brand = '',
-    required this.description,
+    required String description,
     required this.imageUrl,
     required this.categoryId,
-    required this.categoryName,
+    required String categoryName,
     required this.price,
     this.rating = 0.0,
     this.reviewsCount = 0,
@@ -142,18 +182,32 @@ class Product {
     required this.createdAt,
     this.academicYear,
     this.deliveryPrice = 0.0,
-  });
+    this.thumbnailUrl,
+    this.physicalStock,
+    this.translations = const {},
+    this.categoryTranslations = const {},
+    this.publicationStatus = 'published',
+    this.isTest = false,
+  }) : _name = name,
+       _description = description,
+       _categoryName = categoryName;
 
   bool get inStock => stock > 0;
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'name': name,
+    'translations': translations,
+    'categoryTranslations': categoryTranslations,
+    'publicationStatus': publicationStatus,
+    'isTest': isTest,
+    'name': _name,
     'brand': brand,
-    'description': description,
+    'description': _description,
     'imageUrl': imageUrl,
+    if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
+    if (physicalStock != null) 'physicalStock': physicalStock,
     'categoryId': categoryId,
-    'categoryName': categoryName,
+    'categoryName': _categoryName,
     'price': price,
     'rating': rating,
     'reviewsCount': reviewsCount,
@@ -165,10 +219,16 @@ class Product {
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
     id: json['id'] as String,
+    translations: parseCatalogCopy(json['translations']),
+    categoryTranslations: parseCatalogCopy(json['categoryTranslations']),
+    publicationStatus: json['publicationStatus'] as String? ?? 'published',
+    isTest: json['isTest'] == true,
     name: json['name'] as String,
     brand: (json['brand'] as String?) ?? '',
     description: json['description'] as String,
     imageUrl: json['imageUrl'] as String,
+    thumbnailUrl: json['thumbnailUrl'] as String?,
+    physicalStock: (json['physicalStock'] as num?)?.toInt(),
     categoryId: json['categoryId'] as String,
     categoryName: json['categoryName'] as String,
     price: (json['price'] as num).toDouble(),
@@ -217,23 +277,25 @@ OrderStatus orderStatusFromWire(String? value) {
 String orderStatusLabel(OrderStatus status) {
   switch (status) {
     case OrderStatus.pending:
-      return 'قيد الانتظار';
+      return AppLocale.text('قيد الانتظار', 'Pending');
     case OrderStatus.accepted:
-      return 'مقبول';
+      return AppLocale.text('مقبول', 'Accepted');
     case OrderStatus.preparing:
-      return 'قيد التحضير';
+      return AppLocale.text('قيد التحضير', 'Preparing');
     case OrderStatus.outForDelivery:
-      return 'خرج للتوصيل';
+      return AppLocale.text('خرج للتوصيل', 'Out for delivery');
     case OrderStatus.delivered:
-      return 'تم التسليم';
+      return AppLocale.text('تم التسليم', 'Delivered');
     case OrderStatus.rejected:
-      return 'مرفوض';
+      return AppLocale.text('مرفوض', 'Rejected');
     case OrderStatus.cancelled:
-      return 'ملغي';
+      return AppLocale.text('ملغي', 'Cancelled');
   }
 }
 
 class Order {
+  final bool awaitingSync;
+  final String? submissionError;
   final String id;
   final List<CartItem> items;
   final double totalPrice;
@@ -256,8 +318,12 @@ class Order {
   final String? phone;
   final String? governorate;
   final String? region;
+  final double? locationLatitude;
+  final double? locationLongitude;
 
   Order({
+    this.awaitingSync = false,
+    this.submissionError,
     required this.id,
     required this.items,
     required this.totalPrice,
@@ -280,9 +346,13 @@ class Order {
     this.phone,
     this.governorate,
     this.region,
+    this.locationLatitude,
+    this.locationLongitude,
   });
 
   Map<String, dynamic> toJson() => {
+    'awaitingSync': awaitingSync,
+    if (submissionError != null) 'submissionError': submissionError,
     'id': id,
     'items': items.map((i) => i.toJson()).toList(),
     'totalPrice': totalPrice,
@@ -305,9 +375,13 @@ class Order {
     if (phone != null) 'phone': phone,
     if (governorate != null) 'governorate': governorate,
     if (region != null) 'region': region,
+    if (locationLatitude != null) 'locationLatitude': locationLatitude,
+    if (locationLongitude != null) 'locationLongitude': locationLongitude,
   };
 
   factory Order.fromJson(Map<String, dynamic> json) => Order(
+    awaitingSync: json['awaitingSync'] == true,
+    submissionError: json['submissionError'] as String?,
     id: json['id'] as String,
     items: (json['items'] as List)
         .map((i) => CartItem.fromJson(i as Map<String, dynamic>))
@@ -334,6 +408,12 @@ class Order {
     phone: json['phone'] as String?,
     governorate: json['governorate'] as String?,
     region: json['region'] as String?,
+    locationLatitude:
+        ((json['locationLatitude'] ?? json['location_latitude']) as num?)
+            ?.toDouble(),
+    locationLongitude:
+        ((json['locationLongitude'] ?? json['location_longitude']) as num?)
+            ?.toDouble(),
   );
 }
 

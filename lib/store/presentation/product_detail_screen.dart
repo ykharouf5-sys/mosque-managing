@@ -1,3 +1,5 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
 
 import 'package:studentry/store/data/store_models.dart';
@@ -6,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
+import 'package:studentry/store/presentation/product_purchase_bar.dart';
 import 'package:studentry/shared/widgets/app_cached_network_image.dart';
 
 const Color _kGrey = Color(0xFF9E9E9E);
@@ -39,6 +42,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final isFavorite = ref
         .watch(favoritesProvider)
         .isFavorite(widget.product.id);
@@ -51,18 +55,20 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
     final reviews = ref.watch(reviewsProvider).forProduct(widget.product.id);
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
           backgroundColor: AppColors.surface,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.chevron_left, color: AppColors.primary),
+            icon: Icon(Icons.chevron_left, color: AppColors.primary),
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(
-            'تفاصيل المنتج',
+            storeUi('تفاصيل المنتج'),
             style: TextStyle(
               color: AppColors.textDark,
               fontWeight: FontWeight.bold,
@@ -71,24 +77,42 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
           ),
           centerTitle: true,
         ),
+        bottomNavigationBar: ProductPurchaseBar(
+          quantity: _quantity,
+          inStock: product.inStock,
+          onDecrease: _quantity > 1 ? () => setState(() => _quantity--) : null,
+          onIncrease: _quantity < product.stock
+              ? () => setState(() => _quantity++)
+              : null,
+          onAdd: () => _addToCart(product),
+        ),
         body: SingleChildScrollView(
           padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildProductImage(isFavorite),
+              _buildProductImage(product, isFavorite),
               SizedBox(height: 20.h),
-              _buildProductInfo(),
-              SizedBox(height: 20.h),
-              _buildPrice(),
+              _buildProductInfo(product),
+              SizedBox(height: 16.h),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [_buildPrice(product), _buildStockStatus(product)],
+              ),
               SizedBox(height: 14.h),
-              _buildDescription(),
-              SizedBox(height: 12.h),
-              _buildStockStatus(product),
-              SizedBox(height: 24.h),
-              _buildQuantitySelector(),
-              SizedBox(height: 24.h),
-              _buildAddToCartButton(product),
+              _buildDescription(product),
+              if (product.deliveryPrice > 0) ...[
+                SizedBox(height: 12.h),
+                Text(
+                  AppLocale.text(
+                    'رسوم التوصيل: ${_formatPrice(product.deliveryPrice)} SYP',
+                    'Delivery fee: ${_formatPrice(product.deliveryPrice)} SYP',
+                  ),
+                  style: TextStyle(color: AppColors.textGray, fontSize: 13.sp),
+                ),
+              ],
               SizedBox(height: 32.h),
               _buildReviewsSection(product, reviews),
               SizedBox(height: 16.h),
@@ -99,8 +123,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
     );
   }
 
-  Widget _buildProductImage(bool isFavorite) {
-    final product = widget.product;
+  Widget _buildProductImage(Product product, bool isFavorite) {
     Widget imageWidget;
     if (product.imageUrl.isEmpty) {
       imageWidget = Icon(
@@ -128,10 +151,11 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
       children: [
         Container(
           width: double.infinity,
-          height: 280.h,
+          height: 310.h,
           decoration: BoxDecoration(
-            color: _kQuantityBg,
+            color: AppColors.surface,
             borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.divider),
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
@@ -146,11 +170,18 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
               try {
                 await ref
                     .read(favoritesProvider.notifier)
-                    .toggle(widget.product.id);
+                    .toggle(widget.product.id, product: widget.product);
               } catch (error) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('تعذر تحديث المفضلة: $error')),
+                    SnackBar(
+                      content: Text(
+                        AppLocale.text(
+                          'تعذر تحديث المفضلة: $error',
+                          'Could not update favorites: $error',
+                        ),
+                      ),
+                    ),
                   );
                 }
               }
@@ -180,22 +211,32 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
     );
   }
 
-  Widget _buildProductInfo() {
-    final product = widget.product;
+  Widget _buildProductInfo(Product product) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (product.categoryName.isNotEmpty) ...[
+          Text(
+            product.categoryName,
+            style: TextStyle(
+              color: AppColors.primary,
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 6.h),
+        ],
         Text(
           product.name,
           style: TextStyle(
             color: AppColors.textDark,
             fontWeight: FontWeight.bold,
-            fontSize: 18.sp,
+            fontSize: 22.sp,
           ),
         ),
         SizedBox(height: 4.h),
         Text(
-          product.brand.isNotEmpty ? product.brand : product.categoryName,
+          product.brand,
           style: TextStyle(
             color: _kGrey,
             fontSize: 14.sp,
@@ -235,9 +276,9 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
     );
   }
 
-  Widget _buildPrice() {
+  Widget _buildPrice(Product product) {
     return Text(
-      '${_formatPrice(widget.product.price)} د.س',
+      storeUi('${_formatPrice(product.price)} SYP'),
       style: TextStyle(
         color: AppColors.primary,
         fontWeight: FontWeight.bold,
@@ -255,85 +296,43 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
         );
   }
 
-  Widget _buildDescription() {
-    return Text(
-      widget.product.description,
-      style: TextStyle(color: _kGrey, fontSize: 13.sp, height: 1.7),
-    );
-  }
-
-  Widget _buildQuantitySelector() {
-    return Row(
+  Widget _buildDescription(Product product) {
+    if (product.description.trim().isEmpty) return SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: _kQuantityBg,
-            borderRadius: BorderRadius.circular(14),
+        Text(
+          storeUi('عن المنتج'),
+          style: TextStyle(
+            color: AppColors.textDark,
+            fontSize: 16.sp,
+            fontWeight: FontWeight.bold,
           ),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove, color: AppColors.primary),
-                onPressed: () {
-                  if (_quantity > 1) setState(() => _quantity--);
-                },
-              ),
-              SizedBox(
-                width: 36.w,
-                child: Text(
-                  _quantity.toString(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.textDark,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16.sp,
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, color: AppColors.primary),
-                onPressed: () => setState(() => _quantity++),
-              ),
-            ],
+        ),
+        SizedBox(height: 6.h),
+        Text(
+          product.description,
+          style: TextStyle(
+            color: AppColors.textGray,
+            fontSize: 13.sp,
+            height: 1.7,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildAddToCartButton(Product product) {
-    final outOfStock = !product.inStock;
-    return SizedBox(
-      width: double.infinity,
-      height: 54.h,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: outOfStock ? _kGrey : AppColors.primary,
-          foregroundColor: AppColors.textLight,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+  void _addToCart(Product product) {
+    ref.read(cartProvider.notifier).addToCart(product, quantity: _quantity);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppLocale.text(
+            'تمت إضافة $_quantity × ${product.name} إلى السلة',
+            'Added $_quantity × ${product.name} to cart',
           ),
         ),
-        onPressed: outOfStock
-            ? null
-            : () {
-                ref
-                    .read(cartProvider.notifier)
-                    .addToCart(product, quantity: _quantity);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'تمت إضافة $_quantity × ${product.name} إلى السلة',
-                    ),
-                    backgroundColor: AppColors.primary,
-                  ),
-                );
-              },
-        child: Text(
-          outOfStock ? 'نفد من المخزون' : 'إضافة إلى السلة',
-          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700),
-        ),
+        backgroundColor: AppColors.primary,
       ),
     );
   }
@@ -352,7 +351,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
             Icon(Icons.error_outline, color: Colors.red, size: 18.sp),
             SizedBox(width: 8.w),
             Text(
-              'نفد من المخزون',
+              storeUi('نفد من المخزون'),
               style: TextStyle(
                 color: Colors.red,
                 fontSize: 13.sp,
@@ -376,7 +375,10 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
             Icon(Icons.inventory_2, color: AppColors.pending, size: 18.sp),
             SizedBox(width: 8.w),
             Text(
-              'بقيت ${product.stock} قطع فقط',
+              AppLocale.text(
+                'بقيت ${product.stock} قطع فقط',
+                'Only ${product.stock} left',
+              ),
               style: TextStyle(
                 color: AppColors.pending,
                 fontSize: 13.sp,
@@ -403,7 +405,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
           ),
           SizedBox(width: 8.w),
           Text(
-            'متوفر في المخزون',
+            storeUi('متوفر في المخزون'),
             style: TextStyle(
               color: AppColors.success,
               fontSize: 13.sp,
@@ -424,14 +426,17 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.rate_review_outlined,
                   color: AppColors.primary,
                   size: 20,
                 ),
                 SizedBox(width: 8.w),
                 Text(
-                  'التقييمات (${product.reviewsCount})',
+                  AppLocale.text(
+                    'التقييمات (${product.reviewsCount})',
+                    'Reviews (${product.reviewsCount})',
+                  ),
                   style: TextStyle(
                     color: AppColors.textDark,
                     fontWeight: FontWeight.bold,
@@ -442,8 +447,11 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
             ),
             TextButton.icon(
               onPressed: () => _showAddReviewDialog(),
-              icon: const Icon(Icons.add, size: 18),
-              label: Text('أضف تقييم', style: TextStyle(fontSize: 13.sp)),
+              icon: Icon(Icons.add, size: 18),
+              label: Text(
+                storeUi('أضف تقييم'),
+                style: TextStyle(fontSize: 13.sp),
+              ),
             ),
           ],
         ),
@@ -461,12 +469,12 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
                 Icon(Icons.rate_review_outlined, color: _kGrey, size: 32.sp),
                 SizedBox(height: 8.h),
                 Text(
-                  'لا توجد تقييمات بعد',
+                  storeUi('لا توجد تقييمات بعد'),
                   style: TextStyle(color: _kGrey, fontSize: 13.sp),
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  'كن أول من يقيم هذا المنتج',
+                  storeUi('كن أول من يقيم هذا المنتج'),
                   style: TextStyle(color: _kGrey, fontSize: 12.sp),
                 ),
               ],
@@ -555,14 +563,16 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: AppLocale.language == 'ar'
+            ? TextDirection.rtl
+            : TextDirection.ltr,
         child: StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: const Text(
-              'أضف تقييمك',
+            title: Text(
+              storeUi('أضف تقييمك'),
               style: TextStyle(
                 color: AppColors.textDark,
                 fontWeight: FontWeight.bold,
@@ -572,7 +582,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'التقييم',
+                  storeUi('التقييم'),
                   style: TextStyle(color: _kGrey, fontSize: 13.sp),
                 ),
                 SizedBox(height: 8.h),
@@ -596,7 +606,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
                   controller: commentC,
                   maxLines: 3,
                   decoration: InputDecoration(
-                    hintText: 'اكتب تعليقك (اختياري)',
+                    hintText: storeUi('اكتب تعليقك (اختياري)'),
                     filled: true,
                     fillColor: _kQuantityBg,
                     border: OutlineInputBorder(
@@ -610,7 +620,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء'),
+                child: Text(storeUi('إلغاء')),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -634,12 +644,19 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
                   } catch (error) {
                     if (ctx.mounted) {
                       ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text('تعذر حفظ التقييم: $error')),
+                        SnackBar(
+                          content: Text(
+                            AppLocale.text(
+                              'تعذر حفظ التقييم: $error',
+                              'Could not save review: $error',
+                            ),
+                          ),
+                        ),
                       );
                     }
                   }
                 },
-                child: const Text('إرسال'),
+                child: Text(storeUi('إرسال')),
               ),
             ],
           ),

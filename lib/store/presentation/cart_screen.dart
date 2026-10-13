@@ -1,3 +1,5 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
 
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
@@ -37,6 +39,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final cart = ref.watch(cartProvider);
     final cartItems = cart.items;
     final cartTotal = cart.total;
@@ -45,21 +48,23 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     final discountedTotal = cart.discountedTotal;
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
-        bottomNavigationBar: const AppBottomNav(selectedIndex: 3),
+        bottomNavigationBar: AppBottomNav(selectedIndex: 3),
         appBar: AppBar(
-          title: const Text('سلة المشتريات'),
+          title: Text(storeUi('سلة المشتريات')),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
+            icon: Icon(Icons.arrow_back, color: AppColors.textDark),
             onPressed: () => Navigator.pop(context),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pushNamed(context, '/my-orders'),
               child: Text(
-                'طلباتي',
+                storeUi('طلباتي'),
                 style: TextStyle(color: AppColors.primary, fontSize: 13.sp),
               ),
             ),
@@ -86,12 +91,12 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           Icon(Icons.shopping_cart_outlined, color: _kGrey, size: 64.sp),
           SizedBox(height: 16.h),
           Text(
-            'السلة فارغة',
+            storeUi('السلة فارغة'),
             style: TextStyle(color: _kGrey, fontSize: 18.sp),
           ),
           SizedBox(height: 8.h),
           Text(
-            'أضف منتجات من المتجر',
+            storeUi('أضف منتجات من المتجر'),
             style: TextStyle(color: _kGrey, fontSize: 13.sp),
           ),
           SizedBox(height: 24.h),
@@ -105,7 +110,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
               ),
             ),
             onPressed: () => Navigator.pop(context),
-            child: const Text('تسوق الآن'),
+            child: Text(storeUi('تسوق الآن')),
           ),
         ],
       ),
@@ -168,10 +173,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                 width: 72.w,
                 height: 72.h,
                 child:
-                    item.product.imageUrl.startsWith('/') ||
-                        item.product.imageUrl.contains(':\\')
+                    item.product.listImageUrl.startsWith('/') ||
+                        item.product.listImageUrl.contains(':\\')
                     ? Image.file(
-                        File(item.product.imageUrl),
+                        File(item.product.listImageUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => Container(
                           color: AppColors.primarySurface,
@@ -183,7 +188,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         ),
                       )
                     : AppCachedNetworkImage(
-                        url: item.product.imageUrl,
+                        url: item.product.listImageUrl,
                         fit: BoxFit.cover,
                         errorBuilder: () => Container(
                           color: AppColors.primarySurface,
@@ -213,7 +218,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                   ),
                   SizedBox(height: 4.h),
                   Text(
-                    '${item.product.price.toStringAsFixed(0)} ر.س',
+                    storeUi('${item.product.price.toStringAsFixed(0)} SYP'),
                     style: TextStyle(
                       color: AppColors.primary,
                       fontSize: 14.sp,
@@ -310,7 +315,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 32.h),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: const BorderRadius.only(
+        borderRadius: BorderRadius.only(
           topLeft: Radius.circular(24),
           topRight: Radius.circular(24),
         ),
@@ -318,7 +323,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 12,
-            offset: const Offset(0, -4),
+            offset: Offset(0, -4),
           ),
         ],
       ),
@@ -348,7 +353,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     SizedBox(width: 8.w),
                     Expanded(
                       child: Text(
-                        'كود الخصم ${appliedCoupon.code}',
+                        AppLocale.text(
+                          'كود الخصم ${appliedCoupon.code}',
+                          'Coupon ${appliedCoupon.code}',
+                        ),
                         style: TextStyle(
                           color: AppColors.success,
                           fontSize: 13.sp,
@@ -371,7 +379,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'المجموع',
+                        storeUi('المجموع'),
                         style: TextStyle(color: _kGrey, fontSize: 12.sp),
                       ),
                       SizedBox(height: 4.h),
@@ -379,7 +387,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         Row(
                           children: [
                             Text(
-                              '${cartTotal.toStringAsFixed(0)} ر.س',
+                              storeUi('${cartTotal.toStringAsFixed(0)} SYP'),
                               style: TextStyle(
                                 color: _kGrey,
                                 fontSize: 16.sp,
@@ -388,7 +396,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                             ),
                             SizedBox(width: 8.w),
                             Text(
-                              '-${discountAmount.toStringAsFixed(0)} ر.س',
+                              storeUi(
+                                '-${discountAmount.toStringAsFixed(0)} SYP',
+                              ),
                               style: TextStyle(
                                 color: AppColors.success,
                                 fontSize: 12.sp,
@@ -399,7 +409,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         ),
                       SizedBox(height: hasDiscount ? 2.h : 0),
                       Text(
-                        '${(hasDiscount ? discountedTotal : cartTotal).toStringAsFixed(0)} ر.س',
+                        storeUi(
+                          '${(hasDiscount ? discountedTotal : cartTotal).toStringAsFixed(0)} SYP',
+                        ),
                         style: TextStyle(
                           color: AppColors.textDark,
                           fontSize: 22.sp,
@@ -423,7 +435,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                   ),
                   onPressed: () =>
                       Navigator.pushNamed(context, '/order-confirmation'),
-                  child: Text('إتمام الطلب', style: TextStyle(fontSize: 15.sp)),
+                  child: Text(
+                    storeUi('إتمام الطلب'),
+                    style: TextStyle(fontSize: 15.sp),
+                  ),
                 ),
               ],
             ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'storage_screen.dart';
 
 import 'package:studentry/management/presentation/privacy_policy_screen.dart';
 import 'package:studentry/patients/data/notification_service.dart';
@@ -11,7 +12,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -48,11 +48,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
     _loadExactReminderStatus();
     if (mounted) {
       setState(() {
-        _appLanguage = prefs.getString('app_language') ?? 'ar';
+        _appLanguage = AppLocale.language;
       });
     }
   }
@@ -154,14 +153,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   Navigator.pop(ctx);
                 },
               ),
-              const Divider(),
+              SizedBox(height: 8.h),
               ListTile(
-                leading: const Icon(Icons.language, color: AppColors.textGray),
-                title: const Text(
-                  'English',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: const Text('Default language'),
+                leading: const Icon(Icons.language, color: AppColors.primary),
+                title: const Text('English'),
                 trailing: _appLanguage == 'en'
                     ? const Icon(Icons.check_circle, color: AppColors.primary)
                     : null,
@@ -170,7 +165,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   Navigator.pop(ctx);
                 },
               ),
-              SizedBox(height: 8.h),
             ],
           ),
         ),
@@ -298,7 +292,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             _buildSettingTile(
               icon: Icons.language,
               title: 'لغة التطبيق',
-              subtitle: _appLanguage == 'ar' ? 'العربية' : 'English',
+              subtitle: 'العربية — الإنجليزية قريباً',
               trailing: Container(
                 padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
                 decoration: BoxDecoration(
@@ -306,7 +300,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  _appLanguage == 'ar' ? 'تغيير' : 'Change',
+                  'عرض',
                   style: TextStyle(
                     fontSize: 12.sp,
                     color: AppColors.primary,
@@ -340,6 +334,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               SizedBox(height: 24.h),
             ],
             _buildSection('البيانات'),
+            _buildSettingTile(
+              icon: Icons.storage_outlined,
+              title: 'التخزين',
+              subtitle: 'قياس المساحة وتنظيف آمن بدون حذف سجلات',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const StorageScreen()),
+              ),
+            ),
             _buildSettingTile(
               icon: Icons.privacy_tip_outlined,
               title: 'سياسة الخصوصية',

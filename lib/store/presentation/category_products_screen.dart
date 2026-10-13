@@ -1,3 +1,5 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
 
 import 'package:studentry/shared/data/auth_service.dart';
@@ -26,7 +28,7 @@ class CategoryProductsScreen extends ConsumerStatefulWidget {
 
 class _CategoryProductsScreenState
     extends ConsumerState<CategoryProductsScreen> {
-  List<Product> _products = const [];
+  List<Product> _products = [];
   String? _studentAcademicYear;
   int _page = 1;
   int _lastPage = 1;
@@ -70,11 +72,13 @@ class _CategoryProductsScreenState
         for (final category in ref.read(catalogProvider).categories)
           category.id: category.label,
       };
-      final products = result.rows.map((row) {
-        final item = StoreApiService.rowToProductMap(row);
-        item['categoryName'] = categoryNames[item['categoryId']] ?? '';
-        return Product.fromJson(item);
-      }).toList(growable: false);
+      final products = result.rows
+          .map((row) {
+            final item = StoreApiService.rowToProductMap(row);
+            item['categoryName'] = categoryNames[item['categoryId']] ?? '';
+            return Product.fromJson(item);
+          })
+          .toList(growable: false);
       setState(() {
         _products = products;
         _page = result.currentPage;
@@ -90,6 +94,7 @@ class _CategoryProductsScreenState
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final catalog = ref.watch(catalogProvider);
     final cat = catalog.categories
         .where((c) => c.id == widget.categoryId)
@@ -104,13 +109,13 @@ class _CategoryProductsScreenState
               Icon(Icons.category_outlined, color: _kGrey, size: 48.sp),
               SizedBox(height: 12.h),
               Text(
-                'التصنيف غير موجود',
+                storeUi('التصنيف غير موجود'),
                 style: TextStyle(color: _kGrey, fontSize: 14.sp),
               ),
               SizedBox(height: 12.h),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('العودة'),
+                child: Text(storeUi('العودة')),
               ),
             ],
           ),
@@ -119,19 +124,21 @@ class _CategoryProductsScreenState
     }
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
-        bottomNavigationBar: const AppBottomNav(selectedIndex: 3),
+        bottomNavigationBar: AppBottomNav(selectedIndex: 3),
         appBar: AppBar(
           title: Text(cat.label),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
+            icon: Icon(Icons.arrow_back, color: AppColors.textDark),
             onPressed: () => Navigator.pop(context),
           ),
         ),
         body: _loading && _products.isEmpty
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(child: CircularProgressIndicator())
             : _products.isEmpty
             ? _buildEmptyState(cat.label)
             : Column(
@@ -152,7 +159,10 @@ class _CategoryProductsScreenState
           Icon(Icons.inventory_2_outlined, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            'لا توجد منتجات في $categoryName',
+            AppLocale.text(
+              'لا توجد منتجات في $categoryName',
+              'No products in $categoryName',
+            ),
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
         ],
@@ -160,15 +170,12 @@ class _CategoryProductsScreenState
     );
   }
 
-  Widget _buildProductGrid(
-    BuildContext context,
-    List<Product> products,
-  ) {
+  Widget _buildProductGrid(BuildContext context, List<Product> products) {
     return Padding(
       padding: EdgeInsets.all(16.r),
       child: GridView.builder(
         itemCount: products.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
@@ -214,16 +221,14 @@ class _CategoryProductsScreenState
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                 child: SizedBox(
                   width: double.infinity,
                   child:
-                      product.imageUrl.startsWith('/') ||
-                          product.imageUrl.contains(':\\')
+                      product.listImageUrl.startsWith('/') ||
+                          product.listImageUrl.contains(':\\')
                       ? Image.file(
-                          File(product.imageUrl),
+                          File(product.listImageUrl),
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => Container(
                             color: AppColors.primarySurface,
@@ -235,7 +240,7 @@ class _CategoryProductsScreenState
                           ),
                         )
                       : AppCachedNetworkImage(
-                          url: product.imageUrl,
+                          url: product.listImageUrl,
                           fit: BoxFit.cover,
                           errorBuilder: () => Container(
                             color: AppColors.primarySurface,
@@ -266,7 +271,7 @@ class _CategoryProductsScreenState
                   ),
                   SizedBox(height: 4.h),
                   Text(
-                    '${product.price.toStringAsFixed(0)} ر.س',
+                    storeUi('${product.price.toStringAsFixed(0)} SYP'),
                     style: TextStyle(
                       color: AppColors.primary,
                       fontSize: 13.sp,

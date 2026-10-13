@@ -1,9 +1,15 @@
+import 'package:studentry/utils/app_locale.dart';
+import 'package:studentry/store/presentation/store_ui.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
+import 'package:studentry/store/presentation/delivery_location_map.dart';
+import 'package:studentry/store/presentation/widgets/delivery_location_field.dart';
+import 'package:studentry/store/presentation/widgets/order_submission_notice.dart';
+import 'package:studentry/store/presentation/widgets/cod_payment_option.dart';
 
 const List<String> _governorates = [
   'دمشق',
@@ -37,10 +43,33 @@ class _OrderConfirmationScreenState
   final _detailsC = TextEditingController();
   final _couponC = TextEditingController();
   String? _selectedGovernorate;
-  String _paymentMethod = 'cash_on_delivery';
+  final String _paymentMethod = 'cash_on_delivery';
   bool _isLoading = false;
   bool _couponLoading = false;
   String? _couponError;
+  DeliveryPoint? _deliveryPoint;
+  bool _showLocationMap = false;
+  static final _locationLine = RegExp(
+    r'(?:\n)?الموقع على الخريطة: https://maps\.google\.com/\?q=[^\n]*',
+  );
+
+  void _setDeliveryPoint(DeliveryPoint? point) {
+    final writtenAddress = _detailsC.text.replaceAll(_locationLine, '').trim();
+    final locationText = point == null
+        ? ''
+        : 'الموقع على الخريطة: ${point.mapUrl}';
+    _detailsC.text = [
+      if (writtenAddress.isNotEmpty) writtenAddress,
+      if (locationText.isNotEmpty) locationText,
+    ].join('\n');
+    _detailsC.selection = TextSelection.collapsed(
+      offset: _detailsC.text.length,
+    );
+    setState(() {
+      _deliveryPoint = point;
+      _showLocationMap = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -90,6 +119,8 @@ class _OrderConfirmationScreenState
             phone: phone,
             governorate: _selectedGovernorate,
             region: region,
+            locationLatitude: _deliveryPoint?.latitude,
+            locationLongitude: _deliveryPoint?.longitude,
           );
       if (!mounted) return;
       ref.read(ordersProvider.notifier).addOrder(order);
@@ -100,9 +131,11 @@ class _OrderConfirmationScreenState
         (route) => route.settings.name == '/cart' ? false : true,
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إرسال الطلب بنجاح'),
-          backgroundColor: AppColors.success,
+        SnackBar(
+          content: OrderSubmissionNotice(awaitingSync: order.awaitingSync),
+          backgroundColor: order.awaitingSync
+              ? AppColors.primary
+              : AppColors.success,
         ),
       );
     } catch (e) {
@@ -121,25 +154,25 @@ class _OrderConfirmationScreenState
 
   @override
   Widget build(BuildContext context) {
+    Localizations.localeOf(context);
     final cart = ref.watch(cartProvider);
     final cartItems = cart.items;
     final discountedTotal = cart.discountedTotal;
     final appliedCoupon = cart.appliedCoupon;
 
-    double deliveryTotal = 0;
-    for (final item in cartItems) {
-      deliveryTotal += item.product.deliveryPrice * item.quantity;
-    }
-    final grandTotal = discountedTotal + deliveryTotal;
+    final deliveryTotal = cart.deliveryTotal;
+    final grandTotal = cart.grandTotal;
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: const Text('تأكيد الطلب'),
+          title: Text(storeUi('تأكيد الطلب')),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
+            icon: Icon(Icons.arrow_back, color: AppColors.textDark),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -155,15 +188,15 @@ class _OrderConfirmationScreenState
               _buildDivider(),
               _buildPriceRow(
                 'المجموع الفرعي',
-                '${discountedTotal.toStringAsFixed(0)} ر.س',
+                '${discountedTotal.toStringAsFixed(0)} SYP',
               ),
               _buildPriceRow(
                 'تكلفة التوصيل',
-                '${deliveryTotal.toStringAsFixed(0)} ر.س',
+                '${deliveryTotal.toStringAsFixed(0)} SYP',
               ),
               _buildPriceRow(
                 'المجموع النهائي',
-                '${grandTotal.toStringAsFixed(0)} ر.س',
+                '${grandTotal.toStringAsFixed(0)} SYP',
                 bold: true,
               ),
               SizedBox(height: 20.h),
@@ -176,6 +209,13 @@ class _OrderConfirmationScreenState
               _buildRegionField(),
               SizedBox(height: 12.h),
               _buildDetailsField(),
+              if (_showLocationMap) ...[
+                SizedBox(height: 8.h),
+                DeliveryLocationMap(
+                  initialPoint: _deliveryPoint,
+                  onConfirm: _setDeliveryPoint,
+                ),
+              ],
               SizedBox(height: 20.h),
               _buildSectionTitle('كود الخصم'),
               SizedBox(height: 8.h),
@@ -229,14 +269,19 @@ class _OrderConfirmationScreenState
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  'الكمية: ${item.quantity}',
+                  AppLocale.text(
+                    'الكمية: ${item.quantity}',
+                    'Quantity: ${item.quantity}',
+                  ),
                   style: TextStyle(fontSize: 12.sp, color: AppColors.authGrey),
                 ),
               ],
             ),
           ),
           Text(
-            '${(item.product.price * item.quantity).toStringAsFixed(0)} ر.س',
+            storeUi(
+              '${(item.product.price * item.quantity).toStringAsFixed(0)} SYP',
+            ),
             style: TextStyle(
               fontSize: 14.sp,
               fontWeight: FontWeight.w700,
@@ -269,7 +314,7 @@ class _OrderConfirmationScreenState
               color: AppColors.authGrey,
             ),
           ),
-          const Spacer(),
+          Spacer(),
           Text(
             value,
             style: TextStyle(
@@ -289,8 +334,8 @@ class _OrderConfirmationScreenState
       keyboardType: TextInputType.phone,
       textDirection: TextDirection.ltr,
       decoration: InputDecoration(
-        labelText: 'رقم الهاتف',
-        hintText: 'أعد إدخال رقم الهاتف للتأكيد',
+        labelText: storeUi('رقم الهاتف'),
+        hintText: storeUi('أعد إدخال رقم الهاتف للتأكيد'),
         filled: true,
         fillColor: AppColors.surface,
         prefixIcon: Icon(
@@ -311,7 +356,7 @@ class _OrderConfirmationScreenState
     return DropdownButtonFormField<String>(
       initialValue: _selectedGovernorate,
       decoration: InputDecoration(
-        labelText: 'المحافظة',
+        labelText: storeUi('المحافظة'),
         filled: true,
         fillColor: AppColors.surface,
         prefixIcon: Icon(
@@ -335,10 +380,12 @@ class _OrderConfirmationScreenState
   Widget _buildRegionField() {
     return TextField(
       controller: _regionC,
-      textDirection: TextDirection.rtl,
+      textDirection: AppLocale.language == 'ar'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
       decoration: InputDecoration(
-        labelText: 'المنطقة',
-        hintText: 'اسم المنطقة أو الحي',
+        labelText: storeUi('المنطقة'),
+        hintText: storeUi('اسم المنطقة أو الحي'),
         filled: true,
         fillColor: AppColors.surface,
         prefixIcon: Icon(
@@ -356,26 +403,14 @@ class _OrderConfirmationScreenState
   }
 
   Widget _buildDetailsField() {
-    return TextField(
+    return DeliveryLocationField(
       controller: _detailsC,
-      textDirection: TextDirection.rtl,
-      maxLines: 2,
-      decoration: InputDecoration(
-        labelText: 'تفاصيل العنوان',
-        hintText: 'الشارع - المبنى - الطابق - قرب...',
-        filled: true,
-        fillColor: AppColors.surface,
-        prefixIcon: Icon(
-          Icons.edit_location_outlined,
-          color: AppColors.primary,
-          size: 20.sp,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-      ),
+      latitude: _deliveryPoint?.latitude,
+      longitude: _deliveryPoint?.longitude,
+      mapExpanded: _showLocationMap,
+      onChooseLocation: () =>
+          setState(() => _showLocationMap = !_showLocationMap),
+      onClearLocation: () => _setDeliveryPoint(null),
     );
   }
 
@@ -389,7 +424,7 @@ class _OrderConfirmationScreenState
                 controller: _couponC,
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(
-                  hintText: 'أدخل كود الخصم',
+                  hintText: storeUi('أدخل كود الخصم'),
                   hintTextDirection: TextDirection.rtl,
                   filled: true,
                   fillColor: AppColors.surface,
@@ -439,7 +474,7 @@ class _OrderConfirmationScreenState
                         color: Colors.white,
                       ),
                     )
-                  : const Text('تطبيق'),
+                  : Text(storeUi('تطبيق')),
             ),
           ],
         ),
@@ -459,7 +494,10 @@ class _OrderConfirmationScreenState
                 Icon(Icons.check_circle, color: AppColors.success, size: 16.sp),
                 SizedBox(width: 4.w),
                 Text(
-                  'كود ${appliedCoupon.code} مطبق',
+                  AppLocale.text(
+                    'كود ${appliedCoupon.code} مطبق',
+                    'Coupon ${appliedCoupon.code} applied',
+                  ),
                   style: TextStyle(color: AppColors.success, fontSize: 12.sp),
                 ),
                 SizedBox(width: 8.w),
@@ -478,71 +516,7 @@ class _OrderConfirmationScreenState
     );
   }
 
-  Widget _buildPaymentSelector() {
-    return Column(
-      children: [
-        _buildPaymentOption(
-          'شام كاش',
-          'sham_cash',
-          Icons.account_balance_wallet_outlined,
-        ),
-        SizedBox(height: 8.h),
-        _buildPaymentOption(
-          'دفع عند الاستلام',
-          'cash_on_delivery',
-          Icons.money_outlined,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentOption(String label, String value, IconData icon) {
-    final selected = _paymentMethod == value;
-    return GestureDetector(
-      onTap: () => setState(() => _paymentMethod = value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primarySurface : AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.divider,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: selected ? AppColors.primary : AppColors.authGrey,
-              size: 22.sp,
-            ),
-            SizedBox(width: 12.w),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 15.sp,
-                fontWeight: FontWeight.w600,
-                color: selected ? AppColors.primary : AppColors.authTextDark,
-              ),
-            ),
-            const Spacer(),
-            if (selected)
-              Container(
-                width: 22.w,
-                height: 22.h,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.check, color: Colors.white, size: 14.sp),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildPaymentSelector() => CodPaymentOption();
 
   Widget _buildConfirmButton() {
     return SizedBox(
@@ -574,7 +548,7 @@ class _OrderConfirmationScreenState
                   Icon(Icons.check_circle_outline, size: 18.sp),
                   SizedBox(width: 8.w),
                   Text(
-                    'تأكيد الطلب',
+                    storeUi('تأكيد الطلب'),
                     style: TextStyle(
                       fontSize: 15.sp,
                       fontWeight: FontWeight.w700,
