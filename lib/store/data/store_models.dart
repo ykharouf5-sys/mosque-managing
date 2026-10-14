@@ -161,6 +161,7 @@ class Product {
   final int reviewsCount, stock;
   final DateTime createdAt;
   final String brand;
+  final String? sourceName;
   final String? academicYear;
   final double deliveryPrice;
   final String? thumbnailUrl;
@@ -171,6 +172,7 @@ class Product {
     required this.id,
     required String name,
     this.brand = '',
+    this.sourceName,
     required String description,
     required this.imageUrl,
     required this.categoryId,
@@ -202,6 +204,7 @@ class Product {
     'isTest': isTest,
     'name': _name,
     'brand': brand,
+    if (sourceName != null) 'sourceName': sourceName,
     'description': _description,
     'imageUrl': imageUrl,
     if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
@@ -225,6 +228,7 @@ class Product {
     isTest: json['isTest'] == true,
     name: json['name'] as String,
     brand: (json['brand'] as String?) ?? '',
+    sourceName: json['sourceName'] as String?,
     description: json['description'] as String,
     imageUrl: json['imageUrl'] as String,
     thumbnailUrl: json['thumbnailUrl'] as String?,
@@ -294,6 +298,7 @@ String orderStatusLabel(OrderStatus status) {
 }
 
 class Order {
+  final Map<String, dynamic> customer;
   final bool awaitingSync;
   final String? submissionError;
   final String id;
@@ -322,6 +327,7 @@ class Order {
   final double? locationLongitude;
 
   Order({
+    this.customer = const {},
     this.awaitingSync = false,
     this.submissionError,
     required this.id,
@@ -351,6 +357,7 @@ class Order {
   });
 
   Map<String, dynamic> toJson() => {
+    if (customer.isNotEmpty) 'customer': customer,
     'awaitingSync': awaitingSync,
     if (submissionError != null) 'submissionError': submissionError,
     'id': id,
@@ -380,6 +387,7 @@ class Order {
   };
 
   factory Order.fromJson(Map<String, dynamic> json) => Order(
+    customer: Map<String, dynamic>.from(json['customer'] as Map? ?? {}),
     awaitingSync: json['awaitingSync'] == true,
     submissionError: json['submissionError'] as String?,
     id: json['id'] as String,

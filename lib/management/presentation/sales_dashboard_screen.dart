@@ -10,6 +10,7 @@ import 'package:studentry/management/presentation/widgets/category_icon_input.da
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/data/api_client.dart';
+import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/presentation/notification_campaign_screen.dart';
 import 'package:studentry/store/presentation/providers/store_providers.dart';
 import 'package:flutter/material.dart';
@@ -762,7 +763,7 @@ class _ProductsTab extends StatelessWidget {
           ),
           subtitle: Text(
             storeUi(
-              '${product.price.toStringAsFixed(0)} SYP - ${product.categoryName}',
+              '${product.price.toStringAsFixed(0)} SYP - ${product.categoryName}${product.sourceName?.isNotEmpty == true ? '\n${AppLocale.text('المصدر', 'Source')}: ${product.sourceName}' : ''}',
             ),
             style: TextStyle(color: _kGrey, fontSize: 12.sp),
           ),
@@ -778,6 +779,11 @@ class _ProductsTab extends StatelessWidget {
       text: product?.translations['ar']?['name'] ?? product?.name ?? '',
     );
     final brandC = TextEditingController(text: product?.brand ?? '');
+    final sourceC = TextEditingController(text: product?.sourceName ?? '');
+    final sourceAllowed = [
+      'sales_manager',
+      'admin',
+    ].contains(AuthService().role);
     final descC = TextEditingController(
       text:
           product?.translations['ar']?['description'] ??
@@ -951,6 +957,17 @@ class _ProductsTab extends StatelessWidget {
                       hint: storeUi('مثال: NSK PANA-MAX'),
                     ),
                     SizedBox(height: 12.h),
+                    if (sourceAllowed) ...[
+                      _styledTextField(
+                        controller: sourceC,
+                        label: AppLocale.text('المصدر', 'Source'),
+                        hint: AppLocale.text(
+                          'اسم المورّد أو صاحب المنتج (للإدارة فقط)',
+                          'Supplier or product owner (management only)',
+                        ),
+                      ),
+                      SizedBox(height: 12.h),
+                    ],
                     _styledTextField(
                       controller: stockC,
                       label: 'المخزون (عدد القطع)',
@@ -1076,6 +1093,9 @@ class _ProductsTab extends StatelessWidget {
                           cat.id,
                           cat.label,
                           brand: brandC.text.trim(),
+                          sourceName: sourceAllowed
+                              ? sourceC.text.trim()
+                              : null,
                           stock: stock,
                           academicYear: selectedAcademicYear,
                           translations: editorTranslations(arCopy, enCopy),
@@ -1091,6 +1111,9 @@ class _ProductsTab extends StatelessWidget {
                           cat.id,
                           cat.label,
                           brand: brandC.text.trim(),
+                          sourceName: sourceAllowed
+                              ? sourceC.text.trim()
+                              : null,
                           stock: stock,
                           academicYear: selectedAcademicYear,
                           translations: editorTranslations(arCopy, enCopy),
@@ -2881,6 +2904,23 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
         ),
         children: [
           Divider(),
+          if (order.customer.isNotEmpty) ...[
+            for (final field in const {
+              'full_name': ('اسم صاحب الطلب', 'Customer name'),
+              'email': ('البريد الإلكتروني', 'Email'),
+              'phone': ('هاتف الحساب', 'Account phone'),
+              'university': ('الجامعة', 'University'),
+              'academic_year': ('السنة الدراسية', 'Academic year'),
+              'exam_number': ('الرقم الامتحاني', 'Exam number'),
+            }.entries)
+              if (order.customer[field.key]?.toString().isNotEmpty == true)
+                Padding(
+                  padding: EdgeInsets.only(bottom: 6.h),
+                  child: Text(
+                    '${AppLocale.text(field.value.$1, field.value.$2)}: ${order.customer[field.key]}',
+                  ),
+                ),
+          ],
           ...order.items.map(
             (item) => Padding(
               padding: EdgeInsets.only(bottom: 6.h),
@@ -2894,13 +2934,12 @@ class _OrdersTabState extends ConsumerState<_OrdersTab> {
                   SizedBox(width: 8.w),
                   Expanded(
                     child: Text(
-                      item.product.name,
+                      '${item.product.name}${item.product.sourceName?.isNotEmpty == true ? '\n${AppLocale.text('المصدر', 'Source')}: ${item.product.sourceName}' : ''}${item.product.brand.isNotEmpty ? '\n${item.product.brand}' : ''}${item.product.description.isNotEmpty ? '\n${item.product.description}' : ''}',
                       style: TextStyle(
                         color: AppColors.textDark,
                         fontSize: 12.sp,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
                     ),
                   ),
                   Text(

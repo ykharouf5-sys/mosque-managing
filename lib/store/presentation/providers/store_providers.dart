@@ -70,8 +70,12 @@ class CatalogNotifier extends Notifier<CatalogState> {
   CatalogState get snapshot => state;
   static String get summaryCacheKey =>
       'catalog:v2:${ApiConfig.baseUrl}:summary';
+  static String get _sourceScope =>
+      ['sales_manager', 'admin'].contains(AuthService().role)
+      ? 'sales:${AuthService().userId}'
+      : 'customer';
   static String pageCacheKey(int page, {String? academicYear}) =>
-      'catalog:v2:${ApiConfig.baseUrl}:products:$page:25:${academicYear ?? 'all'}';
+      'catalog:v3:${ApiConfig.baseUrl}:$_sourceScope:products:$page:25:${academicYear ?? 'all'}';
   static String pageMetadataCacheKey(int page, {String? academicYear}) =>
       '${pageCacheKey(page, academicYear: academicYear)}:metadata';
   Future<bool>? _refreshing;
@@ -333,6 +337,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
                   ?.translations ??
               const {},
           brand: m['brand'] as String? ?? '',
+          sourceName: m['sourceName'] as String?,
           description: m['description'] as String? ?? '',
           imageUrl: m['imageUrl'] as String? ?? '',
           thumbnailUrl: m['thumbnailUrl'] as String?,
@@ -406,6 +411,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
                   ?.translations ??
               const {},
           brand: m['brand'] as String? ?? '',
+          sourceName: m['sourceName'] as String?,
           description: m['description'] as String? ?? '',
           imageUrl: m['imageUrl'] as String? ?? '',
           thumbnailUrl: m['thumbnailUrl'] as String?,
@@ -555,6 +561,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String categoryId,
     String categoryName, {
     String brand = '',
+    String? sourceName,
     int stock = 0,
     String? academicYear,
     Map<String, dynamic>? translations,
@@ -569,6 +576,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
       'publicationStatus': ?publicationStatus,
       'isTest': ?isTest,
       'brand': brand,
+      'sourceName': ?sourceName,
       'description': description,
       'imageUrl': imageUrl,
       'categoryId': categoryId,
@@ -589,6 +597,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
         categoryId: categoryId,
         categoryName: categoryName,
         brand: brand,
+        sourceName: sourceName,
         stock: stock,
         academicYear: academicYear,
         createdAt: DateTime.now(),
@@ -616,6 +625,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
     String categoryId,
     String categoryName, {
     String brand = '',
+    String? sourceName,
     int stock = 0,
     String? academicYear,
     Map<String, dynamic>? translations,
@@ -628,6 +638,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
       'publicationStatus': ?publicationStatus,
       'isTest': ?isTest,
       'brand': brand,
+      'sourceName': ?sourceName,
       'description': description,
       'imageUrl': imageUrl,
       'categoryId': categoryId,
@@ -650,6 +661,7 @@ class CatalogNotifier extends Notifier<CatalogState> {
         categoryId: categoryId,
         categoryName: categoryName,
         brand: brand,
+        sourceName: sourceName ?? _products[idx].sourceName,
         stock: stock,
         academicYear: academicYear,
         createdAt: _products[idx].createdAt,

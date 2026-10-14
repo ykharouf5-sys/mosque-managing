@@ -2,37 +2,37 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   static const Color primary = Color.fromARGB(255, 17, 149, 167);
-  static const Color primaryLight = Color(0xFFCCEBEE);
-  static const Color primarySurface = Color(0xFFE8F6F7);
-  static const Color primaryDark = Color(0xFF076F7E);
-  static const Color onPrimary = Color(0xFF10202A);
-  static const Color brandDeep = Color(0xFF164F59);
+  static const Color primaryDark = primary;
+  static const Color brandDeep = primary;
+  static const Color onPrimary = Colors.white;
+  static const Color primaryLight = Color(0xFF80CBC4);
+  static const Color primarySurface = Color(0xFFE0F7FA);
 
-  static const Color background = primarySurface;
+  static const Color background = Color(0xFFF8FBFC);
   static const Color surface = Colors.white;
 
-  static const Color textDark = Color(0xFF193C44);
+  static const Color textDark = Color(0xFF1E293B);
   static const Color textLight = Colors.white;
-  static const Color textGray = Color(0xFF506C75);
-  static const Color textGrey = textGray;
-  static const Color textLightGray = Color(0xFF647E86);
+  static const Color textGray = Color(0xFF94A3B8);
+  static const Color textGrey = Color(0xFF9E9E9E);
+  static const Color textLightGray = Color(0xFFCBD5E1);
 
-  static const Color divider = Color(0xFFCDE3E7);
-  static const Color dividerLine = divider;
+  static const Color divider = Color(0xFFE0E0E0);
+  static const Color dividerLine = Color(0xFFE2EDF0);
 
   static const Color success = Color(0xFF4CAF50);
   static const Color pending = Color(0xFFFF9800);
   static const Color danger = Color(0xFFE53935);
 
-  static const Color featureBg = Color(0xFFF3FAFB);
+  static const Color featureBg = Color(0xFFF0F6F8);
   static const Color dotDecor = Color.fromARGB(90, 21, 169, 188);
 
   // Auth-specific
-  static const Color authBackground = primarySurface;
-  static const Color authTextDark = textDark;
-  static const Color authGrey = textGray;
-  static const Color authFieldBg = surface;
-  static const Color authFieldBorder = dividerLine;
+  static const Color authBackground = Color(0xFFFFFFFF);
+  static const Color authTextDark = Color(0xFF1A2B3C);
+  static const Color authGrey = Color(0xFF8A9BAD);
+  static const Color authFieldBg = Color(0xFFF4F9FA);
+  static const Color authFieldBorder = Color(0xFFDDEEF0);
   static const Color authGoogleBg = Color(0xFFF5F5F5);
 }
 

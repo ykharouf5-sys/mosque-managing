@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-14",
+  "versionCode": 20261017,
+  "versionName": "1.0.0-sales.20261014",
+  "apk": "build\\private-sources\\2026-10-14\\Studentry-20261017.apk",
+  "sha256": "b0f53c5d90ce94ad3dc9152f5c16de0f0a1d244f82515a146b621c33e7c80507",
+  "bytes": 84512770,
+  "signingSha1": "b9cd3413b7965d1f64b2439ea40f91efda3e4766",
+  "installed": true,
+  "installMode": "adb install -r",
+  "phoneDownload": "/sdcard/Download/Studentry-20261017.apk",
+  "api": "https://api.studentry.app/api/v1",
+  "palette": {
+    "primary": "#1195A7",
+    "buttonText": "#FFFFFF",
+    "background": "#F8FBFC"
+  },
+  "tests": {
+    "fullFlutterPassed": 178,
+    "optionalIntegrationSkipped": 1,
+    "sourceAndShippingTargetedPassed": 4
+  },
+  "apiRelease": "20261014-private-sources-v1",
+  "apiSourceChecks": 22,
+  "apiAcademicRegressionChecks": 29,
+  "apiAuthClinicalRegressionChecks": 21,
+  "rollbackPrivacyChecks": 3,
+  "personalManagerPasswordLogin": "user will verify with their current passwords"
+}

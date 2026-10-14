@@ -463,6 +463,7 @@ class StoreApiService {
     'publicationStatus': r['publication_status'] ?? 'published',
     'isTest': r['is_test'] == true,
     'brand': r['brand'] ?? '',
+    'sourceName': r['source_name'],
     'description':
         (r['translations'] as Map?)?['ar']?['description'] ??
         r['description'] ??
@@ -497,6 +498,19 @@ class StoreApiService {
     final d = Map<String, dynamic>.from(r['details'] as Map? ?? {});
     return {
       ...d,
+      'customer': r['customer'],
+      'doctorName':
+          (r['customer'] as Map?)?['full_name'] ??
+          d['doctorName'] ??
+          d['doctor_name'],
+      'doctorPhone':
+          (r['customer'] as Map?)?['phone'] ??
+          d['doctorPhone'] ??
+          d['doctor_phone'],
+      'clinicAddress': d['clinic_address'] ?? d['clinicAddress'],
+      'doctorGovernorate': d['doctor_governorate'] ?? d['doctorGovernorate'],
+      'locationLatitude': d['location_latitude'] ?? d['locationLatitude'],
+      'locationLongitude': d['location_longitude'] ?? d['locationLongitude'],
       'id': r['id'],
       'items': _normalizeOrderItems(r['items']),
       'totalPrice': _toDouble(r['total'] ?? r['totalPrice']),
@@ -539,6 +553,7 @@ class StoreApiService {
           'translations':
               item['product_translations'] ?? product['translations'],
           'brand': product['brand']?.toString() ?? '',
+          'sourceName': item['product_source_name'] ?? product['sourceName'],
           'description': product['description']?.toString() ?? '',
           'imageUrl':
               product['imageUrl']?.toString() ??
@@ -627,6 +642,9 @@ class StoreApiService {
       body.removeWhere(
         (key, _) => !(aliases[key]?.any(p.containsKey) ?? false),
       );
+    }
+    if (p.containsKey('sourceName') || p.containsKey('source_name')) {
+      body['source_name'] = p['sourceName'] ?? p['source_name'];
     }
     if (p.containsKey('translations')) body['translations'] = p['translations'];
     if (p.containsKey('publicationStatus')) {
