@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -60,73 +61,112 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !_sending,
-    child: AlertDialog(
+    child: Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text(
-        'إعادة تعيين كلمة المرور',
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 400,
+          maxHeight:
+              (MediaQuery.sizeOf(context).height -
+                      MediaQuery.viewInsetsOf(context).bottom -
+                      48)
+                  .clamp(160.0, 400.0),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'سنرسل رمز تحقق من ٦ أرقام إلى بريدك لتغيير كلمة المرور.',
+                'إعادة تعيين كلمة المرور',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _email,
-                enabled: !_sending,
-                keyboardType: TextInputType.emailAddress,
-                textDirection: TextDirection.ltr,
-                autofillHints: const [AutofillHints.email],
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _send(),
-                validator: (value) =>
-                    RegExp(
-                      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                    ).hasMatch(value?.trim() ?? '')
-                    ? null
-                    : 'أدخل بريداً إلكترونياً صحيحاً',
-                decoration: InputDecoration(
-                  labelText: 'البريد الإلكتروني',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 12),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, box) => Align(
+                    alignment: Alignment.topCenter,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(
+                        width: box.maxWidth,
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'سنرسل رمز تحقق من ٦ أرقام إلى بريدك لتغيير كلمة المرور.',
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                inputFormatters: AppInputFormatters.text(254),
+                                textAlignVertical: TextAlignVertical.center,
+                                controller: _email,
+                                enabled: !_sending,
+                                keyboardType: TextInputType.emailAddress,
+                                textDirection: TextDirection.ltr,
+                                autofillHints: const [AutofillHints.email],
+                                textInputAction: TextInputAction.done,
+                                onFieldSubmitted: (_) => _send(),
+                                validator: (value) =>
+                                    RegExp(
+                                      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                                    ).hasMatch(value?.trim() ?? '')
+                                    ? null
+                                    : 'أدخل بريداً إلكترونياً صحيحاً',
+                                decoration: InputDecoration(
+                                  labelText: 'البريد الإلكتروني',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: AppColors.authFieldBg,
+                                ),
+                              ),
+                              if (_error != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _error!,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  filled: true,
-                  fillColor: AppColors.authFieldBg,
                 ),
               ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.red, fontSize: 12),
-                ),
-              ],
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _sending ? null : () => Navigator.pop(context),
+                    child: const Text('إلغاء'),
+                  ),
+                  FilledButton(
+                    onPressed: _sending ? null : _send,
+                    child: _sending
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('إرسال الرمز'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _sending ? null : () => Navigator.pop(context),
-          child: const Text('إلغاء'),
-        ),
-        FilledButton(
-          onPressed: _sending ? null : _send,
-          child: _sending
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('إرسال الرمز'),
-        ),
-      ],
     ),
   );
 }

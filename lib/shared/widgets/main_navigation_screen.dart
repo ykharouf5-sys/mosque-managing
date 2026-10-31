@@ -1,5 +1,4 @@
 import 'package:studentry/patients/presentation/appointments_screen.dart';
-import 'package:studentry/patients/presentation/add_patient_screen.dart';
 import 'package:studentry/patients/presentation/new_appointment_screen.dart';
 import 'package:studentry/patients/presentation/reports_screen.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
@@ -62,24 +61,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         selectedIndex: _index,
         onSelected: _select,
       ),
-      floatingActionButton: _index == 0 || _index == 1
+      floatingActionButton: _index == 1
           ? FloatingActionButton(
-              tooltip: _index == 0 ? 'إضافة مريض' : 'موعد جديد',
+              tooltip: 'موعد جديد',
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => _index == 0
-                      ? const AddPatientScreen()
-                      : const NewAppointmentScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const NewAppointmentScreen()),
               ),
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.onPrimary,
-              child: Icon(
-                _index == 0
-                    ? Icons.person_add_rounded
-                    : Icons.event_available_rounded,
-              ),
+              child: const Icon(Icons.event_available_rounded),
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

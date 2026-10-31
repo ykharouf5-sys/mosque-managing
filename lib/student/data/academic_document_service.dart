@@ -16,6 +16,26 @@ class AcademicDocumentService {
   final http.Client? objectClient;
   ApiClient get _api => client ?? ApiClient.instance;
 
+  Future<Uri> lectureUrl(String subjectId, SubjectLecture lecture) async {
+    var value = lecture.pdfReference ?? lecture.pdfUrl;
+    if (value?.startsWith('academic/') == true) {
+      final result = await _api.get(
+        '/academic/subjects/$subjectId/lectures/${lecture.number}/document-url',
+        force: true,
+        maxRetries: 0,
+        reason: RequestReason.manual,
+      );
+      value = result.data['data']['url'] as String;
+    }
+    final uri = Uri.tryParse(value ?? '');
+    if (uri == null ||
+        !['http', 'https'].contains(uri.scheme) ||
+        uri.host.isEmpty) {
+      throw const FormatException('Invalid lecture document URL');
+    }
+    return uri;
+  }
+
   Future<Uri> subjectUrl(Subject subject) async {
     var url = subject.pdfUrl;
     final reference = subject.pdfReference;
@@ -131,6 +151,19 @@ class AcademicDocumentService {
     );
     checkSession();
     return completed.data['data']['reference'] as String;
+  }
+
+  Future<String> uploadDocument(String filePath) async {
+    if (!filePath.toLowerCase().endsWith('.html') &&
+        !filePath.toLowerCase().endsWith('.htm')) {
+      return uploadPdf(filePath);
+    }
+    final file = File(filePath);
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+      throw const FormatException('HTML file exceeds size limits');
+    }
+    return _multipart(bytes, file.uri.pathSegments.last);
   }
 
   Future<String> _durableUploadId(String digest) async {

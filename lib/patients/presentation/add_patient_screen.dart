@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -489,11 +490,11 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
                   },
                 ),
                 const SizedBox(height: 10),
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.featureBg,
+                Material(
+                  color: AppColors.featureBg,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: AppColors.divider),
+                    side: const BorderSide(color: AppColors.divider),
                   ),
                   child: SwitchListTile.adaptive(
                     value: _whatsappOptIn,
@@ -556,6 +557,8 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
                   children: [
                     Expanded(
                       child: TextField(
+                        inputFormatters: AppInputFormatters.text(200),
+                        textAlignVertical: TextAlignVertical.center,
                         controller: _treatmentCtrl,
                         decoration: InputDecoration(
                           hintText: 'أضف إجراء...',
@@ -761,15 +764,6 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
   Widget _sectionTitle(String text) {
     return Row(
       children: [
-        Container(
-          width: 3,
-          height: 16,
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 8),
         Text(
           text,
           style: const TextStyle(
@@ -790,8 +784,19 @@ class _AddPatientScreenState extends ConsumerState<AddPatientScreen> {
     String? Function(String?)? validator,
   }) {
     return TextFormField(
+      inputFormatters: keyboardType == TextInputType.phone
+          ? AppInputFormatters.phone
+          : keyboardType == TextInputType.number
+          ? (identical(ctrl, _ageCtrl)
+                ? AppInputFormatters.integer(digits: 3)
+                : AppInputFormatters.decimal())
+          : AppInputFormatters.text(maxLines > 1 ? 5000 : 255),
+      textAlignVertical: TextAlignVertical.center,
       controller: ctrl,
-      keyboardType: keyboardType,
+      keyboardType:
+          keyboardType == TextInputType.number && !identical(ctrl, _ageCtrl)
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : keyboardType,
       maxLines: maxLines,
       validator: validator,
       decoration: InputDecoration(

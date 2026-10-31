@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:flutter/material.dart';
 
 /// Controllers live in the parent dialog, so switching tabs cannot discard drafts.
@@ -44,6 +45,14 @@ class _CatalogTranslationEditorState extends State<CatalogTranslationEditor> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: TextField(
+                    inputFormatters: AppInputFormatters.text(
+                      entry.key == 'description'
+                          ? 5000
+                          : entry.key.contains('url')
+                          ? 2048
+                          : 190,
+                    ),
+                    textAlignVertical: TextAlignVertical.center,
                     key: ValueKey('$locale:${entry.key}'),
                     controller: controllers[entry.key],
                     maxLines: entry.key == 'description' ? 3 : 1,

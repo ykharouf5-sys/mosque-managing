@@ -40,6 +40,8 @@ class AppTheme {
       fontFamily: fontFamily,
       fontSize: fontSize,
       fontWeight: FontWeight.w700,
+      height: 1.35,
+      leadingDistribution: TextLeadingDistribution.even,
     );
     return ThemeData(
       useMaterial3: true,
@@ -69,6 +71,7 @@ class AppTheme {
           shape: shape,
           padding: buttonPadding,
           textStyle: textStyle,
+          alignment: Alignment.center,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -80,6 +83,7 @@ class AppTheme {
           shape: shape,
           padding: buttonPadding,
           textStyle: textStyle,
+          alignment: Alignment.center,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -92,6 +96,7 @@ class AppTheme {
           side: const BorderSide(color: AppColors.dividerLine),
           padding: buttonPadding,
           textStyle: textStyle,
+          alignment: Alignment.center,
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -101,6 +106,8 @@ class AppTheme {
           tapTargetSize: MaterialTapTargetSize.padded,
           padding: buttonPadding,
           shape: shape,
+          alignment: Alignment.center,
+          textStyle: textStyle.copyWith(fontSize: 14),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

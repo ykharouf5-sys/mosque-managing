@@ -7,6 +7,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/utils/app_input_formatters.dart';
 
 class User {
   final DateTime? emailConfirmedAt;
@@ -96,28 +97,50 @@ class _AuthFieldState extends State<AuthField>
           controller: widget.controller,
           obscureText: widget.isPassword ? _obscure : false,
           keyboardType: widget.keyboardType,
-          textDirection: TextDirection.rtl,
+          textDirection:
+              widget.isPassword ||
+                  widget.keyboardType == TextInputType.emailAddress ||
+                  widget.keyboardType == TextInputType.phone
+              ? TextDirection.ltr
+              : TextDirection.rtl,
+          textAlignVertical: TextAlignVertical.center,
+          autocorrect:
+              !widget.isPassword &&
+              widget.keyboardType != TextInputType.emailAddress,
+          enableSuggestions: !widget.isPassword,
+          textInputAction: widget.isPassword
+              ? TextInputAction.done
+              : TextInputAction.next,
+          inputFormatters: widget.isPassword
+              ? null
+              : widget.keyboardType == TextInputType.phone
+              ? AppInputFormatters.phone
+              : AppInputFormatters.text(
+                  widget.keyboardType == TextInputType.emailAddress ? 254 : 200,
+                ),
           style: TextStyle(
-            fontSize: (widget.roomy ? 17.5 : (widget.compact ? 16 : 15)).sp,
+            fontSize: (widget.roomy ? 17.5 : (widget.compact ? 16 : 15)),
             color: AppColors.authTextDark,
             fontWeight: FontWeight.w400,
+            height: 1.35,
+            leadingDistribution: TextLeadingDistribution.even,
           ),
           decoration: InputDecoration(
             hintText: widget.hint,
             hintTextDirection: TextDirection.rtl,
             hintStyle: TextStyle(
-              color: AppColors.authGrey.withValues(alpha: 0.7),
-              fontSize: (widget.roomy ? 16.5 : (widget.compact ? 15 : 14)).sp,
+              color: const Color(0xFF64748B),
+              fontSize: (widget.roomy ? 16.5 : (widget.compact ? 15 : 14)),
               fontWeight: FontWeight.w400,
             ),
             prefixIcon: Padding(
-              padding: EdgeInsets.all((widget.compact ? 7 : 10).r),
+              padding: EdgeInsets.all((widget.compact ? 7 : 10)),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
                   color: (_hasFocus ? AppColors.primary : AppColors.authGrey)
                       .withValues(alpha: 0.09),
-                  borderRadius: BorderRadius.circular(10.r),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: AnimatedBuilder(
                   animation: _focusAnim,
@@ -128,7 +151,7 @@ class _AuthFieldState extends State<AuthField>
                       AppColors.primary,
                       _focusAnim.value,
                     ),
-                    size: 20.sp,
+                    size: 20,
                   ),
                 ),
               ),
@@ -140,30 +163,27 @@ class _AuthFieldState extends State<AuthField>
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
                       color: AppColors.authGrey,
-                      size: 20.sp,
+                      size: 20,
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   )
                 : null,
-            isDense: widget.compact,
+            isDense: false,
             prefixIconConstraints: widget.compact
                 ? BoxConstraints(
-                    minWidth: (widget.roomy ? 58 : 52).w,
-                    minHeight: (widget.roomy ? 58 : 52).h,
+                    minWidth: (widget.roomy ? 58 : 52),
+                    minHeight: (widget.roomy ? 58 : 52),
                   )
                 : null,
             suffixIconConstraints: widget.compact
                 ? BoxConstraints(
-                    minWidth: (widget.roomy ? 58 : 52).w,
-                    minHeight: (widget.roomy ? 58 : 52).h,
+                    minWidth: (widget.roomy ? 58 : 52),
+                    minHeight: (widget.roomy ? 58 : 52),
                   )
                 : null,
             filled: true,
-            fillColor: Colors.white,
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: 16.w,
-              vertical: (widget.roomy ? 19 : 16).h,
-            ),
+            fillColor: AppColors.authFieldBg,
+            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 15),
             border: _fieldBorder(AppColors.authFieldBorder, 1),
             enabledBorder: _fieldBorder(AppColors.authFieldBorder, 1),
             focusedBorder: _fieldBorder(AppColors.primary, 1.6),
@@ -171,7 +191,7 @@ class _AuthFieldState extends State<AuthField>
             focusedErrorBorder: _fieldBorder(AppColors.danger, 1.6),
             errorStyle: TextStyle(
               color: AppColors.danger,
-              fontSize: 11.sp,
+              fontSize: 11,
               height: 1.2,
             ),
           ),
@@ -259,10 +279,10 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   Widget buildAuthSurface({required Widget child}) => Container(
-    padding: EdgeInsets.symmetric(horizontal: 22.w, vertical: 24.h),
+    padding: EdgeInsets.symmetric(horizontal: 22, vertical: 24),
     decoration: BoxDecoration(
       color: Colors.white.withValues(alpha: 0.94),
-      borderRadius: BorderRadius.circular(28.r),
+      borderRadius: BorderRadius.circular(28),
       border: Border.all(color: Colors.white),
       boxShadow: [
         BoxShadow(
@@ -278,8 +298,8 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Widget buildLogoSmall({double size = 70}) {
     return Image.asset(
       'assets/image/logo.png',
-      width: size.w,
-      height: size.h,
+      width: size,
+      height: size,
       fit: BoxFit.contain,
     );
   }
@@ -310,7 +330,7 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Widget buildGoogleButton(VoidCallback onTap, {bool compact = false}) {
     return SizedBox(
       width: double.infinity,
-      height: (compact ? 58 : 60).h,
+      height: (compact ? 58 : 60),
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           backgroundColor: const Color(0xFFF8FBFC),
@@ -326,8 +346,8 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 30.r,
-              height: 30.r,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
@@ -343,7 +363,7 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                 ),
               ),
             ),
-            SizedBox(width: 10.w),
+            SizedBox(width: 10),
             Flexible(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
@@ -354,16 +374,16 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                       'متابعة باستخدام',
                       style: TextStyle(
                         color: AppColors.authGrey,
-                        fontSize: (compact ? 12.5 : 14).sp,
+                        fontSize: (compact ? 12.5 : 14),
                         fontWeight: FontWeight.w400,
                         height: 1.35,
                       ),
                     ),
-                    SizedBox(width: 6.w),
+                    SizedBox(width: 6),
                     Text(
                       'Google',
                       style: TextStyle(
-                        fontSize: (compact ? 15 : 17).sp,
+                        fontSize: (compact ? 15 : 17),
                         fontWeight: FontWeight.w600,
                         color: AppColors.authTextDark,
                         height: 1.25,
@@ -386,12 +406,12 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           child: Divider(color: AppColors.authFieldBorder, thickness: 1),
         ),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12.w),
+          padding: EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             'أو',
             style: TextStyle(
               color: AppColors.authGrey,
-              fontSize: 13.sp,
+              fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
           ),

@@ -6,6 +6,7 @@ import 'package:studentry/student/presentation/student_home_screen.dart';
 import 'package:studentry/student/presentation/university_screen.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:studentry/student/presentation/widgets/home_dashboard_widgets.dart';
 
 class AppBottomNav extends StatelessWidget {
   final int selectedIndex;
@@ -30,15 +31,17 @@ class AppBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = HomePalette.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: palette.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: palette.border)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+            color: AppColors.primary.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -3),
           ),
         ],
       ),
@@ -49,7 +52,10 @@ class AppBottomNav extends StatelessWidget {
           SafeArea(
             top: false,
             child: SizedBox(
-              height: 64,
+              height:
+                  66 +
+                  (MediaQuery.textScalerOf(context).scale(1) - 1).clamp(0, 2) *
+                      18,
               child: Row(
                 children: [
                   _item(
@@ -83,7 +89,7 @@ class AppBottomNav extends StatelessWidget {
                   ),
                   _item(
                     context,
-                    Icons.analytics_rounded,
+                    Icons.bar_chart_rounded,
                     'التقارير',
                     selectedIndex == 4,
                     () => _select(context, 4, const ReportsScreen()),
@@ -105,6 +111,7 @@ class AppBottomNav extends StatelessWidget {
     VoidCallback onTap, {
     int badge = 0,
   }) {
+    final palette = HomePalette.of(context);
     return Expanded(
       child: Semantics(
         button: true,
@@ -121,20 +128,27 @@ class AppBottomNav extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    padding: const EdgeInsets.all(7),
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 15,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: selected
-                          ? AppColors.primary.withValues(alpha: 0.12)
+                          ? AppColors.primary.withValues(alpha: .10)
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(
                       icon,
                       color: selected
-                          ? AppColors.primary
-                          : AppColors.textLightGray,
-                      size: 23,
+                          ? (palette.dark
+                                ? const Color(0xFF85D6DF)
+                                : AppColors.primary)
+                          : palette.muted,
+                      size: 25,
                     ),
                   ),
                   if (badge > 0)
@@ -169,8 +183,12 @@ class AppBottomNav extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 10,
-                  color: selected ? AppColors.primary : AppColors.textLightGray,
+                  fontSize: 10.5,
+                  color: selected
+                      ? (palette.dark
+                            ? const Color(0xFF85D6DF)
+                            : HomePalette.brandInk)
+                      : palette.muted,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
                 ),
               ),

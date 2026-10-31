@@ -1,3 +1,4 @@
+import 'package:studentry/store/presentation/widgets/cart_removal_dialog.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
@@ -31,6 +32,24 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     _addressC.dispose();
     _notesC.dispose();
     super.dispose();
+  }
+
+  bool _removalPromptOpen = false;
+
+  Future<void> _confirmRemoval(CartItem item) async {
+    if (_removalPromptOpen) return;
+    _removalPromptOpen = true;
+    try {
+      final confirmed = await showCartRemovalConfirmation(
+        context,
+        item.product.name,
+      );
+      if (confirmed && mounted) {
+        ref.read(cartProvider.notifier).removeFromCart(item.product.id);
+      }
+    } finally {
+      _removalPromptOpen = false;
+    }
   }
 
   void _removeCoupon() {
@@ -232,9 +251,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         icon: Icons.remove,
                         onTap: () {
                           if (item.quantity <= 1) {
-                            ref
-                                .read(cartProvider.notifier)
-                                .removeFromCart(item.product.id);
+                            _confirmRemoval(item);
                           } else {
                             ref
                                 .read(cartProvider.notifier)
@@ -271,14 +288,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                 ],
               ),
             ),
-            GestureDetector(
-              onTap: () => ref
-                  .read(cartProvider.notifier)
-                  .removeFromCart(item.product.id),
-              child: Padding(
-                padding: EdgeInsets.only(right: 4.w),
-                child: Icon(Icons.close, color: _kGrey, size: 20.sp),
-              ),
+            IconButton(
+              tooltip: AppLocale.text('إزالة المنتج', 'Remove product'),
+              onPressed: () => _confirmRemoval(item),
+              icon: const Icon(Icons.close_rounded, color: _kGrey, size: 22),
             ),
           ],
         ),
@@ -293,8 +306,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 30.w,
-        height: 30.h,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: AppColors.primarySurface,
           borderRadius: BorderRadius.circular(8),

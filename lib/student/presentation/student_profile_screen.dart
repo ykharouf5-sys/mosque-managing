@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/shared/providers/auth_provider.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -152,6 +153,8 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> {
               ),
               SizedBox(height: 24.h),
               TextField(
+                inputFormatters: AppInputFormatters.text(200),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _nameC,
                 decoration: const InputDecoration(
                   labelText: 'الاسم الكامل *',
@@ -161,6 +164,8 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> {
               ),
               SizedBox(height: 12.h),
               TextField(
+                inputFormatters: AppInputFormatters.phone,
+                textAlignVertical: TextAlignVertical.center,
                 controller: _phoneC,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
@@ -171,6 +176,8 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> {
               ),
               SizedBox(height: 12.h),
               TextField(
+                inputFormatters: AppInputFormatters.text(200),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _univC,
                 decoration: const InputDecoration(
                   labelText: 'الجامعة',
@@ -180,6 +187,8 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> {
               ),
               SizedBox(height: 12.h),
               TextField(
+                inputFormatters: AppInputFormatters.text(80),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _studentIdC,
                 decoration: InputDecoration(
                   labelText: 'الرقم الامتحاني / الرقم الجامعي *',

@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
@@ -603,6 +604,8 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
                 ),
                 SizedBox(height: 12.h),
                 TextField(
+                  inputFormatters: AppInputFormatters.text(5000),
+                  textAlignVertical: TextAlignVertical.center,
                   controller: commentC,
                   maxLines: 3,
                   decoration: InputDecoration(

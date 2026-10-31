@@ -77,8 +77,11 @@ class AuthNotifier extends Notifier<AuthState> {
   void setAuthUser(AuthUser user) => state = AuthState.fromUser(user);
 
   Future<void> logout() async {
-    await AuthService().signOut();
-    state = const AuthState();
+    try {
+      await AuthService().signOut();
+    } finally {
+      state = const AuthState();
+    }
   }
 
   Future<void> deleteAccount(String currentPassword) async {

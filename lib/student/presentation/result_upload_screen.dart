@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:studentry/student/data/pdf_parser_service.dart';
@@ -315,7 +316,10 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
                 onSelected: (v) => _handleMenuAction(v, upload),
                 itemBuilder: (_) => [
                   if (upload.unmatchedRecords > 0)
-                    const PopupMenuItem(value: 'rematch', child: Text('إعادة مطابقة الطلاب')),
+                    const PopupMenuItem(
+                      value: 'rematch',
+                      child: Text('إعادة مطابقة الطلاب'),
+                    ),
                   if (upload.status == 'failed')
                     const PopupMenuItem(
                       value: 'reprocess',
@@ -509,7 +513,9 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذرت المطابقة. حاول عند توفر الاتصال.')),
+          const SnackBar(
+            content: Text('تعذرت المطابقة. حاول عند توفر الاتصال.'),
+          ),
         );
       }
     }
@@ -854,9 +860,7 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'تم استيراد ${parsed.records.length} سجل بنجاح',
-            ),
+            content: Text('تم استيراد ${parsed.records.length} سجل بنجاح'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -908,6 +912,8 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
+                inputFormatters: AppInputFormatters.text(160),
+                textAlignVertical: TextAlignVertical.center,
                 controller: subjectC,
                 decoration: const InputDecoration(
                   labelText: 'اسم المادة (اختياري)',
@@ -916,6 +922,8 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
               ),
               SizedBox(height: 10.h),
               TextField(
+                inputFormatters: AppInputFormatters.text(200),
+                textAlignVertical: TextAlignVertical.center,
                 controller: sessionC,
                 decoration: const InputDecoration(
                   labelText: 'الدورة الامتحانية (اختياري)',
@@ -924,6 +932,8 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
               ),
               SizedBox(height: 10.h),
               TextField(
+                inputFormatters: AppInputFormatters.text(80),
+                textAlignVertical: TextAlignVertical.center,
                 controller: yearC,
                 decoration: const InputDecoration(
                   labelText: 'السنة الدراسية (اختياري)',
@@ -932,6 +942,8 @@ class _ResultUploadScreenState extends ConsumerState<ResultUploadScreen> {
               ),
               SizedBox(height: 10.h),
               TextField(
+                inputFormatters: AppInputFormatters.text(200),
+                textAlignVertical: TextAlignVertical.center,
                 controller: universityC,
                 decoration: const InputDecoration(
                   labelText: 'الجامعة',

@@ -1,3 +1,4 @@
+import 'package:studentry/auth/presentation/auth_layout.dart';
 import 'package:studentry/auth/presentation/auth_mixin.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/auth/presentation/otp_verification_screen.dart';
@@ -7,7 +8,6 @@ import 'package:studentry/shared/data/api_request_queue.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -163,181 +163,74 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      backgroundColor: const Color(0xFFF6FBFC),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            buildAuthBackdrop(),
-            FadeTransition(
-              opacity: _fadeAnim,
-              child: SlideTransition(
-                position: _slideAnim,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final formWidth = constraints.maxWidth > 600
-                        ? 430.0
-                        : constraints.maxWidth * 0.90;
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(12.w, 12.h, 12.w, 8.h),
-                      child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: SizedBox(
-                            width: formWidth,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildHeader(),
-                                SizedBox(height: 18.h),
-                                _buildLoginCard(),
-                                SizedBox(height: 8.h),
-                                _buildSignUpLink(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) => AuthLayout(
+    title: 'مرحباً بعودتك',
+    subtitle: 'دراستك، مرضاك ومواعيدك في مكان واحد.',
+    footer: _buildSignUpLink(),
+    child: FadeTransition(
+      opacity: MediaQuery.disableAnimationsOf(context)
+          ? const AlwaysStoppedAnimation(1)
+          : _fadeAnim,
+      child: SlideTransition(
+        position: MediaQuery.disableAnimationsOf(context)
+            ? const AlwaysStoppedAnimation(Offset.zero)
+            : _slideAnim,
+        child: _buildLoginCard(),
       ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 58.r,
-              height: 58.r,
-              padding: EdgeInsets.all(7.r),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.88),
-                borderRadius: BorderRadius.circular(18.r),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.14),
-                    blurRadius: 18,
-                    offset: const Offset(0, 7),
-                  ),
-                ],
-              ),
-              child: buildLogoSmall(size: 44),
-            ),
-            SizedBox(width: 10.w),
-            Text(
-              'Studentry',
-              style: TextStyle(
-                color: AppColors.authTextDark,
-                fontSize: 23.sp,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 14.h),
-        Text(
-          'مرحباً بعودتك',
-          style: TextStyle(
-            color: AppColors.authTextDark,
-            fontSize: 24.sp,
-            fontWeight: FontWeight.w800,
-            height: 1.3,
-            letterSpacing: 0.3,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        SizedBox(height: 3.h),
-        Text(
-          'أدخل بياناتك للمتابعة',
-          style: TextStyle(
-            color: AppColors.authGrey,
-            fontSize: 14.sp,
-            fontWeight: FontWeight.w400,
-            letterSpacing: 0.2,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
+    ),
+  );
 
   Widget _buildLoginCard() {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.90),
-        borderRadius: BorderRadius.circular(24.r),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.92)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0B5261).withValues(alpha: 0.08),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildField(
+            controller: _emailController,
+            hint: 'البريد الإلكتروني',
+            icon: Icons.email_outlined,
+            keyboardType: TextInputType.emailAddress,
+            compact: true,
           ),
-        ],
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            buildField(
-              controller: _emailController,
-              hint: 'البريد الإلكتروني',
-              icon: Icons.email_outlined,
-              keyboardType: TextInputType.emailAddress,
-              compact: true,
-            ),
-            SizedBox(height: 10.h),
-            buildField(
-              controller: passwordController,
-              hint: 'كلمة المرور',
-              icon: Icons.lock_outline,
-              isPassword: true,
-              compact: true,
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: () => _showForgotPasswordDialog(context),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.symmetric(horizontal: 4.w),
-                ),
-                child: Text(
-                  'نسيت كلمة المرور؟',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 13.sp,
-                    fontWeight: FontWeight.w600,
-                  ),
+          SizedBox(height: 10),
+          buildField(
+            controller: passwordController,
+            hint: 'كلمة المرور',
+            icon: Icons.lock_outline,
+            isPassword: true,
+            compact: true,
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => _showForgotPasswordDialog(context),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.symmetric(horizontal: 4),
+              ),
+              child: Text(
+                'نسيت كلمة المرور؟',
+                style: TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            SizedBox(height: 6.h),
-            _buildLoginButton(),
-            SizedBox(height: 12.h),
+          ),
+          SizedBox(height: 6),
+          _buildLoginButton(),
+          SizedBox(height: 12),
+          if (MediaQuery.viewInsetsOf(context).bottom == 0) ...[
             buildOrDivider(),
-            SizedBox(height: 10.h),
+            SizedBox(height: 10),
             buildGoogleButton(
               () => signInWithGoogle(selectedRole: _selectedRole),
               compact: true,
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -345,7 +238,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildLoginButton() {
     return SizedBox(
       width: double.infinity,
-      height: 60.h,
+      height: 60,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
@@ -367,7 +260,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
             disabledForegroundColor: AppColors.textLight.withValues(alpha: 0.8),
             elevation: 0,
-            padding: EdgeInsets.symmetric(horizontal: 16.w),
+            padding: EdgeInsets.symmetric(horizontal: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.md),
             ),
@@ -381,8 +274,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             child: _isLoading
                 ? SizedBox(
                     key: const ValueKey('loading'),
-                    width: 22.w,
-                    height: 22.h,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                       color: AppColors.textLight,
                       strokeWidth: 2.5,
@@ -392,12 +285,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     key: const ValueKey('text'),
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.login_rounded, size: 18.sp),
-                      SizedBox(width: 8.w),
+                      Icon(Icons.login_rounded, size: 18),
+                      SizedBox(width: 8),
                       Text(
                         'تسجيل الدخول',
                         style: TextStyle(
-                          fontSize: 15.sp,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.3,
                           height: 1.4,
@@ -416,7 +309,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       child: TextButton(
         onPressed: () => Navigator.pushNamed(context, '/register'),
         style: TextButton.styleFrom(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
@@ -428,7 +321,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 text: 'ليس لديك حساب؟ ',
                 style: TextStyle(
                   color: AppColors.authGrey,
-                  fontSize: 14.sp,
+                  fontSize: 14,
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -436,7 +329,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 text: 'إنشاء حساب',
                 style: TextStyle(
                   color: AppColors.primary,
-                  fontSize: 14.sp,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),

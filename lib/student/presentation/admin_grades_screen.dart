@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'dart:io';
 import 'package:studentry/student/data/grade_service.dart';
 import 'package:studentry/student/data/subject_models.dart';
@@ -455,6 +456,8 @@ class _AdminGradesScreenState extends ConsumerState<AdminGradesScreen> {
                             ),
                             SizedBox(height: 6.h),
                             TextField(
+                              inputFormatters: AppInputFormatters.text(200000),
+                              textAlignVertical: TextAlignVertical.center,
                               controller: _manualCtrl,
                               maxLines: 8,
                               textDirection: TextDirection.rtl,

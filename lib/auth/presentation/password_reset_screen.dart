@@ -1,10 +1,9 @@
+import 'package:studentry/auth/presentation/auth_layout.dart';
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'dart:async';
 
 import 'package:studentry/shared/data/auth_service.dart';
-import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class PasswordResetScreen extends StatefulWidget {
   final String email;
@@ -110,126 +109,93 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.authBackground,
-      appBar: AppBar(title: const Text('إعادة تعيين كلمة المرور')),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(24.r),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.lock_reset_rounded,
-                    size: 72.sp,
-                    color: AppColors.primary,
-                  ),
-                  SizedBox(height: 18.h),
-                  Text(
-                    'أدخل الرمز المرسل إلى',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      color: AppColors.authGrey,
-                    ),
-                  ),
-                  SizedBox(height: 6.h),
-                  Text(
-                    widget.email,
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  SizedBox(height: 28.h),
-                  TextFormField(
-                    controller: _codeController,
-                    enabled: !_loading,
-                    textDirection: TextDirection.ltr,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    maxLength: 6,
-                    autofillHints: const [AutofillHints.oneTimeCode],
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'رمز التحقق',
-                      counterText: '',
-                    ),
-                    validator: (value) => value?.length == 6
-                        ? null
-                        : 'أدخل الرمز المكوّن من 6 أرقام',
-                  ),
-                  SizedBox(height: 14.h),
-                  TextFormField(
-                    controller: _passwordController,
-                    enabled: !_loading,
-                    autofillHints: const [AutofillHints.newPassword],
-                    obscureText: _obscure,
-                    decoration: InputDecoration(
-                      labelText: 'كلمة المرور الجديدة',
-                      suffixIcon: IconButton(
-                        onPressed: () => setState(() => _obscure = !_obscure),
-                        icon: Icon(
-                          _obscure
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                      ),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.length < 8) {
-                        return 'ثمانية أحرف على الأقل';
-                      }
-                      if (!RegExp(r'[A-Za-z]').hasMatch(value) ||
-                          !RegExp(r'\d').hasMatch(value)) {
-                        return 'استخدم أحرفاً وأرقاماً';
-                      }
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 14.h),
-                  TextFormField(
-                    controller: _confirmationController,
-                    enabled: !_loading,
-                    autofillHints: const [AutofillHints.newPassword],
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'تأكيد كلمة المرور',
-                    ),
-                    validator: (value) => value == _passwordController.text
-                        ? null
-                        : 'كلمتا المرور غير متطابقتين',
-                  ),
-                  SizedBox(height: 24.h),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52.h,
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _reset,
-                      child: _loading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('تغيير كلمة المرور'),
-                    ),
-                  ),
-                  SizedBox(height: 12.h),
-                  TextButton(
-                    onPressed: _seconds == 0 && !_resending && !_loading
-                        ? _resend
-                        : null,
-                    child: Text(
-                      _seconds > 0
-                          ? 'إعادة الإرسال بعد $_seconds ثانية'
-                          : 'إعادة إرسال الرمز',
-                    ),
-                  ),
-                ],
+  Widget build(BuildContext context) => AuthLayout(
+    title: 'كلمة مرور جديدة',
+    subtitle: 'أدخل الرمز المرسل إلى ${widget.email} ثم اختر كلمة مرور جديدة.',
+    compact: true,
+    child: Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          TextFormField(
+            controller: _codeController,
+            enabled: !_loading,
+            textDirection: TextDirection.ltr,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            maxLength: 6,
+            autofillHints: const [AutofillHints.oneTimeCode],
+            inputFormatters: AppInputFormatters.integer(digits: 6),
+            decoration: const InputDecoration(
+              labelText: 'رمز التحقق',
+              counterText: '',
+            ),
+            validator: (value) =>
+                value?.length == 6 ? null : 'أدخل الرمز المكوّن من 6 أرقام',
+          ),
+          SizedBox(height: 14),
+          TextFormField(
+            controller: _passwordController,
+            enabled: !_loading,
+            autofillHints: const [AutofillHints.newPassword],
+            obscureText: _obscure,
+            decoration: InputDecoration(
+              labelText: 'كلمة المرور الجديدة',
+              suffixIcon: IconButton(
+                onPressed: () => setState(() => _obscure = !_obscure),
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
               ),
             ),
+            validator: (value) {
+              if (value == null || value.length < 8) {
+                return 'ثمانية أحرف على الأقل';
+              }
+              if (!RegExp(r'[A-Za-z]').hasMatch(value) ||
+                  !RegExp(r'\d').hasMatch(value)) {
+                return 'استخدم أحرفاً وأرقاماً';
+              }
+              return null;
+            },
           ),
-        ),
+          SizedBox(height: 14),
+          TextFormField(
+            controller: _confirmationController,
+            enabled: !_loading,
+            autofillHints: const [AutofillHints.newPassword],
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'تأكيد كلمة المرور'),
+            validator: (value) => value == _passwordController.text
+                ? null
+                : 'كلمتا المرور غير متطابقتين',
+          ),
+          SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _reset,
+              child: _loading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('تغيير كلمة المرور'),
+            ),
+          ),
+          SizedBox(height: 12),
+          TextButton(
+            onPressed: _seconds == 0 && !_resending && !_loading
+                ? _resend
+                : null,
+            child: Text(
+              _seconds > 0
+                  ? 'إعادة الإرسال بعد $_seconds ثانية'
+                  : 'إعادة إرسال الرمز',
+            ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

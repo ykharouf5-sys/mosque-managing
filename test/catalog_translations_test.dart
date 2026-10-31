@@ -200,7 +200,9 @@ void main() {
       expect(find.text('عربي محدث'), findsOneWidget);
       expect(editorTranslations(ar, en)['en'], {'name': 'New English'});
       await tester.pumpWidget(const SizedBox());
-      for (final c in [...ar.values, ...en.values]) c.dispose();
+      for (final c in [...ar.values, ...en.values]) {
+        c.dispose();
+      }
     },
   );
 }

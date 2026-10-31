@@ -1,3 +1,8 @@
+import 'package:studentry/utils/app_input_formatters.dart';
+import 'package:studentry/shared/data/auth_service.dart';
+import 'package:studentry/shared/providers/auth_provider.dart';
+import 'package:studentry/student/data/academic_year.dart';
+import 'package:studentry/student/presentation/widgets/lecture_time_field.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/student/data/subject_models.dart';
@@ -27,11 +32,10 @@ class ScheduleScreen extends ConsumerStatefulWidget {
 class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   final AcademicStore _academic = AcademicStore.instance;
   String _selectedDay = _days[0];
-  final String _academicYear = 'الأولى';
+  String get _academicYear => academicYearLabel(AuthService().academicYear);
   @override
   void initState() {
     super.initState();
-    _loadAcademicYear();
     _academic.addListener(_onAcademicChanged);
     _academic.load();
   }
@@ -47,8 +51,6 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadAcademicYear() async {}
-
   List<StudentSubject> get _dayEnrollments => _academic.enrollments
       .where((e) => e.scheduleDays.contains(_selectedDay))
       .toList();
@@ -60,6 +62,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   );
 
   Widget _buildContent(BuildContext context) {
+    ref.watch(authProvider);
     return Scaffold(
       backgroundColor: AppColors.background,
       drawer: const AppDrawer(),
@@ -149,7 +152,9 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        'السنة $_academicYear',
+        _academicYear.isEmpty
+            ? 'حدد السنة من الإعدادات'
+            : 'السنة $_academicYear',
         style: const TextStyle(
           fontSize: 12,
           color: AppColors.primary,
@@ -295,14 +300,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         ),
         child: Row(
           children: [
-            Container(
-              width: 4.w,
-              height: 60.h,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            Icon(Icons.menu_book_outlined, color: color, size: 22),
             SizedBox(width: 12.w),
             Expanded(
               child: Column(
@@ -395,7 +393,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
 
   void _showAvailableSubjects(BuildContext context) {
     final subjects = _academic.subjects
-        .where((s) => s.academicYear == _academicYear)
+        .where((s) => academicYearLabel(s.academicYear) == _academicYear)
         .toList();
     final enrolledIds = _academic.enrollments.map((e) => e.subjectId).toSet();
     final available = subjects
@@ -470,13 +468,10 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                                   color: color.withValues(alpha: 0.2),
                                 ),
                               ),
-                              leading: Container(
-                                width: 4.w,
-                                height: 40.h,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
+                              leading: Icon(
+                                Icons.menu_book_outlined,
+                                color: color,
+                                size: 22,
                               ),
                               title: Text(
                                 s.name,
@@ -602,15 +597,16 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                       }).toList(),
                     ),
                     SizedBox(height: 12.h),
-                    TextField(
+                    // The existing edit action preserves its saved time when blank.
+                    // Offer replacement without an ineffective clear affordance.
+                    LectureTimeField(
                       controller: timeC,
-                      decoration: const InputDecoration(
-                        labelText: 'الوقت',
-                        hintText: '09:00 - 11:00',
-                      ),
+                      allowClear: enrollment.scheduleTimes.isEmpty,
                     ),
                     SizedBox(height: 12.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(120),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: hallC,
                       decoration: const InputDecoration(
                         labelText: 'القاعة',
@@ -688,6 +684,8 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
+                      inputFormatters: AppInputFormatters.text(160),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: nameC,
                       decoration: const InputDecoration(
                         labelText: 'اسم المادة',
@@ -697,6 +695,8 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                     ),
                     SizedBox(height: 10.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(80),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: codeC,
                       decoration: const InputDecoration(
                         labelText: 'كود المادة',
@@ -706,6 +706,8 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                     ),
                     SizedBox(height: 10.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(160),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: doctorC,
                       decoration: const InputDecoration(
                         labelText: 'اسم الدكتور',
@@ -714,16 +716,11 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                       textDirection: TextDirection.rtl,
                     ),
                     SizedBox(height: 10.h),
-                    TextField(
-                      controller: timeC,
-                      decoration: const InputDecoration(
-                        labelText: 'الوقت',
-                        hintText: '09:00 - 11:00',
-                      ),
-                      textDirection: TextDirection.rtl,
-                    ),
+                    LectureTimeField(controller: timeC),
                     SizedBox(height: 10.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(120),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: hallC,
                       decoration: const InputDecoration(
                         labelText: 'القاعة',

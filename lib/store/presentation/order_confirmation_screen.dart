@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
 import 'package:studentry/store/data/store_models.dart';
@@ -330,6 +331,8 @@ class _OrderConfirmationScreenState
 
   Widget _buildPhoneField() {
     return TextField(
+      inputFormatters: AppInputFormatters.phone,
+      textAlignVertical: TextAlignVertical.center,
       controller: _phoneC,
       keyboardType: TextInputType.phone,
       textDirection: TextDirection.ltr,
@@ -379,6 +382,8 @@ class _OrderConfirmationScreenState
 
   Widget _buildRegionField() {
     return TextField(
+      inputFormatters: AppInputFormatters.text(200),
+      textAlignVertical: TextAlignVertical.center,
       controller: _regionC,
       textDirection: AppLocale.language == 'ar'
           ? TextDirection.rtl
@@ -421,6 +426,8 @@ class _OrderConfirmationScreenState
           children: [
             Expanded(
               child: TextField(
+                inputFormatters: AppInputFormatters.text(200),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _couponC,
                 textDirection: TextDirection.ltr,
                 decoration: InputDecoration(

@@ -32,7 +32,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
     return Drawer(
       backgroundColor: AppColors.surface,
       child: SafeArea(
-        child: Column(
+        child: ListView(
+          padding: EdgeInsets.zero,
           children: [
             SizedBox(height: 20.h),
             GestureDetector(
@@ -92,7 +93,6 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                 MaterialPageRoute(builder: (_) => const StoreScreen()),
               );
             }),
-            const Spacer(),
             const Divider(height: 1),
             _buildDrawerItem(Icons.settings_outlined, 'الإعدادات', () {
               Navigator.pop(context);
@@ -104,7 +104,6 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
             SizedBox(height: 4.h),
             const Divider(height: 1),
             _buildDrawerItem(Icons.logout, 'تسجيل خروج', () {
-              Navigator.pop(context);
               _logout(context, ref);
             }, color: AppColors.danger),
             SizedBox(height: 16.h),
@@ -138,9 +137,20 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
   }
 
   void _logout(BuildContext context, WidgetRef ref) async {
-    await ref.read(authProvider.notifier).logout();
-    if (context.mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+    // Capture the page navigator before closing this drawer. The drawer's
+    // context is disposed while signOut closes the account database.
+    final navigator = Navigator.of(context);
+    final auth = ref.read(authProvider.notifier);
+    navigator.pop();
+    try {
+      await auth.logout();
+    } catch (_) {
+      // Local session clearing runs in AuthService's finally block, even if an
+      // ancillary cache fails to close. Complete the navigation on this tap.
+    } finally {
+      if (navigator.mounted) {
+        navigator.pushNamedAndRemoveUntil('/login', (_) => false);
+      }
     }
   }
 

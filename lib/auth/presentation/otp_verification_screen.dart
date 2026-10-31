@@ -1,3 +1,5 @@
+import 'package:studentry/auth/presentation/auth_layout.dart';
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'dart:async';
 
 import 'package:studentry/auth/presentation/auth_mixin.dart';
@@ -6,8 +8,6 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter/services.dart';
 
 class OtpVerificationScreen extends ConsumerStatefulWidget {
   final String email;
@@ -160,107 +160,35 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6FBFC),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: AppColors.authTextDark),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Stack(
-        children: [
-          buildAuthBackdrop(),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(20.r),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  child: buildAuthSurface(
-                    child: Column(
-                      children: [
-                        _buildMailIcon(),
-                        SizedBox(height: 20.h),
-                        Text(
-                          'تحقق من بريدك',
-                          style: TextStyle(
-                            fontSize: 25.sp,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.authTextDark,
-                          ),
-                        ).animate().fadeIn().slideY(begin: 0.2),
-                        SizedBox(height: 10.h),
-                        Text(
-                          'أرسلنا رمزاً من 6 أرقام إلى',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14.sp,
-                            color: AppColors.authGrey,
-                          ),
-                        ),
-                        SizedBox(height: 8.h),
-                        Container(
-                          constraints: const BoxConstraints(maxWidth: 360),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 16.w,
-                            vertical: 9.h,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(14.r),
-                            border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.12),
-                            ),
-                          ),
-                          child: Text(
-                            widget.email,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textDirection: TextDirection.ltr,
-                            style: TextStyle(
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: 30.h),
-                        _buildOtpFields(),
-                        SizedBox(height: 28.h),
-                        _buildVerifyButton(),
-                        SizedBox(height: 16.h),
-                        _buildResendSection(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+  Widget build(BuildContext context) => AuthLayout(
+    title: 'تحقق من بريدك',
+    subtitle: 'أدخل رمز التحقق المرسل إلى بريدك الإلكتروني.',
+    compact: true,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.authFieldBg,
+            borderRadius: BorderRadius.circular(14),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMailIcon() {
-    return Container(
-      width: 80.w,
-      height: 80.h,
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        Icons.mark_email_unread_outlined,
-        size: 40.sp,
-        color: AppColors.primary,
-      ),
-    ).animate().fadeIn(duration: 400.ms).then().shake();
-  }
+          child: Text(
+            widget.email,
+            textDirection: TextDirection.ltr,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+        const SizedBox(height: 24),
+        _buildOtpFields(),
+        const SizedBox(height: 24),
+        _buildVerifyButton(),
+        const SizedBox(height: 12),
+        _buildResendSection(),
+      ],
+    ),
+  );
 
   Widget _buildOtpFields() {
     return LayoutBuilder(
@@ -279,21 +207,19 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
                     padding: EdgeInsets.only(right: index == 5 ? 0 : gap),
                     child: SizedBox(
                       width: fieldWidth,
-                      height: 58.h,
+                      height: 58,
                       child: TextField(
                         controller: _controllers[index],
                         focusNode: _focusNodes[index],
                         keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
+                        inputFormatters: AppInputFormatters.integer(digits: 1),
                         autofillHints: index == 0
                             ? const [AutofillHints.oneTimeCode]
                             : null,
                         textAlign: TextAlign.center,
                         maxLength: 1,
                         style: TextStyle(
-                          fontSize: 22.sp,
+                          fontSize: 22,
                           fontWeight: FontWeight.w700,
                           color: AppColors.authTextDark,
                         ),
@@ -340,7 +266,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
   Widget _buildVerifyButton() {
     return SizedBox(
       width: double.infinity,
-      height: 52.h,
+      height: 52,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -354,8 +280,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
         onPressed: _isLoading ? null : _verifyOtp,
         child: _isLoading
             ? SizedBox(
-                width: 22.w,
-                height: 22.h,
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
                   color: AppColors.textLight,
                   strokeWidth: 2.5,
@@ -364,14 +290,11 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.verified_user_outlined, size: 20.sp),
-                  SizedBox(width: 8.w),
+                  Icon(Icons.verified_user_outlined, size: 20),
+                  SizedBox(width: 8),
                   Text(
                     'تحقق',
-                    style: TextStyle(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -385,9 +308,9 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
         if (!_canResend)
           Text(
             'إعادة الإرسال بعد 0:${_resendTimer.toString().padLeft(2, '0')}',
-            style: TextStyle(color: AppColors.authGrey, fontSize: 13.sp),
+            style: TextStyle(color: AppColors.authGrey, fontSize: 13),
           ),
-        SizedBox(height: 8.h),
+        SizedBox(height: 8),
         TextButton(
           onPressed: _canResend && !_isResending ? _resendCode : null,
           style: TextButton.styleFrom(
@@ -396,8 +319,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
           ),
           child: _isResending
               ? SizedBox(
-                  width: 18.w,
-                  height: 18.h,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: AppColors.primary,
@@ -405,13 +328,10 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
                 )
               : Text(
                   'إعادة إرسال الرمز',
-                  style: TextStyle(
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
         ),
-        SizedBox(height: 16.h),
+        SizedBox(height: 16),
         TextButton(
           onPressed: () => Navigator.pushNamedAndRemoveUntil(
             context,
@@ -420,7 +340,7 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen>
           ),
           child: Text(
             'تسجيل الدخول بكلمة مرور',
-            style: TextStyle(color: AppColors.authGrey, fontSize: 13.sp),
+            style: TextStyle(color: AppColors.authGrey, fontSize: 13),
           ),
         ),
       ],

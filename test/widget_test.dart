@@ -20,7 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   testWidgets('application renders inside ProviderScope', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MyApp()));
-    await tester.pumpAndSettle();
+    // The welcome illustration intentionally animates continuously.
+    await tester.pump(const Duration(seconds: 1));
     expect(find.byType(MaterialApp), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -48,7 +49,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('fixed auth layouts fit a compact phone without scrolling', (
+  testWidgets('auth layouts fit compact phones without vertical scrolling', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 640);
@@ -65,7 +66,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
       expect(
         find.byWidgetPredicate(
           (widget) =>

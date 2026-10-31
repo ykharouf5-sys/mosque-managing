@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +35,8 @@ class DeliveryLocationField extends StatelessWidget {
       child: Column(
         children: [
           TextField(
+            inputFormatters: AppInputFormatters.text(200),
+            textAlignVertical: TextAlignVertical.center,
             controller: controller,
             textDirection: AppLocale.language == 'ar'
                 ? TextDirection.rtl

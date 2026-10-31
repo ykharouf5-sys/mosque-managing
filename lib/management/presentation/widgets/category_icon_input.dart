@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:flutter/material.dart';
 import 'package:studentry/utils/variable_colors.dart';
 
@@ -60,6 +61,8 @@ class _CategoryIconInputState extends State<CategoryIconInput> {
         ),
         const SizedBox(height: 8),
         TextField(
+          inputFormatters: AppInputFormatters.text(2048),
+          textAlignVertical: TextAlignVertical.center,
           controller: widget.controller,
           textDirection: TextDirection.ltr,
           keyboardType: TextInputType.url,

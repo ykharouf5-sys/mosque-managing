@@ -156,15 +156,16 @@ class CatalogNotifier extends Notifier<CatalogState> {
             ),
           )
           .toList();
-      final banners = (data['banners'] as List)
-          .map(
-            (r) => PromoBanner.fromJson(
-              StoreApiService.rowToBannerMap(
-                Map<String, dynamic>.from(r as Map),
-              ),
-            ),
-          )
-          .toList();
+      final banners =
+          [...data['banners'] as List, ...?data['home_banners'] as List?]
+              .map(
+                (r) => PromoBanner.fromJson(
+                  StoreApiService.rowToBannerMap(
+                    Map<String, dynamic>.from(r as Map),
+                  ),
+                ),
+              )
+              .toList();
       loadBannersAndCategories(banners, categories);
       await CacheManager.instance.set(
         summaryCacheKey,

@@ -389,15 +389,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       padding: EdgeInsets.only(bottom: 8.h),
       child: Row(
         children: [
-          Container(
-            width: 4.w,
-            height: 18.h,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(width: 8.w),
           Text(
             title,
             style: TextStyle(

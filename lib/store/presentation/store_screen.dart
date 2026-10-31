@@ -1,3 +1,6 @@
+import 'store_merchandising.dart';
+import 'widgets/store_product_card.dart';
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
 import 'dart:io';
@@ -46,7 +49,6 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   final _bannerController = PageController();
   final _searchController = TextEditingController();
   final SearchDebouncer _searchDebouncer = SearchDebouncer();
-  String? _studentAcademicYear;
   Timer? _catalogTimer;
   Future<void>? _catalogRefresh;
   bool _isInitialCatalogLoading = true;
@@ -60,13 +62,10 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
   void initState() {
     super.initState();
     ConnectivityService.isOnline.addListener(_onConnectivity);
-    _loadAcademicYear();
     _isInitialCatalogLoading = true;
     _catalogSetup = Future.microtask(() async {
       if (!mounted) return;
-      final loaded = ref
-          .read(catalogProvider.notifier)
-          .restoreSnapshot(academicYear: _studentAcademicYear);
+      final loaded = ref.read(catalogProvider.notifier).restoreSnapshot();
       _needsPageMetadata = !ref
           .read(catalogProvider.notifier)
           .hasCachedPagination;
@@ -129,7 +128,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     if (!mounted || !_visible) return;
     final loaded = await ref
         .read(catalogProvider.notifier)
-        .refreshCatalog(academicYear: _studentAcademicYear, force: force);
+        .refreshCatalog(force: force);
     if (!mounted) return;
     await _refreshSchedule.completed(success: loaded);
     if (!mounted) return;
@@ -160,25 +159,6 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
       }
       _scheduleCatalogRefresh();
     });
-  }
-
-  void _loadAcademicYear() {
-    if (ref.read(authProvider).role == 'student') {
-      _studentAcademicYear = AuthService().academicYear;
-    }
-  }
-
-  List<Product> _computeDisplayProducts(List<Product> products, String? role) {
-    if (role == 'student' && _studentAcademicYear != null) {
-      return products
-          .where(
-            (p) =>
-                p.academicYear == _studentAcademicYear ||
-                p.academicYear == null,
-          )
-          .toList();
-    }
-    return products;
   }
 
   @override
@@ -223,10 +203,16 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     final role = ref.watch(authProvider).role;
     final cartItemCount = ref.watch(cartProvider).itemCount;
     final favIds = ref.watch(favoritesProvider).productIds;
-    final banners = catalog.banners;
+    final banners = catalog.banners
+        .where((banner) => !banner.isHomeBanner)
+        .toList();
     final categories = catalog.categories;
     final products = catalog.products;
-    final displayProducts = _computeDisplayProducts(products, role);
+    final displayProducts = recommendedStoreOrder(
+      products,
+      role == 'student' ? AuthService().academicYear : null,
+    );
+    final productRows = storeProductRows(displayProducts);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -280,25 +266,24 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
                         : _buildHorizontalCategories(categories),
                     SizedBox(height: 24),
                     if (displayProducts.isNotEmpty) ...[
-                      if (role == 'student' && _studentAcademicYear != null)
-                        _buildAcademicYearBanner(),
-                      if (displayProducts.any((p) => p.rating > 0)) ...[
-                        _buildSectionHeader('منتجات مميزة', Icons.star_rounded),
-                        SizedBox(height: 12),
-                        _buildProductRow(
-                          _sortedProducts(
-                            displayProducts.where((p) => p.rating > 0).toList(),
-                            (a, b) => b.rating.compareTo(a.rating),
-                          ).take(6).toList(),
-                        ),
-                        SizedBox(height: 24),
-                      ],
                       _buildSectionHeader(
-                        'استكشف المنتجات',
-                        Icons.grid_view_rounded,
+                        'موصى بها لك',
+                        Icons.auto_awesome_outlined,
                       ),
-                      SizedBox(height: 12),
-                      _buildProductGrid(displayProducts),
+                      const SizedBox(height: 12),
+                      _buildProductRow(productRows.first),
+                      if (productRows.length > 1) ...[
+                        const SizedBox(height: 24),
+                        _buildSectionHeader(
+                          'استكشف المنتجات',
+                          Icons.grid_view_rounded,
+                        ),
+                        const SizedBox(height: 12),
+                        for (final row in productRows.skip(1)) ...[
+                          _buildProductRow(row),
+                          const SizedBox(height: 16),
+                        ],
+                      ],
                       SizedBox(height: 16),
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 16.w),
@@ -429,6 +414,8 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
         children: [
           Expanded(
             child: TextField(
+              inputFormatters: AppInputFormatters.text(200),
+              textAlignVertical: TextAlignVertical.center,
               controller: _searchController,
               textInputAction: TextInputAction.search,
               onChanged: _scheduleSearch,
@@ -625,57 +612,6 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     );
   }
 
-  List<Product> _sortedProducts(
-    List<Product> source,
-    int Function(Product, Product) compare,
-  ) {
-    final list = List<Product>.from(source);
-    list.sort((a, b) => compare(a, b));
-    return list;
-  }
-
-  Widget _buildAcademicYearBanner() {
-    return Container(
-      margin: EdgeInsets.only(bottom: 16.h),
-      padding: EdgeInsets.all(14.r),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(8.r),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            child: Icon(
-              Icons.school_rounded,
-              color: AppColors.primary,
-              size: 20.sp,
-            ),
-          ),
-          SizedBox(width: 12.w),
-          Expanded(
-            child: Text(
-              AppLocale.text(
-                'منتجات مقترحة لطلاب السنة $_studentAcademicYear',
-                'Recommended for academic year $_studentAcademicYear',
-              ),
-              style: TextStyle(
-                fontSize: 13.sp,
-                color: AppColors.textDark,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSectionHeader(String title, IconData icon) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 16.w),
@@ -684,7 +620,7 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
           Icon(icon, color: AppColors.primary, size: 20.sp),
           SizedBox(width: 8.w),
           Text(
-            title,
+            storeUi(title),
             style: TextStyle(
               color: AppColors.textDark,
               fontWeight: FontWeight.bold,
@@ -716,7 +652,8 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
 
   Widget _buildProductRow(List<Product> products) {
     return SizedBox(
-      height: 190.h,
+      height: (250 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5))
+          .toDouble(),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: 12.w),
@@ -729,131 +666,19 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     );
   }
 
-  Widget _buildProductGrid(List<Product> products) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: NeverScrollableScrollPhysics(),
-        itemCount: products.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.78,
+  Widget _buildProductCard(Product product, {bool wide = false}) =>
+      StoreProductCard(
+        product: product,
+        width: wide
+            ? double.infinity
+            : (MediaQuery.sizeOf(context).width * .43).clamp(145.0, 200.0),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProductDetailsScreen(product: product),
+          ),
         ),
-        itemBuilder: (_, index) =>
-            _buildProductCard(products[index], wide: true),
-      ),
-    );
-  }
-
-  Widget _buildProductCard(Product product, {bool wide = false}) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProductDetailsScreen(product: product),
-        ),
-      ),
-      child: Container(
-        width: wide ? double.infinity : 140.w,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: kFieldBorder, width: 1),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: product.listImageUrl.isEmpty
-                      ? Container(
-                          color: AppColors.primarySurface,
-                          child: Icon(
-                            Icons.image_outlined,
-                            color: AppColors.primary,
-                            size: 28.sp,
-                          ),
-                        )
-                      : product.listImageUrl.startsWith('/') ||
-                            product.listImageUrl.contains(':\\')
-                      ? Image.file(
-                          File(product.listImageUrl),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            color: AppColors.primarySurface,
-                            child: Icon(
-                              Icons.image_outlined,
-                              color: AppColors.primary,
-                              size: 28.sp,
-                            ),
-                          ),
-                        )
-                      : AppCachedNetworkImage(
-                          url: product.listImageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: () => Container(
-                            color: AppColors.primarySurface,
-                            child: Icon(
-                              Icons.image_outlined,
-                              color: AppColors.primary,
-                              size: 28.sp,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.all(8.r),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    product.name,
-                    style: TextStyle(
-                      color: AppColors.textDark,
-                      fontSize: 11.sp,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 2.h),
-                  Row(
-                    children: [
-                      Text(
-                        storeUi('${product.price.toStringAsFixed(0)} SYP'),
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 12.sp,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Spacer(),
-                      if (product.rating > 0) ...[
-                        Icon(Icons.star, color: Color(0xFFFFC107), size: 12),
-                        SizedBox(width: 2.w),
-                        Text(
-                          product.rating.toStringAsFixed(1),
-                          style: TextStyle(color: _kGrey, fontSize: 10.sp),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      );
 
   void _editCategoryName(ProductCategory category) {
     final controller = TextEditingController(text: category.label);
@@ -875,6 +700,8 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
             ),
           ),
           content: TextField(
+            inputFormatters: AppInputFormatters.text(200),
+            textAlignVertical: TextAlignVertical.center,
             controller: controller,
             decoration: InputDecoration(labelText: storeUi('الاسم')),
           ),

@@ -5,6 +5,10 @@ String storeUi(String text) =>
     AppLocale.language == 'en' ? (_english[text] ?? text) : text;
 
 const _english = <String, String>{
+  "موصى بها لك": "Recommended for you",
+  "بانرات الرئيسية": "Home banners",
+  "لا توجد بانرات للرئيسية": "No home banners yet",
+  "إضافة بانر للرئيسية": "Add home banner",
   "منتج تجريبي": "Test product",
   "مؤرشف": "Archived",
   "منشور": "Published",
@@ -223,6 +227,7 @@ const _english = <String, String>{
   "منتج": "Product",
   "منتجات الطلب": "Order items",
   "منتجات مميزة": "Featured products",
+  "الأعلى تقييماً": "Top rated",
   "منتهي": "Expired",
   "مواد الترميم": "Restorative materials",
   "موقع التوصيل محدد — اضغط للتعديل":

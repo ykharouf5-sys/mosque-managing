@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
 import 'widgets/catalog_translation_editor.dart';
@@ -130,6 +132,11 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                   .read(ordersProvider.notifier)
                   .loadInitialOrders(force: true),
             ),
+            _BannersTab(
+              catalog: ref.read(catalogProvider.notifier),
+              onDataChanged: _reloadCatalog,
+              home: true,
+            ),
           ],
         ),
       ),
@@ -142,6 +149,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
     'العروض',
     'الكوبونات',
     'الطلبات',
+    'بانرات الرئيسية',
   ];
 
   static const List<IconData> _sectionIcons = [
@@ -150,6 +158,7 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
     Icons.slideshow_outlined,
     Icons.discount_outlined,
     Icons.receipt_long_outlined,
+    Icons.home_outlined,
   ];
 
   Widget _buildSidebar(BuildContext context) {
@@ -305,13 +314,10 @@ class _SalesDashboardScreenState extends ConsumerState<SalesDashboardScreen> {
                 ),
                 Spacer(),
                 if (isSelected)
-                  Container(
-                    width: 4.w,
-                    height: 24.h,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.primary,
+                    size: 20,
                   ),
               ],
             ),
@@ -973,6 +979,7 @@ class _ProductsTab extends StatelessWidget {
                       label: 'المخزون (عدد القطع)',
                       hint: storeUi('مثال: 50'),
                       keyboardType: TextInputType.number,
+                      inputFormatters: AppInputFormatters.integer(digits: 7),
                     ),
                     SizedBox(height: 12.h),
                     DropdownButtonFormField<String>(
@@ -1141,11 +1148,18 @@ class _ProductsTab extends StatelessWidget {
 
 class _BannersTab extends StatelessWidget {
   final VoidCallback onDataChanged;
-  const _BannersTab({required this.catalog, required this.onDataChanged});
+  const _BannersTab({
+    required this.catalog,
+    required this.onDataChanged,
+    this.home = false,
+  });
+  final bool home;
   final CatalogNotifier catalog;
   List<Product> get storeProducts => catalog.snapshot.products;
   List<ProductCategory> get storeCategories => catalog.snapshot.categories;
-  List<PromoBanner> get storeBanners => catalog.snapshot.banners;
+  List<PromoBanner> get storeBanners => catalog.snapshot.banners
+      .where((banner) => banner.isHomeBanner == home)
+      .toList();
   List<Coupon> get storeCoupons => catalog.snapshot.coupons;
 
   @override
@@ -1180,13 +1194,13 @@ class _BannersTab extends StatelessWidget {
           Icon(Icons.slideshow_outlined, color: _kGrey, size: 48.sp),
           SizedBox(height: 12.h),
           Text(
-            storeUi('لا توجد عروض'),
+            storeUi(home ? 'لا توجد بانرات للرئيسية' : 'لا توجد عروض'),
             style: TextStyle(color: _kGrey, fontSize: 14.sp),
           ),
           SizedBox(height: 12.h),
           ElevatedButton.icon(
             icon: Icon(Icons.add, size: 18.sp),
-            label: Text(storeUi('إضافة عرض')),
+            label: Text(storeUi(home ? 'إضافة بانر للرئيسية' : 'إضافة عرض')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.onPrimary,
@@ -1405,10 +1419,18 @@ class _BannersTab extends StatelessWidget {
 
   void _showBannerDialog(BuildContext context, PromoBanner? banner) {
     final titleC = TextEditingController(
-      text: banner?.translations['ar']?['title'] ?? banner?.title ?? '',
+      text:
+          banner?.translations['ar']?['title'] ??
+          banner?.title ??
+          (home ? 'نظّم دراستك وممارسة طب الأسنان في مكان واحد' : ''),
     );
     final subtitleC = TextEditingController(
-      text: banner?.translations['ar']?['subtitle'] ?? banner?.subtitle ?? '',
+      text:
+          banner?.translations['ar']?['subtitle'] ??
+          banner?.subtitle ??
+          (home
+              ? 'إدارة المرضى، المواعيد، المحاضرات، المنتجات والمالية بسهولة.'
+              : ''),
     );
     final discountC = TextEditingController(
       text:
@@ -1417,10 +1439,13 @@ class _BannersTab extends StatelessWidget {
           '',
     );
     final ctaC = TextEditingController(
-      text: banner?.translations['ar']?['cta_text'] ?? banner?.ctaText ?? '',
+      text:
+          banner?.translations['ar']?['cta_text'] ??
+          banner?.ctaText ??
+          (home ? 'ابدأ الآن' : ''),
     );
     final routeC = TextEditingController(
-      text: banner?.actionRoute ?? '/promo-detail',
+      text: banner?.targetRoute ?? (home ? '/schedule' : '/promo-detail'),
     );
     final arCopy = {
       'title': titleC,
@@ -1469,7 +1494,11 @@ class _BannersTab extends StatelessWidget {
                   ),
                   SizedBox(width: 10.w),
                   Text(
-                    isEdit ? 'تعديل العرض' : 'إضافة عرض',
+                    home
+                        ? (isEdit
+                              ? 'تعديل بانر الرئيسية'
+                              : 'إضافة بانر للرئيسية')
+                        : (isEdit ? 'تعديل العرض' : 'إضافة عرض'),
                     style: TextStyle(
                       color: AppColors.textDark,
                       fontWeight: FontWeight.bold,
@@ -1573,6 +1602,8 @@ class _BannersTab extends StatelessWidget {
                       },
                     ),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(2048),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: enCopy['image_url'],
                       decoration: InputDecoration(
                         labelText:
@@ -1625,7 +1656,12 @@ class _BannersTab extends StatelessWidget {
                       _styledTextField(
                         controller: routeC,
                         label: 'رابط الإجراء',
-                        hint: storeUi('مثال: /promo-detail'),
+                        hint: home
+                            ? 'مثال: /schedule أو /store'
+                            : storeUi('مثال: /promo-detail'),
+                        inputFormatters: AppInputFormatters.text(
+                          home ? 185 : 190,
+                        ),
                       ),
                   ],
                 ),
@@ -1649,7 +1685,9 @@ class _BannersTab extends StatelessWidget {
                           discountC.text.trim(),
                           imagePath ?? '',
                           ctaC.text.trim(),
-                          routeC.text.trim(),
+                          home
+                              ? PromoBanner.homeRoute(routeC.text.trim())
+                              : routeC.text.trim(),
                           productId: selectedProductId,
                           categoryId: selectedCategoryId,
                           translations: editorTranslations(arCopy, enCopy),
@@ -1661,7 +1699,9 @@ class _BannersTab extends StatelessWidget {
                           discountC.text.trim(),
                           imagePath ?? '',
                           ctaC.text.trim(),
-                          routeC.text.trim(),
+                          home
+                              ? PromoBanner.homeRoute(routeC.text.trim())
+                              : routeC.text.trim(),
                           productId: selectedProductId,
                           categoryId: selectedCategoryId,
                           translations: editorTranslations(arCopy, enCopy),
@@ -3371,11 +3411,29 @@ Widget _styledTextField({
   required String hint,
   TextInputType keyboardType = TextInputType.text,
   int maxLines = 1,
+  List<TextInputFormatter>? inputFormatters,
 }) {
   return TextField(
     controller: controller,
-    keyboardType: keyboardType,
+    keyboardType:
+        keyboardType == TextInputType.number && inputFormatters == null
+        ? const TextInputType.numberWithOptions(decimal: true)
+        : keyboardType,
     maxLines: maxLines,
+    textAlignVertical: TextAlignVertical.center,
+    inputFormatters:
+        inputFormatters ??
+        (keyboardType == TextInputType.number
+            ? AppInputFormatters.decimal()
+            : AppInputFormatters.text(
+                label.contains('رابط')
+                    ? 2048
+                    : label == 'الوصف'
+                    ? 5000
+                    : label == 'الماركة'
+                    ? 120
+                    : 190,
+              )),
     decoration: _inputDecoration(label).copyWith(hintText: storeUi(hint)),
   );
 }

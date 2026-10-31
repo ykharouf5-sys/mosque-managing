@@ -22,6 +22,13 @@ class PromoBanner {
       AppLocale.catalogText(translations, "image_url", _imageUrl);
   final String? productId;
   final String? categoryId;
+
+  /// Placement in the existing route column keeps old catalog rows compatible.
+  bool get isHomeBanner => actionRoute.startsWith('home:');
+  String get targetRoute =>
+      isHomeBanner ? actionRoute.substring(5) : actionRoute;
+  static String homeRoute(String target) =>
+      'home:${target.startsWith('home:') ? target.substring(5) : target}';
   const PromoBanner({
     required this.id,
     required String title,

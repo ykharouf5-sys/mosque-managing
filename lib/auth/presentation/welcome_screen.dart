@@ -1,3 +1,5 @@
+import 'package:studentry/utils/app_input_formatters.dart';
+import 'package:studentry/auth/presentation/auth_layout.dart';
 import 'package:studentry/auth/presentation/otp_verification_screen.dart';
 import 'package:studentry/shared/data/auth_service.dart';
 import 'package:studentry/shared/data/google_auth_failure.dart';
@@ -5,7 +7,6 @@ import 'package:studentry/auth/presentation/auth_navigation.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class WelcomeScreen extends ConsumerStatefulWidget {
   const WelcomeScreen({super.key});
@@ -83,16 +84,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.info_outline, size: 48.sp, color: Colors.orange),
-            SizedBox(height: 16.h),
+            Icon(Icons.info_outline, size: 48, color: Colors.orange),
+            SizedBox(height: 16),
             Text(
               'هذا البريد الإلكتروني مسجل لدينا بالفعل',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14.sp, color: AppColors.authGrey),
+              style: TextStyle(fontSize: 14, color: AppColors.authGrey),
             ),
-            SizedBox(height: 8.h),
+            SizedBox(height: 8),
             Container(
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
@@ -105,10 +106,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                 ),
               ),
             ),
-            SizedBox(height: 12.h),
+            SizedBox(height: 12),
             Text(
               'اختر طريقة تسجيل الدخول:',
-              style: TextStyle(fontSize: 13.sp, color: AppColors.authGrey),
+              style: TextStyle(fontSize: 13, color: AppColors.authGrey),
             ),
           ],
         ),
@@ -197,127 +198,46 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.authBackground,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            _buildBackgroundLogo(),
-            FadeTransition(
-              opacity: _fadeAnim,
-              child: SlideTransition(
-                position: _slideAnim,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth > 600;
-                    final hPad = isWide ? constraints.maxWidth * 0.15 : 24.w;
-                    return SingleChildScrollView(
-                      padding: EdgeInsets.symmetric(horizontal: hPad),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          children: [
-                            SizedBox(height: constraints.maxHeight * 0.04),
-                            _buildHeader(),
-                            SizedBox(height: constraints.maxHeight * 0.02),
-                            _buildSubtitle(),
-                            SizedBox(height: 20.h),
-                            _buildEmailField(),
-                            SizedBox(height: 24.h),
-                            _buildContinueButton(),
-                            SizedBox(height: 16.h),
-                            _buildDivider(),
-                            SizedBox(height: 16.h),
-                            _buildGoogleButton(),
-                            SizedBox(height: 20.h),
-                            _buildLoginLink(),
-                            SizedBox(height: 24.h),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBackgroundLogo() {
-    return Positioned.fill(
-      child: Center(
-        child: Opacity(
-          opacity: 0.06,
-          child: Image.asset(
-            'assets/image/logo.png',
-            width: 1.8.sw,
-            height: 1.8.sw,
-            fit: BoxFit.contain,
+  Widget build(BuildContext context) => AuthLayout(
+    title: 'أهلاً بك في Studentry',
+    subtitle: 'أدخل بريدك الإلكتروني للمتابعة.',
+    footer: _buildLoginLink(),
+    child: FadeTransition(
+      opacity: MediaQuery.disableAnimationsOf(context)
+          ? const AlwaysStoppedAnimation(1)
+          : _fadeAnim,
+      child: SlideTransition(
+        position: MediaQuery.disableAnimationsOf(context)
+            ? const AlwaysStoppedAnimation(Offset.zero)
+            : _slideAnim,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              _buildEmailField(),
+              const SizedBox(height: 20),
+              _buildContinueButton(),
+              const SizedBox(height: 16),
+              _buildDivider(),
+              const SizedBox(height: 16),
+              _buildGoogleButton(),
+            ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        Image.asset(
-          'assets/image/logo.png',
-          width: 70.w,
-          height: 70.h,
-          fit: BoxFit.contain,
-        ),
-        SizedBox(height: 12.h),
-        Text(
-          'Studentry',
-          style: TextStyle(
-            color: AppColors.authTextDark,
-            fontSize: 24.sp,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
-          ),
-        ),
-        SizedBox(height: 4.h),
-        Text(
-          'منصة الطلاب',
-          style: TextStyle(
-            color: AppColors.authGrey,
-            fontSize: 12.sp,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSubtitle() {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8.h),
-      child: Text(
-        'أدخل بريدك الإلكتروني للمتابعة',
-        style: TextStyle(
-          color: AppColors.authGrey,
-          fontSize: 14.sp,
-          fontWeight: FontWeight.w400,
-        ),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
+    ),
+  );
 
   Widget _buildEmailField() {
     return TextFormField(
+      inputFormatters: AppInputFormatters.text(254),
+      textAlignVertical: TextAlignVertical.center,
       controller: _emailController,
       keyboardType: TextInputType.emailAddress,
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
       style: TextStyle(
-        fontSize: 16.sp,
+        fontSize: 16,
         color: AppColors.authTextDark,
         fontWeight: FontWeight.w500,
       ),
@@ -326,16 +246,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
         hintTextDirection: TextDirection.ltr,
         hintStyle: TextStyle(
           color: AppColors.authGrey.withValues(alpha: 0.6),
-          fontSize: 14.sp,
+          fontSize: 14,
         ),
         prefixIcon: Icon(
           Icons.email_outlined,
           color: AppColors.primary,
-          size: 20.sp,
+          size: 20,
         ),
         filled: true,
         fillColor: AppColors.authFieldBg,
-        contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: AppColors.authFieldBorder),
@@ -366,7 +286,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   Widget _buildContinueButton() {
     return SizedBox(
       width: double.infinity,
-      height: 52.h,
+      height: 52,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -380,8 +300,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
         onPressed: _isLoading ? null : _handleContinue,
         child: _isLoading
             ? SizedBox(
-                width: 22.w,
-                height: 22.h,
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
                   color: AppColors.textLight,
                   strokeWidth: 2.5,
@@ -392,13 +312,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                 children: [
                   Text(
                     'متابعة',
-                    style: TextStyle(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
-                  SizedBox(width: 8.w),
-                  Icon(Icons.arrow_forward, size: 18.sp),
+                  SizedBox(width: 8),
+                  Icon(Icons.arrow_forward, size: 18),
                 ],
               ),
       ),
@@ -412,12 +329,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           child: Divider(color: AppColors.authFieldBorder, thickness: 1),
         ),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12.w),
+          padding: EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             'أو',
             style: TextStyle(
               color: AppColors.authGrey,
-              fontSize: 13.sp,
+              fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -432,7 +349,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   Widget _buildGoogleButton() {
     return SizedBox(
       width: double.infinity,
-      height: 52.h,
+      height: 52,
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           backgroundColor: Colors.white,
@@ -451,14 +368,14 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
               'متابعة باستخدام ',
               style: TextStyle(
                 color: AppColors.authGrey,
-                fontSize: 14.sp,
+                fontSize: 14,
                 fontWeight: FontWeight.w400,
               ),
             ),
             Text(
               'Google',
               style: TextStyle(
-                fontSize: 17.sp,
+                fontSize: 17,
                 fontWeight: FontWeight.w600,
                 color: AppColors.authTextDark,
               ),
@@ -474,7 +391,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
       child: TextButton(
         onPressed: () => Navigator.pushNamed(context, '/login'),
         style: TextButton.styleFrom(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
         child: Text.rich(
           TextSpan(
@@ -483,7 +400,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                 text: 'لديك حساب بالفعل؟ ',
                 style: TextStyle(
                   color: AppColors.authGrey,
-                  fontSize: 14.sp,
+                  fontSize: 14,
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -491,7 +408,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                 text: 'تسجيل الدخول',
                 style: TextStyle(
                   color: AppColors.primary,
-                  fontSize: 14.sp,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),

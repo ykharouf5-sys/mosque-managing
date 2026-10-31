@@ -275,11 +275,11 @@ class AcademicStore extends ChangeNotifier {
         academicYear: academicYear,
         doctorName: doctorName,
         color: color,
-        totalLectures: totalLectures,
+        totalLectures: 0,
         theoreticalHours: theoreticalHours,
         practicalHours: practicalHours,
         creditHours: theoreticalHours + (practicalHours / 2),
-        lectures: Subject.generateLectures(totalLectures),
+        lectures: const [],
         pdfReference: pdfUrl,
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/utils/app_locale.dart';
 import 'package:studentry/store/data/catalog_translations.dart';
 import 'package:studentry/store/presentation/store_ui.dart';
@@ -195,6 +196,8 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: TextField(
+                inputFormatters: AppInputFormatters.text(200),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
                 onChanged: _scheduleSearch,

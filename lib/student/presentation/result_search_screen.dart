@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/student/data/result_models.dart';
 import 'package:studentry/shared/utils/search_debouncer.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -134,6 +135,8 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
         ],
       ),
       child: TextField(
+        inputFormatters: AppInputFormatters.integer(digits: 20),
+        textAlignVertical: TextAlignVertical.center,
         controller: _searchCtrl,
         focusNode: _focusNode,
         textDirection: TextDirection.ltr,
@@ -342,15 +345,6 @@ class _ResultSearchScreenState extends ConsumerState<ResultSearchScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            width: 4.w,
-            height: 50.h,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(width: 12.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

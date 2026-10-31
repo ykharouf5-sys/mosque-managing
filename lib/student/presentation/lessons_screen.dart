@@ -1,3 +1,4 @@
+import 'subject_content_screen.dart';
 import 'package:studentry/shared/widgets/app_bottom_nav.dart';
 import 'package:studentry/shared/widgets/app_drawer.dart';
 import 'package:studentry/student/data/subject_models.dart';
@@ -124,7 +125,6 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
     final subject = _academic.subjects
         .where((s) => s.id == enrollment.subjectId)
         .firstOrNull;
-    final hasLectures = subject != null && subject.lectures.isNotEmpty;
 
     return Dismissible(
       key: Key('lesson_${enrollment.subjectId}'),
@@ -170,23 +170,14 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: hasLectures
-              ? () => _showLectureList(context, enrollment, subject)
-              : null,
+          onTap: subject == null
+              ? null
+              : () => _showLectureList(context, enrollment, subject),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 4.w,
-                    height: 40.h,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  SizedBox(width: 12.w),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,7 +317,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
                   ),
                 ),
               ],
-              if (hasLectures) ...[
+              if (subject != null) ...[
                 SizedBox(height: 8.h),
                 Container(
                   padding: EdgeInsets.symmetric(
@@ -346,7 +337,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
                       ),
                       SizedBox(width: 6.w),
                       Text(
-                        'عرض المحاضرات والروابط',
+                        'المحاضرات وملخصات ودورات',
                         style: TextStyle(
                           fontSize: 11.sp,
                           color: AppColors.primary,
@@ -375,254 +366,12 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
     StudentSubject enrollment,
     Subject subject,
   ) {
-    final lectures = subject.lectures;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: StatefulBuilder(
-          builder: (context, setSheetState) {
-            final viewed = enrollment.viewedLectures;
-            return Container(
-              height: 0.85.sh,
-              padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 24.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40.w,
-                      height: 4.h,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 12.h),
-                  Row(
-                    children: [
-                      Text(
-                        subject.name,
-                        style: TextStyle(
-                          fontSize: 18.sp,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${viewed.length}/${lectures.length}',
-                        style: TextStyle(
-                          fontSize: 14.sp,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 4.h),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: lectures.isNotEmpty
-                          ? viewed.length / lectures.length
-                          : 0,
-                      backgroundColor: AppColors.divider,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
-                      ),
-                      minHeight: 4.h,
-                    ),
-                  ),
-                  SizedBox(height: 12.h),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: lectures.length,
-                      itemBuilder: (_, i) {
-                        final lecture = lectures[i];
-                        final isViewed = viewed.contains(lecture.number);
-                        final hasLinks = lecture.links.any(
-                          (l) => l.trim().isNotEmpty,
-                        );
-                        return Container(
-                          margin: EdgeInsets.only(bottom: 8.h),
-                          decoration: BoxDecoration(
-                            color: isViewed
-                                ? AppColors.primary.withValues(alpha: 0.04)
-                                : AppColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isViewed
-                                  ? AppColors.primary.withValues(alpha: 0.3)
-                                  : AppColors.divider,
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12.w,
-                                  vertical: 2.h,
-                                ),
-                                leading: CircleAvatar(
-                                  radius: 16.r,
-                                  backgroundColor: isViewed
-                                      ? AppColors.primary
-                                      : AppColors.divider,
-                                  child: isViewed
-                                      ? const Icon(
-                                          Icons.check,
-                                          color: Colors.white,
-                                          size: 16,
-                                        )
-                                      : Text(
-                                          '${lecture.number}',
-                                          style: TextStyle(
-                                            fontSize: 13.sp,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.textDark,
-                                          ),
-                                        ),
-                                ),
-                                title: Text(
-                                  lecture.title.isNotEmpty
-                                      ? lecture.title
-                                      : 'محاضرة ${lecture.number}',
-                                  style: TextStyle(
-                                    fontSize: 14.sp,
-                                    fontWeight: FontWeight.w600,
-                                    color: isViewed
-                                        ? AppColors.primary
-                                        : AppColors.textDark,
-                                  ),
-                                ),
-                                trailing: hasLinks
-                                    ? Icon(
-                                        Icons.link,
-                                        size: 18.sp,
-                                        color: isViewed
-                                            ? AppColors.primary
-                                            : _kGrey,
-                                      )
-                                    : null,
-                              ),
-                              if (hasLinks)
-                                Padding(
-                                  padding: EdgeInsets.fromLTRB(
-                                    12.w,
-                                    0,
-                                    12.w,
-                                    10.h,
-                                  ),
-                                  child: Wrap(
-                                    spacing: 6.w,
-                                    runSpacing: 6.h,
-                                    children: lecture.links
-                                        .where((l) => l.trim().isNotEmpty)
-                                        .map((link) {
-                                          return InkWell(
-                                            onTap: () async {
-                                              var url = link.trim();
-                                              if (!url.startsWith('http://') &&
-                                                  !url.startsWith('https://')) {
-                                                url = 'https://$url';
-                                              }
-                                              final uri = Uri.tryParse(url);
-                                              if (uri != null) {
-                                                try {
-                                                  await launchUrl(
-                                                    uri,
-                                                    mode: LaunchMode
-                                                        .externalApplication,
-                                                  );
-                                                } catch (_) {}
-                                              }
-                                              try {
-                                                await _academic
-                                                    .markLectureViewed(
-                                                      enrollment,
-                                                      lecture.number,
-                                                    );
-                                              } catch (error) {
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        'تعذر حفظ تقدم المحاضرة: $error',
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-                                              }
-                                              if (context.mounted) {
-                                                setSheetState(() {});
-                                                if (mounted) setState(() {});
-                                              }
-                                            },
-                                            child: Container(
-                                              padding: EdgeInsets.symmetric(
-                                                horizontal: 10.w,
-                                                vertical: 6.h,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: isViewed
-                                                    ? AppColors.primary
-                                                          .withValues(
-                                                            alpha: 0.1,
-                                                          )
-                                                    : AppColors.primarySurface,
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                border: Border.all(
-                                                  color: AppColors.primary
-                                                      .withValues(alpha: 0.2),
-                                                ),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.open_in_new,
-                                                    size: 12.sp,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                  SizedBox(width: 4.w),
-                                                  Text(
-                                                    'رابط ${lecture.links.takeWhile((l) => l.trim().isNotEmpty).toList().indexOf(link) + 1}',
-                                                    style: TextStyle(
-                                                      fontSize: 11.sp,
-                                                      color: AppColors.primary,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        })
-                                        .toList(),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SubjectContentScreen(
+          subjectId: subject.id,
+          enrollmentId: enrollment.enrollmentId,
         ),
       ),
     );
@@ -749,5 +498,3 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
     );
   }
 }
-
-const Color _kGrey = Color(0xFF9E9E9E);

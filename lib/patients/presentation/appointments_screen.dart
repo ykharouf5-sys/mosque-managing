@@ -280,19 +280,6 @@ class _AppointmentsScreenState extends ConsumerState<AppointmentsScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Center(
-          child: Container(
-            height: 3,
-            width: 80,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryLight],
-              ),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
       ],
     );
   }

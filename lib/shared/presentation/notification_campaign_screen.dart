@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/shared/data/api_client.dart';
 import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
@@ -123,6 +124,8 @@ class _NotificationCampaignScreenState
                         SizedBox(height: 14.h),
                       ],
                       TextFormField(
+                        inputFormatters: AppInputFormatters.text(120),
+                        textAlignVertical: TextAlignVertical.center,
                         controller: _titleController,
                         maxLength: 120,
                         decoration: _decoration(
@@ -136,6 +139,8 @@ class _NotificationCampaignScreenState
                       ),
                       SizedBox(height: 14.h),
                       TextFormField(
+                        inputFormatters: AppInputFormatters.text(500),
+                        textAlignVertical: TextAlignVertical.center,
                         controller: _bodyController,
                         maxLength: 500,
                         minLines: 4,

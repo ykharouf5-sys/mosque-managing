@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:studentry/patients/data/patient_data.dart';
@@ -187,6 +188,8 @@ class _NewAppointmentScreenState extends ConsumerState<NewAppointmentScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
+                inputFormatters: AppInputFormatters.text(5000),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _treatmentController,
                 minLines: 1,
                 maxLines: 3,

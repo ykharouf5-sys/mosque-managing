@@ -1,0 +1,16 @@
+flutter_native_splash:
+  # Android only: do not regenerate web or the existing iOS project.
+  android: true
+  ios: false
+  web: false
+  color: "#E8F6F7"
+  color_dark: "#E8F6F7"
+  image: assets/image/studentry_brand_splash.png
+  image_dark: assets/image/studentry_brand_splash.png
+  android_gravity: center
+  fullscreen: false
+  android_12:
+    color: "#E8F6F7"
+    color_dark: "#E8F6F7"
+    image: assets/image/studentry_brand_splash.png
+    image_dark: assets/image/studentry_brand_splash.png

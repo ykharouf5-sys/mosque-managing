@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'dart:io';
 import 'package:studentry/patients/data/patient_photo_service.dart';
 import 'package:studentry/utils/variable_colors.dart';
@@ -254,15 +255,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         children: [
           Row(
             children: [
-              Container(
-                width: 3.w,
-                height: 16.h,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              SizedBox(width: 8.w),
               Text(
                 'معلومات عامة',
                 style: TextStyle(
@@ -326,15 +318,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         children: [
           Row(
             children: [
-              Container(
-                width: 3,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 8),
               const Text(
                 'تحديد الموعد',
                 style: TextStyle(
@@ -496,15 +479,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
         children: [
           Row(
             children: [
-              Container(
-                width: 3,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 8),
               const Text(
                 'الحساب',
                 style: TextStyle(
@@ -640,8 +614,10 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
             ),
           ),
           content: TextField(
+            inputFormatters: AppInputFormatters.decimal(),
+            textAlignVertical: TextAlignVertical.center,
             controller: amountCtrl,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'المبلغ',
               prefixIcon: Icon(
@@ -764,11 +740,15 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                   ),
                   const SizedBox(height: 24),
                   TextField(
+                    inputFormatters: AppInputFormatters.text(200),
+                    textAlignVertical: TextAlignVertical.center,
                     controller: nameCtrl,
                     decoration: _inputDecoration('الاسم'),
                   ),
                   const SizedBox(height: 14),
                   TextField(
+                    inputFormatters: AppInputFormatters.phone,
+                    textAlignVertical: TextAlignVertical.center,
                     controller: phoneCtrl,
                     decoration: _inputDecoration('الهاتف'),
                     keyboardType: TextInputType.phone,
@@ -787,17 +767,23 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                   ),
                   const SizedBox(height: 14),
                   TextField(
+                    inputFormatters: AppInputFormatters.integer(digits: 3),
+                    textAlignVertical: TextAlignVertical.center,
                     controller: ageCtrl,
                     decoration: _inputDecoration('العمر'),
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 14),
                   TextField(
+                    inputFormatters: AppInputFormatters.text(200),
+                    textAlignVertical: TextAlignVertical.center,
                     controller: addressCtrl,
                     decoration: _inputDecoration('العنوان'),
                   ),
                   const SizedBox(height: 14),
                   TextField(
+                    inputFormatters: AppInputFormatters.text(5000),
+                    textAlignVertical: TextAlignVertical.center,
                     controller: notesCtrl,
                     decoration: _inputDecoration('ملاحظات'),
                     maxLines: 3,
@@ -871,8 +857,10 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
             ),
           ),
           content: TextField(
+            inputFormatters: AppInputFormatters.decimal(),
+            textAlignVertical: TextAlignVertical.center,
             controller: ctrl,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'المبلغ المستحق',
               prefixIcon: Icon(
@@ -1020,18 +1008,6 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
                       child: IntrinsicHeight(
                         child: Row(
                           children: [
-                            Container(
-                              width: 5,
-                              decoration: BoxDecoration(
-                                color: isCompleted
-                                    ? AppColors.success
-                                    : AppColors.pending,
-                                borderRadius: const BorderRadius.only(
-                                  topRight: Radius.circular(AppRadius.lg),
-                                  bottomRight: Radius.circular(AppRadius.lg),
-                                ),
-                              ),
-                            ),
                             Expanded(
                               child: Padding(
                                 padding: const EdgeInsets.all(14),
@@ -1271,6 +1247,8 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
               children: [
                 Expanded(
                   child: TextField(
+                    inputFormatters: AppInputFormatters.text(200),
+                    textAlignVertical: TextAlignVertical.center,
                     controller: _stepController,
                     decoration: InputDecoration(
                       hintText: 'اكتب خطوة جديدة...',
@@ -1353,6 +1331,8 @@ class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('تعديل خطوة العلاج'),
         content: TextField(
+          inputFormatters: AppInputFormatters.text(5000),
+          textAlignVertical: TextAlignVertical.center,
           controller: controller,
           autofocus: true,
           maxLines: 3,

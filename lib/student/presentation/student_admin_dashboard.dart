@@ -1,3 +1,5 @@
+import 'academic_content_editor.dart';
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/student/data/subject_models.dart';
 import 'package:studentry/student/data/academic_store.dart';
 import 'package:studentry/student/data/academic_document_service.dart';
@@ -276,14 +278,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 4.w,
-                    height: 50.h,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+                  Icon(Icons.menu_book_outlined, color: color, size: 22),
                   SizedBox(width: 12.w),
                   Expanded(
                     child: Column(
@@ -384,346 +379,10 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
   }
 
   void _showLectureManager(BuildContext context, Subject subject) {
-    List<SubjectLecture> lectures = List.from(subject.lectures);
-    final totalC = TextEditingController(text: '${subject.totalLectures}');
-
-    showDialog(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Row(
-                children: [
-                  Icon(Icons.list_alt, color: AppColors.primary, size: 22),
-                  SizedBox(width: 8.w),
-                  Text(
-                    'محاضرات ${subject.name}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textDark,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: 0.8.sw,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: totalC,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'عدد المحاضرات',
-                              hintText: '20',
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: 8.w),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 12.w,
-                              vertical: 14.h,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () {
-                            final count = int.tryParse(totalC.text) ?? 0;
-                            if (count > 0) {
-                              setDialogState(() {
-                                lectures = Subject.generateLectures(count);
-                              });
-                            }
-                          },
-                          child: const Text(
-                            'تطبيق',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 12.h),
-                    Expanded(
-                      child: lectures.isEmpty
-                          ? Center(
-                              child: Text(
-                                'أدخل عدد المحاضرات',
-                                style: TextStyle(
-                                  color: _kGrey,
-                                  fontSize: 14.sp,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: lectures.length,
-                              itemBuilder: (_, i) {
-                                final lecture = lectures[i];
-                                return Container(
-                                  margin: EdgeInsets.only(bottom: 6.h),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: AppColors.divider,
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: ExpansionTile(
-                                    tilePadding: EdgeInsets.symmetric(
-                                      horizontal: 12.w,
-                                    ),
-                                    leading: CircleAvatar(
-                                      radius: 14.r,
-                                      backgroundColor: AppColors.primary
-                                          .withValues(alpha: 0.1),
-                                      child: Text(
-                                        '${lecture.number}',
-                                        style: TextStyle(
-                                          fontSize: 12.sp,
-                                          color: AppColors.primary,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    title: TextField(
-                                      controller: TextEditingController(
-                                        text: lecture.title,
-                                      ),
-                                      decoration: const InputDecoration(
-                                        border: InputBorder.none,
-                                        hintText: 'عنوان المحاضرة',
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                      style: TextStyle(fontSize: 13.sp),
-                                      onChanged: (v) {
-                                        final idx = lectures.indexWhere(
-                                          (l) => l.number == lecture.number,
-                                        );
-                                        if (idx >= 0) {
-                                          lectures[idx] = lecture.copyWith(
-                                            title: v,
-                                          );
-                                        }
-                                      },
-                                    ),
-                                    children: [
-                                      Padding(
-                                        padding: EdgeInsets.fromLTRB(
-                                          12.w,
-                                          0,
-                                          12.w,
-                                          12.h,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            ...lecture.links.asMap().entries.map((
-                                              entry,
-                                            ) {
-                                              final linkIdx = entry.key;
-                                              final link = entry.value;
-                                              return Padding(
-                                                padding: EdgeInsets.only(
-                                                  bottom: 6.h,
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller:
-                                                            TextEditingController(
-                                                              text: link,
-                                                            ),
-                                                        decoration: InputDecoration(
-                                                          hintText:
-                                                              'رابط ${linkIdx + 1}',
-                                                          contentPadding:
-                                                              EdgeInsets.symmetric(
-                                                                horizontal: 10,
-                                                                vertical: 8,
-                                                              ),
-                                                          isDense: true,
-                                                          border: OutlineInputBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  8,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                        style: TextStyle(
-                                                          fontSize: 12.sp,
-                                                        ),
-                                                        onChanged: (v) {
-                                                          final idx = lectures
-                                                              .indexWhere(
-                                                                (l) =>
-                                                                    l.number ==
-                                                                    lecture
-                                                                        .number,
-                                                              );
-                                                          if (idx >= 0) {
-                                                            final links =
-                                                                List<
-                                                                  String
-                                                                >.from(
-                                                                  lectures[idx]
-                                                                      .links,
-                                                                );
-                                                            links[linkIdx] = v;
-                                                            lectures[idx] =
-                                                                lectures[idx]
-                                                                    .copyWith(
-                                                                      links:
-                                                                          links,
-                                                                    );
-                                                          }
-                                                        },
-                                                      ),
-                                                    ),
-                                                    SizedBox(width: 4.w),
-                                                    GestureDetector(
-                                                      onTap: () {
-                                                        final idx = lectures
-                                                            .indexWhere(
-                                                              (l) =>
-                                                                  l.number ==
-                                                                  lecture
-                                                                      .number,
-                                                            );
-                                                        if (idx >= 0) {
-                                                          final links =
-                                                              List<String>.from(
-                                                                lectures[idx]
-                                                                    .links,
-                                                              );
-                                                          links.removeAt(
-                                                            linkIdx,
-                                                          );
-                                                          lectures[idx] =
-                                                              lectures[idx]
-                                                                  .copyWith(
-                                                                    links:
-                                                                        links,
-                                                                  );
-                                                          setDialogState(() {});
-                                                        }
-                                                      },
-                                                      child: Icon(
-                                                        Icons.close,
-                                                        size: 18,
-                                                        color:
-                                                            Colors.red.shade300,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            }),
-                                            SizedBox(height: 4.h),
-                                            GestureDetector(
-                                              onTap: () {
-                                                final idx = lectures.indexWhere(
-                                                  (l) =>
-                                                      l.number ==
-                                                      lecture.number,
-                                                );
-                                                if (idx >= 0) {
-                                                  final links =
-                                                      List<String>.from(
-                                                        lectures[idx].links,
-                                                      );
-                                                  links.add('');
-                                                  lectures[idx] = lectures[idx]
-                                                      .copyWith(links: links);
-                                                  setDialogState(() {});
-                                                }
-                                              },
-                                              child: Row(
-                                                children: [
-                                                  Icon(
-                                                    Icons.add_link,
-                                                    size: 16,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                  SizedBox(width: 4.w),
-                                                  Text(
-                                                    'إضافة رابط',
-                                                    style: TextStyle(
-                                                      fontSize: 12.sp,
-                                                      color: AppColors.primary,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('إلغاء'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                  onPressed: () async {
-                    try {
-                      final count =
-                          int.tryParse(totalC.text) ?? lectures.length;
-                      await _academic.updateSubject(
-                        subject.copyWith(
-                          totalLectures: count,
-                          lectures: lectures,
-                        ),
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    } catch (error) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('تعذر حفظ المحاضرات: $error')),
-                        );
-                      }
-                    }
-                  },
-                  child: const Text('حفظ'),
-                ),
-              ],
-            );
-          },
-        ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AcademicContentEditor(subject: subject),
       ),
     );
   }
@@ -766,7 +425,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
     final codeC = TextEditingController(text: subject?.code ?? '');
     final doctorC = TextEditingController(text: subject?.doctorName ?? '');
     final totalC = TextEditingController(
-      text: '${subject?.totalLectures ?? 20}',
+      text: '${subject?.publishedLectures.length ?? 0}',
     );
     final theoreticalC = TextEditingController(
       text: '${subject?.theoreticalHours ?? 0}',
@@ -831,6 +490,8 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
+                      inputFormatters: AppInputFormatters.text(160),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: nameC,
                       decoration: const InputDecoration(
                         labelText: 'اسم المادة',
@@ -840,6 +501,8 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                     ),
                     SizedBox(height: 10.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(80),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: codeC,
                       decoration: const InputDecoration(
                         labelText: 'كود المادة',
@@ -849,6 +512,8 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                     ),
                     SizedBox(height: 10.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.text(160),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: doctorC,
                       decoration: const InputDecoration(
                         labelText: 'اسم الدكتور',
@@ -858,10 +523,17 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                     ),
                     SizedBox(height: 10.h),
                     TextField(
+                      inputFormatters: AppInputFormatters.integer(
+                        digits: 3,
+                        max: 500,
+                      ),
+                      textAlignVertical: TextAlignVertical.center,
                       controller: totalC,
+                      readOnly: true,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'عدد المحاضرات',
+                        labelText:
+                            'عدد المحاضرات المنشورة (تُضاف من إدارة المحاضرات)',
                         hintText: '20',
                       ),
                       textDirection: TextDirection.rtl,
@@ -871,6 +543,11 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                       children: [
                         Expanded(
                           child: TextField(
+                            inputFormatters: AppInputFormatters.integer(
+                              digits: 2,
+                              max: 40,
+                            ),
+                            textAlignVertical: TextAlignVertical.center,
                             controller: theoreticalC,
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(
@@ -882,6 +559,11 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                         SizedBox(width: 10.w),
                         Expanded(
                           child: TextField(
+                            inputFormatters: AppInputFormatters.integer(
+                              digits: 2,
+                              max: 80,
+                            ),
+                            textAlignVertical: TextAlignVertical.center,
                             controller: practicalC,
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(
@@ -1051,22 +733,12 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                         codeC.text.trim().isEmpty) {
                       return;
                     }
-                    final total = int.tryParse(totalC.text) ?? 20;
                     final theoretical = int.tryParse(theoreticalC.text) ?? 0;
                     final practical = int.tryParse(practicalC.text) ?? 0;
                     if (theoretical < 0 || practical < 0) return;
                     try {
                       if (isEdit) {
-                        final currentLectures = subject.lectures;
-                        final lectures = List.generate(total, (index) {
-                          if (index < currentLectures.length) {
-                            return currentLectures[index];
-                          }
-                          return SubjectLecture(
-                            number: index + 1,
-                            title: 'محاضرة ${index + 1}',
-                          );
-                        });
+                        final lectures = subject.lectures;
                         await _academic.updateSubject(
                           subject.copyWith(
                             name: nameC.text.trim(),
@@ -1074,7 +746,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                             academicYear: selectedYear,
                             doctorName: doctorC.text.trim(),
                             color: selectedColor,
-                            totalLectures: total,
+                            totalLectures: subject.publishedLectures.length,
                             theoreticalHours: theoretical,
                             practicalHours: practical,
                             creditHours: theoretical + (practical / 2),
@@ -1089,7 +761,7 @@ class _StudentAdminDashboardState extends ConsumerState<StudentAdminDashboard> {
                           academicYear: selectedYear,
                           doctorName: doctorC.text.trim(),
                           color: selectedColor,
-                          totalLectures: total,
+                          totalLectures: 0,
                           theoreticalHours: theoretical,
                           practicalHours: practical,
                           pdfUrl: pdfReference,

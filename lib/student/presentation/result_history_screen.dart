@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/student/data/result_models.dart';
 import 'package:studentry/student/data/academic_result_api_service.dart';
 import 'package:studentry/shared/utils/search_debouncer.dart';
@@ -147,6 +148,8 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
                 ],
               ),
               child: TextField(
+                inputFormatters: AppInputFormatters.integer(digits: 20),
+                textAlignVertical: TextAlignVertical.center,
                 controller: _examCtrl,
                 textDirection: TextDirection.ltr,
                 keyboardType: TextInputType.number,
@@ -450,15 +453,6 @@ class _ResultHistoryScreenState extends ConsumerState<ResultHistoryScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            width: 3.w,
-            height: 36.h,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(width: 12.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

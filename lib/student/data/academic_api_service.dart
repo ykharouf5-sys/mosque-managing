@@ -192,7 +192,10 @@ class AcademicApiService {
     'total_lectures': subject.totalLectures,
     'theoretical_hours': subject.theoreticalHours,
     'practical_hours': subject.practicalHours,
-    'lectures': subject.lectures.map((lecture) => lecture.toJson()).toList(),
+    'lectures': subject.publishedLectures
+        .map((lecture) => lecture.toJson())
+        .toList(),
+    'resources': subject.resources.map((lecture) => lecture.toJson()).toList(),
     'pdf_url': subject.pdfReference,
     if (includeVersion) 'version': subject.version,
   };

@@ -1,3 +1,4 @@
+import 'package:studentry/utils/app_input_formatters.dart';
 import 'package:studentry/student/data/result_models.dart';
 import 'package:studentry/student/data/academic_result_api_service.dart';
 import 'package:studentry/shared/data/auth_service.dart';
@@ -387,6 +388,8 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
         ],
       ),
       child: TextField(
+        inputFormatters: AppInputFormatters.integer(digits: 20),
+        textAlignVertical: TextAlignVertical.center,
         controller: _searchCtrl,
         focusNode: _focusNode,
         textDirection: TextDirection.ltr,
@@ -671,15 +674,6 @@ class _StudentGradesScreenState extends ConsumerState<StudentGradesScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            width: 4.w,
-            height: 50.h,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(width: 12.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

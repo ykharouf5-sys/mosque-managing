@@ -4,30 +4,50 @@ class SubjectLecture {
   final int number;
   final String title;
   final List<String> links;
+  final String kind;
+  final String? pdfReference, pdfUrl;
+  bool get isLecture => kind == 'lecture';
 
   SubjectLecture({
     required this.number,
     this.title = '',
     this.links = const [],
+    this.kind = 'lecture',
+    this.pdfReference,
+    this.pdfUrl,
   });
 
-  SubjectLecture copyWith({String? title, List<String>? links}) =>
-      SubjectLecture(
-        number: number,
-        title: title ?? this.title,
-        links: links ?? this.links,
-      );
+  SubjectLecture copyWith({
+    String? title,
+    List<String>? links,
+    String? pdfReference,
+    String? pdfUrl,
+  }) => SubjectLecture(
+    number: number,
+    title: title ?? this.title,
+    links: links ?? this.links,
+    kind: kind,
+    pdfReference: pdfReference ?? this.pdfReference,
+    pdfUrl: pdfUrl ?? this.pdfUrl,
+  );
 
   Map<String, dynamic> toJson() => {
     'number': number,
     'title': title,
     'links': links,
+    'kind': kind,
+    if (pdfReference != null) 'pdf_url': pdfReference,
+    if (pdfReference != null) 'pdfReference': pdfReference,
+    if (pdfUrl != null) 'pdfUrl': pdfUrl,
   };
 
   factory SubjectLecture.fromJson(Map<String, dynamic> json) => SubjectLecture(
     number: json['number'] as int,
     title: (json['title'] as String?) ?? '',
     links: (json['links'] as List?)?.cast<String>() ?? [],
+    kind: json['kind'] as String? ?? 'lecture',
+    pdfReference: (json['pdfReference'] ?? json['pdf_url']) as String?,
+    pdfUrl: json['pdfUrl'] as String?,
   );
 }
 
@@ -37,6 +57,10 @@ class Subject {
   final int theoreticalHours, practicalHours;
   final double creditHours;
   final List<SubjectLecture> lectures;
+  List<SubjectLecture> get publishedLectures =>
+      lectures.where((l) => l.isLecture).toList();
+  List<SubjectLecture> get resources =>
+      lectures.where((l) => !l.isLecture).toList();
   final String? pdfUrl;
   final String? pdfReference;
   final int version;
@@ -107,7 +131,10 @@ class Subject {
   };
 
   factory Subject.fromJson(Map<String, dynamic> json) {
-    final rawLectures = json['lectures'] as List? ?? [];
+    final rawLectures = [
+      ...(json['lectures'] as List? ?? []),
+      ...(json['resources'] as List? ?? []),
+    ];
     final lectures = rawLectures
         .map((e) => SubjectLecture.fromJson(e as Map<String, dynamic>))
         .toList();

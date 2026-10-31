@@ -28,6 +28,8 @@
 		<true/>
 		<key>NSCameraUsageDescription</key>
 		<string>يستخدم Studentry الكاميرا لإضافة صورة الملف الشخصي وصور المنتجات والمستندات التي تختار رفعها.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>يستخدم Studentry موقعك عند اختيار مكان توصيل الطلب، ويمكنك تحديد مكان آخر يدوياً على الخريطة.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>يستخدم Studentry مكتبة الصور لاختيار الصور والمستندات التي تقرر مشاركتها داخل التطبيق.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>

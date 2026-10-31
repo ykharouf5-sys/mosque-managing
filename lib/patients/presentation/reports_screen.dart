@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'store_purchase_report.dart';
 
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/patients/presentation/providers/patient_providers.dart';
@@ -25,6 +26,7 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   bool _exporting = false;
+  int _section = 0;
 
   bool _isCompleted(PatientProfile patient) =>
       patient.treatmentPlan.isNotEmpty &&
@@ -215,7 +217,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           actions: [
             IconButton(
               tooltip: 'تصدير Excel',
-              onPressed: _exporting ? null : _exportExcel,
+              onPressed: _exporting || _section != 0 ? null : _exportExcel,
               icon: _exporting
                   ? const SizedBox(
                       width: 20,
@@ -229,166 +231,206 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             ),
           ],
         ),
-        body: RefreshIndicator(
-          onRefresh: _refresh,
-          color: AppColors.primary,
-          child: ListView(
-            padding: EdgeInsets.all(16.r),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _metricCard(
-                      'المتبقي',
-                      _money(remaining),
-                      Icons.account_balance_wallet_outlined,
-                      AppColors.danger,
-                    ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(
+                    value: 0,
+                    icon: Icon(Icons.groups_outlined),
+                    label: Text('المرضى والعلاج'),
                   ),
-                  SizedBox(width: 10.w),
-                  Expanded(
-                    child: _metricCard(
-                      'المستحق',
-                      _money(due),
-                      Icons.receipt_long_outlined,
-                      AppColors.pending,
-                    ),
+                  ButtonSegment(
+                    value: 1,
+                    icon: Icon(Icons.shopping_bag_outlined),
+                    label: Text('المدفوعات'),
                   ),
                 ],
+                selected: {_section},
+                onSelectionChanged: (values) =>
+                    setState(() => _section = values.first),
               ),
-              SizedBox(height: 10.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: _metricCard(
-                      'عدد المرضى',
-                      '${report.totalPatients}',
-                      Icons.groups_rounded,
-                      AppColors.primary,
-                    ),
-                  ),
-                  SizedBox(width: 10.w),
-                  Expanded(
-                    child: _metricCard(
-                      'تم إنجازهم',
-                      '$completed',
-                      Icons.task_alt_rounded,
-                      AppColors.success,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 18.h),
-              _chartCard(
-                title: 'حالة الحسابات',
-                height: 214,
-                child: BarChart(
-                  BarChartData(
-                    maxY:
-                        [
-                          due,
-                          paid,
-                          remaining,
-                          1,
-                        ].reduce((a, b) => a > b ? a : b) *
-                        1.2,
-                    alignment: BarChartAlignment.spaceAround,
-                    gridData: const FlGridData(show: false),
-                    borderData: FlBorderData(show: false),
-                    titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      leftTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (value, meta) {
-                            const labels = ['مستحق', 'مدفوع', 'متبقي'];
-                            final index = value.toInt();
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                index < labels.length ? labels[index] : '',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textGray,
+            ),
+            Expanded(
+              child: _section == 1
+                  ? const StorePurchaseReport()
+                  : RefreshIndicator(
+                      onRefresh: _refresh,
+                      color: AppColors.primary,
+                      child: ListView(
+                        padding: EdgeInsets.all(16.r),
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _metricCard(
+                                  'المتبقي',
+                                  _money(remaining),
+                                  Icons.account_balance_wallet_outlined,
+                                  AppColors.danger,
                                 ),
                               ),
-                            );
-                          },
-                        ),
+                              SizedBox(width: 10.w),
+                              Expanded(
+                                child: _metricCard(
+                                  'المستحق',
+                                  _money(due),
+                                  Icons.receipt_long_outlined,
+                                  AppColors.pending,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 10.h),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _metricCard(
+                                  'عدد المرضى',
+                                  '${report.totalPatients}',
+                                  Icons.groups_rounded,
+                                  AppColors.primary,
+                                ),
+                              ),
+                              SizedBox(width: 10.w),
+                              Expanded(
+                                child: _metricCard(
+                                  'تم إنجازهم',
+                                  '$completed',
+                                  Icons.task_alt_rounded,
+                                  AppColors.success,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 18.h),
+                          _chartCard(
+                            title: 'حسابات المرضى',
+                            height: 214,
+                            child: BarChart(
+                              BarChartData(
+                                maxY:
+                                    [
+                                      due,
+                                      paid,
+                                      remaining,
+                                      1,
+                                    ].reduce((a, b) => a > b ? a : b) *
+                                    1.2,
+                                alignment: BarChartAlignment.spaceAround,
+                                gridData: const FlGridData(show: false),
+                                borderData: FlBorderData(show: false),
+                                titlesData: FlTitlesData(
+                                  topTitles: const AxisTitles(
+                                    sideTitles: SideTitles(showTitles: false),
+                                  ),
+                                  rightTitles: const AxisTitles(
+                                    sideTitles: SideTitles(showTitles: false),
+                                  ),
+                                  leftTitles: const AxisTitles(
+                                    sideTitles: SideTitles(showTitles: false),
+                                  ),
+                                  bottomTitles: AxisTitles(
+                                    sideTitles: SideTitles(
+                                      showTitles: true,
+                                      getTitlesWidget: (value, meta) {
+                                        const labels = [
+                                          'مستحق',
+                                          'مدفوع',
+                                          'متبقي',
+                                        ];
+                                        final index = value.toInt();
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 8,
+                                          ),
+                                          child: Text(
+                                            index < labels.length
+                                                ? labels[index]
+                                                : '',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textGray,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                barGroups: [
+                                  _bar(0, due, AppColors.pending),
+                                  _bar(1, paid, AppColors.success),
+                                  _bar(2, remaining, AppColors.danger),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 14.h),
+                          _chartCard(
+                            title: 'إنجاز المرضى',
+                            child: report.totalPatients == 0
+                                ? const Center(
+                                    child: Text(
+                                      'لا توجد بيانات لعرضها',
+                                      style: TextStyle(
+                                        color: AppColors.textGray,
+                                      ),
+                                    ),
+                                  )
+                                : PieChart(
+                                    PieChartData(
+                                      centerSpaceRadius: 42.r,
+                                      sectionsSpace: 3,
+                                      sections: [
+                                        PieChartSectionData(
+                                          value: completed.toDouble(),
+                                          color: AppColors.success,
+                                          title: '$completed\nمنجز',
+                                          radius: 48.r,
+                                          titleStyle: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                        PieChartSectionData(
+                                          value: active.toDouble(),
+                                          color: AppColors.primary,
+                                          title: '$active\nقيد العلاج',
+                                          radius: 48.r,
+                                          titleStyle: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                          ),
+                          SizedBox(height: 16.h),
+                          FilledButton.icon(
+                            onPressed: _exporting ? null : _exportExcel,
+                            icon: const Icon(Icons.table_view_rounded),
+                            label: const Text('تصدير تقرير المرضى كملف Excel'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              padding: EdgeInsets.symmetric(vertical: 14.h),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.md,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    barGroups: [
-                      _bar(0, due, AppColors.pending),
-                      _bar(1, paid, AppColors.success),
-                      _bar(2, remaining, AppColors.danger),
-                    ],
-                  ),
-                ),
-              ),
-              SizedBox(height: 14.h),
-              _chartCard(
-                title: 'إنجاز المرضى',
-                child: report.totalPatients == 0
-                    ? const Center(
-                        child: Text(
-                          'لا توجد بيانات لعرضها',
-                          style: TextStyle(color: AppColors.textGray),
-                        ),
-                      )
-                    : PieChart(
-                        PieChartData(
-                          centerSpaceRadius: 42.r,
-                          sectionsSpace: 3,
-                          sections: [
-                            PieChartSectionData(
-                              value: completed.toDouble(),
-                              color: AppColors.success,
-                              title: '$completed\nمنجز',
-                              radius: 48.r,
-                              titleStyle: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                              ),
-                            ),
-                            PieChartSectionData(
-                              value: active.toDouble(),
-                              color: AppColors.primary,
-                              title: '$active\nقيد العلاج',
-                              radius: 48.r,
-                              titleStyle: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-              ),
-              SizedBox(height: 16.h),
-              FilledButton.icon(
-                onPressed: _exporting ? null : _exportExcel,
-                icon: const Icon(Icons.table_view_rounded),
-                label: const Text('تصدير التقرير كملف Excel'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding: EdgeInsets.symmetric(vertical: 14.h),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         bottomNavigationBar: widget.embedded
             ? null
