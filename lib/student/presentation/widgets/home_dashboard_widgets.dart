@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:studentry/patients/data/patient_data.dart';
 import 'package:studentry/store/data/store_models.dart';
 import 'package:studentry/utils/variable_colors.dart';
+import 'package:studentry/shared/widgets/studentry_brand.dart';
 
 /// Tokens are local to the reference dashboard; other screens retain their theme.
 class HomePalette {
@@ -156,22 +157,22 @@ class HomeHeader extends StatelessWidget {
                     width: 44,
                     height: 48,
                     child: Center(
-                      child: CircleAvatar(
-                        radius: 20,
-                        backgroundColor: p.surface,
-                        child: ClipOval(
-                          child: avatarUrl?.isNotEmpty == true
-                              ? Image.network(
+                      child: avatarUrl?.isNotEmpty == true
+                          ? CircleAvatar(
+                              radius: 20,
+                              backgroundColor: p.surface,
+                              child: ClipOval(
+                                child: Image.network(
                                   avatarUrl!,
                                   width: 40,
                                   height: 40,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, error, stack) =>
                                       _brandMark(),
-                                )
-                              : _brandMark(),
-                        ),
-                      ),
+                                ),
+                              ),
+                            )
+                          : _brandMark(),
                     ),
                   ),
                 ),
@@ -183,12 +184,7 @@ class HomeHeader extends StatelessWidget {
     );
   }
 
-  Widget _brandMark() => Image.asset(
-    'assets/image/logo.png',
-    width: 32,
-    height: 32,
-    fit: BoxFit.contain,
-  );
+  Widget _brandMark() => const StudentryBrandMark(size: 40);
 }
 
 class HomeSearchBar extends StatelessWidget {

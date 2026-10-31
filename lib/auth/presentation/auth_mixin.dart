@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:studentry/utils/app_input_formatters.dart';
+import 'package:studentry/shared/widgets/studentry_brand.dart';
 
 class User {
   final DateTime? emailConfirmedAt;
@@ -296,12 +297,7 @@ mixin AuthMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   );
 
   Widget buildLogoSmall({double size = 70}) {
-    return Image.asset(
-      'assets/image/logo.png',
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-    );
+    return StudentryBrandMark(size: size);
   }
 
   Widget buildField({

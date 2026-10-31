@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:studentry/shared/widgets/studentry_illustration.dart';
+import 'package:studentry/shared/widgets/studentry_brand.dart';
 import 'package:studentry/utils/variable_colors.dart';
 
 /// Fits the form into the usable viewport, including the keyboard inset.
@@ -48,11 +49,7 @@ class AuthLayout extends StatelessWidget {
                         height: 44,
                         child: Row(
                           children: [
-                            Image.asset(
-                              'assets/image/logo.png',
-                              width: 30,
-                              height: 30,
-                            ),
+                            const StudentryBrandMark(size: 40),
                             const SizedBox(width: 8),
                             const Expanded(
                               child: Text(

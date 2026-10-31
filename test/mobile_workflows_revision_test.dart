@@ -271,7 +271,7 @@ void main() {
       expect(find.text('طبيب أسنان'), findsOneWidget);
       await tester.tap(find.byTooltip('القائمة الجانبية'));
       expect(menu, 1);
-      await tester.tap(find.byType(CircleAvatar).last);
+      await tester.tap(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == 'الإعدادات'));
       expect(settings, 1);
     },
   );

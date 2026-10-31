@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'studentry_brand.dart';
 
 /// A local, offline illustration. Animation is presentation only.
 class StudentryIllustration extends StatefulWidget {
@@ -58,13 +59,8 @@ class _StudentryIllustrationState extends State<StudentryIllustration>
   Widget build(BuildContext context) => ExcludeSemantics(
     child: AnimatedBuilder(
       animation: _motion,
-      child: Image.asset(
-        widget.splash
-            ? 'assets/image/studentry_brand_splash.png'
-            : 'assets/image/studentry_brand_splash.png',
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.medium,
-        gaplessPlayback: true,
+      child: const StudentryBrandImage(
+        asset: 'assets/image/studentry_brand_splash.png',
       ),
       builder: (context, child) => Transform.translate(
         offset: Offset(0, math.sin(_motion.value * math.pi * 2) * 3),
