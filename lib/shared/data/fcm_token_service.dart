@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import 'api_client.dart';
 import 'auth_service.dart';
 import 'connectivity_service.dart';
+import 'notification_inbox_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -32,6 +33,8 @@ class FcmTokenService {
   static bool _watchingConnectivity = false;
   static final _orderChanges = StreamController<void>.broadcast();
   static Stream<void> get orderChanges => _orderChanges.stream;
+  static final _inboxChanges = StreamController<void>.broadcast();
+  static Stream<void> get inboxChanges => _inboxChanges.stream;
 
   static void _onConnectivity() {
     if (_authenticated && ConnectivityService.isOnline.value) {
@@ -95,6 +98,16 @@ class FcmTokenService {
         (token) => registerToken(token),
       );
       FirebaseMessaging.onMessage.listen((message) async {
+        if (_authenticated) {
+          unawaited(
+            NotificationInboxService.received(
+              id: message.data['campaign_id']?.toString(),
+              title: message.notification?.title,
+              body: message.notification?.body,
+            ).catchError((Object _) {}),
+          );
+          _inboxChanges.add(null);
+        }
         if (_authenticated &&
             {
               'order_created',

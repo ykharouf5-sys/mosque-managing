@@ -21,14 +21,24 @@ class AppCachedNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: fit,
-      width: width,
-      height: height,
-      alignment: alignment,
-      fadeInDuration: const Duration(milliseconds: 120),
-      errorWidget: (_, _, _) => errorBuilder?.call() ?? const SizedBox.shrink(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pixels =
+            constraints.maxWidth * MediaQuery.devicePixelRatioOf(context);
+        return CachedNetworkImage(
+          imageUrl: url,
+          memCacheWidth: pixels.isFinite && pixels > 0
+              ? pixels.ceil().clamp(128, 1600)
+              : null,
+          fit: fit,
+          width: width,
+          height: height,
+          alignment: alignment,
+          fadeInDuration: const Duration(milliseconds: 120),
+          errorWidget: (_, _, _) =>
+              errorBuilder?.call() ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

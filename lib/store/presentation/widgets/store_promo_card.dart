@@ -100,7 +100,10 @@ class StorePromoCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Expanded(flex: 4, child: image),
+              Expanded(
+                flex: 5,
+                child: Padding(padding: const EdgeInsets.all(6), child: image),
+              ),
             ],
           ),
         ),

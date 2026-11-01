@@ -2,6 +2,7 @@ import 'package:studentry/store/data/catalog_translations.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:studentry/shared/cache/cache_manager.dart';
+import 'package:studentry/shared/cache/account_snapshot_cache.dart';
 import 'package:studentry/shared/data/app_database.dart';
 import 'package:studentry/shared/data/api_client.dart';
 import 'package:studentry/shared/data/api_config.dart';
@@ -1345,6 +1346,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
   DateTime? _lastLoadedAt;
   bool _lastRefreshSucceeded = false;
   bool _refreshAgain = false;
+  bool _snapshotRestored = false;
   bool get lastRefreshSucceeded => _lastRefreshSucceeded;
 
   bool get hasActiveOrders => _orders.any(
@@ -1372,8 +1374,9 @@ class OrdersNotifier extends Notifier<OrdersState> {
   }
 
   void addOrder(Order order) {
+    _orders.removeWhere((old) => old.id == order.id);
     _orders.insert(0, order);
-    CacheManager.instance.invalidate(CacheTags.orders);
+    _cacheOrders();
     state = state.copyWith(orders: [..._orders]);
   }
 
@@ -1411,6 +1414,32 @@ class OrdersNotifier extends Notifier<OrdersState> {
     final generation = AuthService().sessionGeneration;
     final dataGeneration = AppDatabase.captureActiveDataGeneration();
     try {
+      if (!_snapshotRestored) {
+        _snapshotRestored = true;
+        // Remove the obsolete unscoped, plaintext snapshot from older builds.
+        CacheManager.instance.remove('orders:all');
+        final cached = await AccountSnapshotCache.load(
+          AccountSnapshotCache.key('orders'),
+        );
+        if (!ref.mounted || generation != AuthService().sessionGeneration) {
+          return;
+        }
+        if (cached != null) {
+          final restored = (cached['orders'] as List)
+              .whereType<Map>()
+              .map((row) => Order.fromJson(Map<String, dynamic>.from(row)))
+              .toList();
+          _orders.addAll(
+            restored.where((row) => !_orders.any((old) => old.id == row.id)),
+          );
+          _currentPage = (cached['page'] as num?)?.toInt() ?? 0;
+          _syncSince = cached['since'] as String?;
+          state = state.copyWith(
+            orders: [..._orders],
+            hasMore: cached['more'] == true,
+          );
+        }
+      }
       final initial = _syncSince == null;
       List<Map<String, dynamic>> rows;
       String? serverTime;
@@ -1441,7 +1470,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
       _syncSince = serverTime;
       _lastLoadedAt = DateTime.now();
       _lastRefreshSucceeded = true;
-      _cacheOrders();
+      _cacheOrders(hasMore: hasMore);
       state = state.copyWith(
         orders: [..._orders],
         isLoadingMore: false,
@@ -1483,7 +1512,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
       _orders
         ..clear()
         ..addAll(merged);
-      _cacheOrders();
+      _cacheOrders(hasMore: page.hasMore);
       state = state.copyWith(
         orders: [..._orders],
         isLoadingMore: false,
@@ -1521,14 +1550,21 @@ class OrdersNotifier extends Notifier<OrdersState> {
     await loadInitialOrders(force: true);
   }
 
-  void _cacheOrders() {
-    if (_orders.isNotEmpty) {
-      CacheManager.instance.set(
-        'orders:all',
-        _orders.map((o) => o.toJson()).toList(),
-        tags: [CacheTags.orders],
-      );
-    }
+  void _cacheOrders({bool? hasMore}) {
+    final confirmed = _orders.where((o) => !o.awaitingSync).toList();
+    final snapshot = confirmed.take(200).toList();
+    unawaited(
+      AccountSnapshotCache.save(
+        AccountSnapshotCache.key('orders'),
+        {
+          'orders': snapshot.map((o) => o.toJson()).toList(),
+          'page': confirmed.length > 200 ? 9 : _currentPage,
+          'more': confirmed.length > 200 || (hasMore ?? state.hasMore),
+          'since': _syncSince,
+        },
+        generation: AuthService().sessionGeneration,
+      ).catchError((Object _) {}),
+    );
   }
 
   List<Order> _parseOrders(List<Map<String, dynamic>> rows) {

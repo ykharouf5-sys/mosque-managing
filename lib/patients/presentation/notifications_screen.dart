@@ -5,6 +5,7 @@ import 'package:studentry/utils/variable_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:studentry/shared/widgets/notification_inbox.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -49,56 +50,26 @@ class NotificationsScreen extends ConsumerWidget {
           ),
           centerTitle: true,
         ),
-        body: past.isEmpty && todayAppts.isEmpty && upcoming.isEmpty
-            ? _emptyState(context)
-            : ListView(
-                padding: EdgeInsets.all(16.r),
-                children: [
-                  if (todayAppts.isNotEmpty) ...[
-                    _sectionHeader('اليوم'),
-                    ...todayAppts.map(
-                      (a) => _notificationCard(context, a, true),
-                    ),
-                    SizedBox(height: 16.h),
-                  ],
-                  if (upcoming.isNotEmpty) ...[
-                    _sectionHeader('المواعيد القادمة'),
-                    ...upcoming.map(
-                      (a) => _notificationCard(context, a, false),
-                    ),
-                    SizedBox(height: 16.h),
-                  ],
-                  if (past.isNotEmpty) ...[
-                    _sectionHeader('سابقة'),
-                    ...past.map((a) => _notificationCard(context, a, true)),
-                  ],
-                ],
-              ),
-      ),
-    );
-  }
-
-  Widget _emptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.notifications_none_rounded,
-            size: 64.sp,
-            color: AppColors.textGray.withValues(alpha: 0.4),
-          ),
-          SizedBox(height: 16.h),
-          Text(
-            'لا توجد إشعارات',
-            style: TextStyle(color: AppColors.textGray, fontSize: 16.sp),
-          ),
-          SizedBox(height: 8.h),
-          Text(
-            'سيتم إعلامك عند اقتراب موعد مريض',
-            style: TextStyle(color: AppColors.textGray, fontSize: 13.sp),
-          ),
-        ],
+        body: ListView(
+          padding: EdgeInsets.all(16.r),
+          children: [
+            const NotificationInbox(),
+            if (todayAppts.isNotEmpty) ...[
+              _sectionHeader('اليوم'),
+              ...todayAppts.map((a) => _notificationCard(context, a, true)),
+              SizedBox(height: 16.h),
+            ],
+            if (upcoming.isNotEmpty) ...[
+              _sectionHeader('المواعيد القادمة'),
+              ...upcoming.map((a) => _notificationCard(context, a, false)),
+              SizedBox(height: 16.h),
+            ],
+            if (past.isNotEmpty) ...[
+              _sectionHeader('سابقة'),
+              ...past.map((a) => _notificationCard(context, a, true)),
+            ],
+          ],
+        ),
       ),
     );
   }

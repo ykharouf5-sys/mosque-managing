@@ -543,14 +543,14 @@ class _StoreScreenState extends ConsumerState<StoreScreen> {
     final image = url.startsWith('/') || url.contains(':\\')
         ? Image.file(
             File(url),
-            fit: BoxFit.cover,
-            alignment: Alignment.centerRight,
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
             errorBuilder: (_, _, _) => SizedBox.shrink(),
           )
         : AppCachedNetworkImage(
             url: url,
-            fit: BoxFit.cover,
-            alignment: Alignment.centerRight,
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
             errorBuilder: () => SizedBox.shrink(),
           );
     return Padding(

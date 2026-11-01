@@ -390,7 +390,7 @@ class _HomeBannerCarouselState extends State<HomeBannerCarousel> {
                               widthFactor: .48,
                               child: Image.network(
                                 image,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.contain,
                                 height: height,
                                 errorBuilder: (_, error, stack) =>
                                     const ReferenceDentalArt(),
